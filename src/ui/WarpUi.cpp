@@ -157,7 +157,7 @@ void create(lv_obj_t *parent) {
 
   w.statusDot = lv_obj_create(parent);
   lv_obj_remove_style_all(w.statusDot);
-  lv_obj_set_pos(w.statusDot, 548, 24);
+  lv_obj_set_pos(w.statusDot, 548, 21);
   lv_obj_set_size(w.statusDot, 10, 10);
   lv_obj_set_style_radius(w.statusDot, LV_RADIUS_CIRCLE, 0);
   lv_obj_set_style_bg_color(w.statusDot, lv_color_hex(C_MUTED), 0);
