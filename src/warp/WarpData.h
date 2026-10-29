@@ -42,6 +42,7 @@ struct WarpData {
   double charge_current = 0.0;      // mA from charge_manager/state
   int charge_status = 0;       // 0=stopped, 1=charging, 2=complete, 3=error
   char charge_name[40] = "";   // Charger name from API
+  int charge_mode = 0;         // 0=Fast,1=Off,2=PV,3=Min+PV from power_manager/charge_mode
 
   // Grid connection.
   bool island = false;

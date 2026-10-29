@@ -366,13 +366,18 @@ void update(const WarpData &d) {
   } else {
     /* Check if a wallbox charger slot is configured */
     if (d.charge_name[0] != '\0') {
-      snprintf(chargeBuf, sizeof(chargeBuf), "--");
-      setText(w.wallboxValue, chargeBuf);
-      if (d.charge_state == 1) {
-        setText(w.wallboxNote, "Bereit");
-      } else {
-        setText(w.wallboxNote, "Konfiguriert");
-      }
+  const char *modeStr = d.charge_mode == 0 ? "Schnell" :
+                        d.charge_mode == 1 ? "Aus" :
+                        d.charge_mode == 2 ? "PV" :
+                        d.charge_mode == 3 ? "Min+PV" : "?";
+  snprintf(chargeBuf, sizeof(chargeBuf), "--");
+  setText(w.wallboxValue, chargeBuf);
+  if (d.charge_state == 1) {
+    snprintf(chargeBuf, sizeof(chargeBuf), "Wartet auf Freigabe (%s)", modeStr);
+    setText(w.wallboxNote, chargeBuf);
+  } else {
+    setText(w.wallboxNote, "Konfiguriert");
+  }
     } else {
       setText(w.wallboxValue, "--");
       setText(w.wallboxNote, "Getrennt");

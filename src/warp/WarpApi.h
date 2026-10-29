@@ -355,6 +355,17 @@ class Reader {
       }
     }
 
+    {
+      std::string body;
+      std::string error;
+      if (get("/power_manager/charge_mode", body, error)) {
+        int mode = 0;
+        if (warpjson::integer(body.data(), body.size(), "mode", mode)) {
+          d.charge_mode = mode;
+        }
+      }
+    }
+
     /* Charge manager / Wallbox data from /charge_manager/state */
     int chargeState = 0;          // 0=unknown, 1=ready, 2=charging, 3=error
     double chargePower = 0.0;     // W
