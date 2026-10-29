@@ -353,6 +353,11 @@ class Reader {
         warpjson::number(body.data(), body.size(), "battery_soc", batterySoc);
         powerManager = true;
       }
+      // parse is_3phase
+      int is3 = 0;
+      if (warpjson::integer(body.data(), body.size(), "is_3phase", is3)) {
+        d.is_3phase = (is3 != 0);
+      }
     }
 
     {

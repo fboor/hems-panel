@@ -46,6 +46,7 @@ struct WarpData {
 
   // Grid connection.
   bool island = false;
+  bool is_3phase = false;
 
   // Energy counters since commissioning, Wh. Filled from the meter value IDs on
   // a real WARP device; the day_* aliases are the fallback for flat JSON.

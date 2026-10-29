@@ -48,6 +48,7 @@ struct Widgets {
   lv_obj_t *wallboxValue = nullptr;
   lv_obj_t *wallboxNote = nullptr;
   lv_obj_t *wallboxMode = nullptr;
+  lv_obj_t *wallboxPhase = nullptr;
 
   lv_obj_t *batSoc = nullptr;
   lv_obj_t *batBar = nullptr;
@@ -239,6 +240,7 @@ void create(lv_obj_t *parent) {
   w.wallboxValue = label(wallbox, 16, 30, 0, F_BIG, C_GREEN, "--");
   w.wallboxNote = label(wallbox, 16, 76, 0, F_SMALL, C_MUTED, "--");
   w.wallboxMode = label(wallbox, 16, 96, 0, F_SMALL, C_MUTED, "--");
+  w.wallboxPhase = label(wallbox, 16, 116, 0, F_SMALL, C_MUTED, "--");
 
   // Energy totals ------------------------------------------------------
   lv_obj_t *energy = card(parent, 536, 256, 250, 176);
@@ -353,8 +355,12 @@ void update(const WarpData &d) {
   // Wallbox -----------------------------------------------------------
   /* Wallbox-Zustand aus charge_manager API ableiten */
   /* States: 0=unbekannt, 1=bereit, 2=laden, 3=fehler */
-  if (d.charge_state == 2 && d.charge_power > 0.1f) {
-    snprintf(chargeBuf, sizeof(chargeBuf), "%.1f W", d.charge_power);
+  if (d.charge_power > 0.1f || d.charge_current > 0.1) {
+    if (d.charge_current > 0.1) {
+      snprintf(chargeBuf, sizeof(chargeBuf), "%.1f A", d.charge_current / 1000.0);
+    } else {
+      snprintf(chargeBuf, sizeof(chargeBuf), "%.1f W", d.charge_power);
+    }
     setText(w.wallboxValue, chargeBuf);
     setText(w.wallboxNote, "Laden");
   } else if (d.charge_name[0] != '\0') {
@@ -377,6 +383,8 @@ void update(const WarpData &d) {
                         d.charge_mode == 3 ? "Min+PV" : "?";
   snprintf(chargeBuf, sizeof(chargeBuf), "Modus: %s", modeStr);
   setText(w.wallboxMode, chargeBuf);
+  snprintf(chargeBuf, sizeof(chargeBuf), "Phase: %s", d.is_3phase ? "3-phasig" : "1-phasig");
+  setText(w.wallboxPhase, chargeBuf);
   if (w.batSoc != nullptr) {
     if (d.hasBattery) {
       snprintf(buf, sizeof(buf), "%.0f %%", d.soc);
