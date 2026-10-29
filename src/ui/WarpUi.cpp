@@ -47,6 +47,7 @@ struct Widgets {
   lv_obj_t *extNote = nullptr;
   lv_obj_t *wallboxValue = nullptr;
   lv_obj_t *wallboxNote = nullptr;
+  lv_obj_t *wallboxMode = nullptr;
 
   lv_obj_t *batSoc = nullptr;
   lv_obj_t *batBar = nullptr;
@@ -237,6 +238,7 @@ void create(lv_obj_t *parent) {
   title(wallbox, "Wallbox");
   w.wallboxValue = label(wallbox, 16, 30, 0, F_BIG, C_GREEN, "--");
   w.wallboxNote = label(wallbox, 16, 76, 0, F_SMALL, C_MUTED, "--");
+  w.wallboxMode = label(wallbox, 16, 96, 0, F_SMALL, C_MUTED, "--");
 
   // Energy totals ------------------------------------------------------
   lv_obj_t *energy = card(parent, 536, 256, 250, 176);
@@ -378,7 +380,12 @@ void update(const WarpData &d) {
       setText(w.wallboxNote, "Getrennt");
     }
   }
-  if (w.batSoc != nullptr) {
+  const char *modeStr = d.charge_mode == 0 ? "Schnell" :
+                        d.charge_mode == 1 ? "Aus" :
+                        d.charge_mode == 2 ? "PV" :
+                        d.charge_mode == 3 ? "Min+PV" : "?";
+  snprintf(chargeBuf, sizeof(chargeBuf), "Modus: %s", modeStr);
+  setText(w.wallboxMode, chargeBuf);
     if (d.hasBattery) {
       snprintf(buf, sizeof(buf), "%.0f %%", d.soc);
       setText(w.batSoc, buf);
