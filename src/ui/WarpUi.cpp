@@ -386,6 +386,7 @@ void update(const WarpData &d) {
                         d.charge_mode == 3 ? "Min+PV" : "?";
   snprintf(chargeBuf, sizeof(chargeBuf), "Modus: %s", modeStr);
   setText(w.wallboxMode, chargeBuf);
+  if (w.batSoc != nullptr) {
     if (d.hasBattery) {
       snprintf(buf, sizeof(buf), "%.0f %%", d.soc);
       setText(w.batSoc, buf);
