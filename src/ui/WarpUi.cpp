@@ -353,32 +353,23 @@ void update(const WarpData &d) {
   // Wallbox -----------------------------------------------------------
   /* Wallbox-Zustand aus charge_manager API ableiten */
   /* States: 0=unbekannt, 1=bereit, 2=laden, 3=fehler */
-  if (d.charge_power > 0.1f) {
+  if (d.charge_state == 2 && d.charge_power > 0.1f) {
     snprintf(chargeBuf, sizeof(chargeBuf), "%.1f W", d.charge_power);
     setText(w.wallboxValue, chargeBuf);
-    if (d.charge_state == 2) {
-      setText(w.wallboxNote, "Laden");
-    } else if (d.charge_state == 1) {
-      setText(w.wallboxNote, "Bereit");
+    setText(w.wallboxNote, "Laden");
+  } else if (d.charge_name[0] != '\0') {
+    snprintf(chargeBuf, sizeof(chargeBuf), "--");
+    setText(w.wallboxValue, chargeBuf);
+    if (d.charge_state == 1) {
+      setText(w.wallboxNote, "Wartet auf Freigabe");
     } else if (d.charge_state == 3) {
       setText(w.wallboxNote, "Fehler");
     } else {
-      setText(w.wallboxNote, "Aktiv");
+      setText(w.wallboxNote, "Konfiguriert");
     }
   } else {
-    /* Check if a wallbox charger slot is configured */
-    if (d.charge_name[0] != '\0') {
-      snprintf(chargeBuf, sizeof(chargeBuf), "--");
-      setText(w.wallboxValue, chargeBuf);
-  if (d.charge_state == 1) {
-    setText(w.wallboxNote, "Wartet auf Freigabe");
-  } else {
-    setText(w.wallboxNote, "Konfiguriert");
-  }
-    } else {
       setText(w.wallboxValue, "--");
       setText(w.wallboxNote, "Getrennt");
-    }
   }
   const char *modeStr = d.charge_mode == 0 ? "Schnell" :
                         d.charge_mode == 1 ? "Aus" :
