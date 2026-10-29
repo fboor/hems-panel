@@ -368,7 +368,11 @@ void update(const WarpData &d) {
     if (d.charge_name[0] != '\0') {
       snprintf(chargeBuf, sizeof(chargeBuf), "--");
       setText(w.wallboxValue, chargeBuf);
-      setText(w.wallboxNote, "Konfiguriert");
+      if (d.charge_state == 1) {
+        setText(w.wallboxNote, "Bereit");
+      } else {
+        setText(w.wallboxNote, "Konfiguriert");
+      }
     } else {
       setText(w.wallboxValue, "--");
       setText(w.wallboxNote, "Getrennt");
