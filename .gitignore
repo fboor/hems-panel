@@ -1,0 +1,5 @@
+sim/build/
+.pio/
+__pycache__/
+*.pyc
+*.o
