@@ -45,6 +45,9 @@ struct Widgets {
   lv_obj_t *flowLine2 = nullptr;
   lv_obj_t *flowLine3 = nullptr;
   lv_obj_t *flowLine4 = nullptr;
+  lv_obj_t *pvNode = nullptr;
+  lv_obj_t *gridNode = nullptr;
+  lv_obj_t *batNode = nullptr;
   lv_obj_t *batFill = nullptr;
   lv_obj_t *batBolt = nullptr;
   lv_obj_t *flowDot1 = nullptr;
@@ -370,28 +373,28 @@ void create(lv_obj_t *parent) {
 
   // Simple energy flow nodes
   // PV (top left)
-  lv_obj_t *pvNode = lv_obj_create(w.page4);
-  lv_obj_remove_style_all(pvNode);
-  lv_obj_set_pos(pvNode, 40, 40);
-  lv_obj_set_size(pvNode, 60, 60);
-  lv_obj_set_style_radius(pvNode, LV_RADIUS_CIRCLE, 0);
-  lv_obj_set_style_bg_color(pvNode, lv_color_hex(0x4A90D9), 0);
-  lv_obj_set_style_bg_opa(pvNode, LV_OPA_COVER, 0);
-  lv_obj_t *pvIcon = lv_label_create(pvNode);
+  w.pvNode = lv_obj_create(w.page4);
+  lv_obj_remove_style_all(w.pvNode);
+  lv_obj_set_pos(w.pvNode, 40, 40);
+  lv_obj_set_size(w.pvNode, 60, 60);
+  lv_obj_set_style_radius(w.pvNode, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_color(w.pvNode, lv_color_hex(0x4A90D9), 0);
+  lv_obj_set_style_bg_opa(w.pvNode, LV_OPA_COVER, 0);
+  lv_obj_t *pvIcon = lv_label_create(w.pvNode);
   lv_label_set_text(pvIcon, LV_SYMBOL_CHARGE);
   lv_obj_center(pvIcon);
   lv_obj_set_style_text_color(pvIcon, lv_color_hex(0xFFFFFF), 0);
   label(w.page4, 50, 105, 0, F_SMALL, C_TEXT, "PV");
 
   // Grid (bottom left)
-  lv_obj_t *gridNode = lv_obj_create(w.page4);
-  lv_obj_remove_style_all(gridNode);
-  lv_obj_set_pos(gridNode, 40, 240);
-  lv_obj_set_size(gridNode, 60, 60);
-  lv_obj_set_style_radius(gridNode, LV_RADIUS_CIRCLE, 0);
-  lv_obj_set_style_bg_color(gridNode, lv_color_hex(0xFFA726), 0);
-  lv_obj_set_style_bg_opa(gridNode, LV_OPA_COVER, 0);
-  lv_obj_t *gridIcon = lv_label_create(gridNode);
+  w.gridNode = lv_obj_create(w.page4);
+  lv_obj_remove_style_all(w.gridNode);
+  lv_obj_set_pos(w.gridNode, 40, 240);
+  lv_obj_set_size(w.gridNode, 60, 60);
+  lv_obj_set_style_radius(w.gridNode, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_color(w.gridNode, lv_color_hex(0xFFA726), 0);
+  lv_obj_set_style_bg_opa(w.gridNode, LV_OPA_COVER, 0);
+  lv_obj_t *gridIcon = lv_label_create(w.gridNode);
   lv_label_set_text(gridIcon, LV_SYMBOL_POWER);
   lv_obj_center(gridIcon);
   lv_obj_set_style_text_color(gridIcon, lv_color_hex(0xFFFFFF), 0);
@@ -412,24 +415,24 @@ void create(lv_obj_t *parent) {
   label(w.page4, 360, 205, 0, F_SMALL, C_TEXT, "Haus");
 
   // Battery (bottom center)
-  lv_obj_t *batNode = lv_obj_create(w.page4);
-  lv_obj_remove_style_all(batNode);
-  lv_obj_set_pos(batNode, 365, 260);
-  lv_obj_set_size(batNode, 60, 60);
-  lv_obj_set_style_radius(batNode, LV_RADIUS_CIRCLE, 0);
-  lv_obj_set_style_bg_color(batNode, lv_color_hex(0x66BB6A), 0);
-  lv_obj_set_style_bg_opa(batNode, LV_OPA_COVER, 0);
-  w.batFill = lv_obj_create(batNode);
+  w.batNode = lv_obj_create(w.page4);
+  lv_obj_remove_style_all(w.batNode);
+  lv_obj_set_pos(w.batNode, 365, 260);
+  lv_obj_set_size(w.batNode, 60, 60);
+  lv_obj_set_style_radius(w.batNode, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_color(w.batNode, lv_color_hex(0x66BB6A), 0);
+  lv_obj_set_style_bg_opa(w.batNode, LV_OPA_COVER, 0);
+  w.batFill = lv_obj_create(w.batNode);
   lv_obj_remove_style_all(w.batFill);
   lv_obj_set_pos(w.batFill, 0, 0);
   lv_obj_set_size(w.batFill, 60, 60);
   lv_obj_set_style_bg_color(w.batFill, lv_color_hex(0x66BB6A), 0);
   lv_obj_set_style_bg_opa(w.batFill, LV_OPA_COVER, 0);
-  lv_obj_t *batIcon = lv_label_create(batNode);
+  lv_obj_t *batIcon = lv_label_create(w.batNode);
   lv_label_set_text(batIcon, LV_SYMBOL_BATTERY_FULL);
   lv_obj_center(batIcon);
   lv_obj_set_style_text_color(batIcon, lv_color_hex(0xFFFFFF), 0);
-  w.batBolt = lv_label_create(batNode);
+  w.batBolt = lv_label_create(w.batNode);
   lv_label_set_text(w.batBolt, LV_SYMBOL_CHARGE);
   lv_obj_center(w.batBolt);
   lv_obj_set_style_text_color(w.batBolt, lv_color_hex(0xFFFF00), 0);
@@ -926,7 +929,19 @@ void update(const WarpData &d) {
       lv_chart_refresh(w.powerChart);
     }
   }
-  // Battery SoC fill and charge bolt
+  // Show/hide nodes based on availability
+  if (w.pvNode != nullptr) {
+    if (d.hasPv) lv_obj_clear_flag(w.pvNode, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(w.pvNode, LV_OBJ_FLAG_HIDDEN);
+  }
+  if (w.gridNode != nullptr) {
+    if (d.hasGrid) lv_obj_clear_flag(w.gridNode, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(w.gridNode, LV_OBJ_FLAG_HIDDEN);
+  }
+  if (w.batNode != nullptr) {
+    if (d.hasBattery) lv_obj_clear_flag(w.batNode, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(w.batNode, LV_OBJ_FLAG_HIDDEN);
+  }
   if (w.batFill != nullptr) {
     int fillH = (int)(60.0f * d.soc / 100.0f);
     if (fillH < 0) fillH = 0;
