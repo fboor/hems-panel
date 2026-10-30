@@ -425,6 +425,31 @@ void create(lv_obj_t *parent) {
   lv_obj_set_style_text_color(wbIcon, lv_color_hex(0xFFFFFF), 0);
   label(w.page4, 675, 205, 0, F_SMALL, C_TEXT, "Wallbox");
 
+  // Energy flow lines (simple)
+  static lv_point_precise_t pvToHouse[] = {{70, 70}, {365, 170}};
+  lv_obj_t *line1 = lv_line_create(w.page4);
+  lv_line_set_points(line1, pvToHouse, 2);
+  lv_obj_set_style_line_width(line1, 2, 0);
+  lv_obj_set_style_line_color(line1, lv_color_hex(0x4A90D9), 0);
+
+  static lv_point_precise_t gridToHouse[] = {{70, 270}, {365, 170}};
+  lv_obj_t *line2 = lv_line_create(w.page4);
+  lv_line_set_points(line2, gridToHouse, 2);
+  lv_obj_set_style_line_width(line2, 2, 0);
+  lv_obj_set_style_line_color(line2, lv_color_hex(0xFFA726), 0);
+
+  static lv_point_precise_t batToHouse[] = {{395, 290}, {395, 200}};
+  lv_obj_t *line3 = lv_line_create(w.page4);
+  lv_line_set_points(line3, batToHouse, 2);
+  lv_obj_set_style_line_width(line3, 2, 0);
+  lv_obj_set_style_line_color(line3, lv_color_hex(0x66BB6A), 0);
+
+  static lv_point_precise_t houseToWb[] = {{425, 170}, {690, 170}};
+  lv_obj_t *line4 = lv_line_create(w.page4);
+  lv_line_set_points(line4, houseToWb, 2);
+  lv_obj_set_style_line_width(line4, 2, 0);
+  lv_obj_set_style_line_color(line4, lv_color_hex(0x9C27B0), 0);
+
   // Background cycle button
   w.bgBtn = lv_btn_create(w.page3);
   lv_obj_set_pos(w.bgBtn, 16, 18);
