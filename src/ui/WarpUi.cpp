@@ -39,6 +39,8 @@ struct Widgets {
   lv_obj_t *pageBtn2 = nullptr;
   lv_obj_t *pageBtn3 = nullptr;
   lv_obj_t *caption1 = nullptr;
+  lv_obj_t *pageBtn4 = nullptr;
+  lv_obj_t *page4 = nullptr;
   lv_obj_t *caption2 = nullptr;
   lv_obj_t *caption3 = nullptr;
   lv_obj_t *page1 = nullptr;
@@ -345,6 +347,20 @@ void create(lv_obj_t *parent) {
   lv_obj_set_size(w.page3, 790, 372);
   lv_obj_add_flag(w.page3, LV_OBJ_FLAG_HIDDEN);
 
+  // Fourth page (energy flow) -----------------------------------------
+  w.page4 = lv_obj_create(parent);
+  lv_obj_remove_style_all(w.page4);
+  lv_obj_set_pos(w.page4, 0, 68);
+  lv_obj_set_size(w.page4, 790, 372);
+  lv_obj_add_flag(w.page4, LV_OBJ_FLAG_HIDDEN);
+
+  // Simple energy flow labels
+  label(w.page4, 16, 16, 0, F_BODY, C_TEXT, "PV");
+  label(w.page4, 16, 60, 0, F_BODY, C_TEXT, "Netz");
+  label(w.page4, 380, 16, 0, F_BODY, C_TEXT, "Haus");
+  label(w.page4, 380, 120, 0, F_BODY, C_TEXT, "Wallbox");
+  label(w.page4, 380, 220, 0, F_BODY, C_TEXT, "Batterie");
+
   // Background cycle button
   w.bgBtn = lv_btn_create(w.page3);
   lv_obj_set_pos(w.bgBtn, 16, 18);
@@ -420,6 +436,19 @@ void create(lv_obj_t *parent) {
     lv_obj_add_flag(w.caption1, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(w.caption2, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(w.caption3, LV_OBJ_FLAG_HIDDEN);
+  }, LV_EVENT_CLICKED, nullptr);
+
+  w.pageBtn4 = lv_btn_create(parent);
+  lv_obj_set_pos(w.pageBtn4, 680, 440);
+  lv_obj_set_size(w.pageBtn4, 50, 30);
+  lv_obj_t *lbl4 = lv_label_create(w.pageBtn4);
+  lv_label_set_text(lbl4, "4");
+  lv_obj_center(lbl4);
+  lv_obj_add_event_cb(w.pageBtn4, [](lv_event_t *e) {
+    lv_obj_add_flag(w.page1, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(w.page2, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(w.page3, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(w.page4, LV_OBJ_FLAG_HIDDEN);
   }, LV_EVENT_CLICKED, nullptr);
 }
 
