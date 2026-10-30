@@ -47,6 +47,10 @@ struct Widgets {
   lv_obj_t *flowLine4 = nullptr;
   lv_obj_t *batFill = nullptr;
   lv_obj_t *batBolt = nullptr;
+  lv_obj_t *flowDot1 = nullptr;
+  lv_obj_t *flowDot2 = nullptr;
+  lv_obj_t *flowDot3 = nullptr;
+  lv_obj_t *flowDot4 = nullptr;
   lv_obj_t *caption2 = nullptr;
   lv_obj_t *caption3 = nullptr;
   lv_obj_t *page1 = nullptr;
@@ -451,6 +455,13 @@ void create(lv_obj_t *parent) {
   lv_line_set_points(w.flowLine1, pvToHouse, 2);
   lv_obj_set_style_line_width(w.flowLine1, 2, 0);
   lv_obj_set_style_line_color(w.flowLine1, lv_color_hex(0x4A90D9), 0);
+  w.flowDot1 = lv_obj_create(w.page4);
+  lv_obj_remove_style_all(w.flowDot1);
+  lv_obj_set_size(w.flowDot1, 6, 6);
+  lv_obj_set_style_radius(w.flowDot1, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_color(w.flowDot1, lv_color_hex(0x4A90D9), 0);
+  lv_obj_set_style_bg_opa(w.flowDot1, LV_OPA_COVER, 0);
+  lv_obj_add_flag(w.flowDot1, LV_OBJ_FLAG_HIDDEN);
 
   w.flowLine2 = lv_line_create(w.page4);
   lv_line_set_points(w.flowLine2, gridToHouse, 2);
@@ -874,6 +885,20 @@ void update(const WarpData &d) {
     else { if (std::fabs(d.housePower) > 25.0f) flow4Active = true; }
     if (flow4Active) lv_obj_clear_flag(w.flowLine4, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(w.flowLine4, LV_OBJ_FLAG_HIDDEN);
+  }
+  // Animated flow dots
+  static int animPhase = 0;
+  animPhase = (animPhase + 1) % 20;
+  float t = animPhase / 20.0f;
+  if (w.flowDot1 != nullptr) {
+    if (flow1Active) {
+      lv_obj_clear_flag(w.flowDot1, LV_OBJ_FLAG_HIDDEN);
+      int x = (int)(70 + (365-70) * t);
+      int y = (int)(70 + (170-70) * t);
+      lv_obj_set_pos(w.flowDot1, x, y);
+    } else {
+      lv_obj_add_flag(w.flowDot1, LV_OBJ_FLAG_HIDDEN);
+    }
   }
 }
 
