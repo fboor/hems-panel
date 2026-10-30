@@ -825,21 +825,30 @@ void update(const WarpData &d) {
       lv_chart_refresh(w.powerChart);
     }
   }
-  // Energy flow line visibility based on 10W threshold
+  // Energy flow line visibility with hysteresis (25W on, 10W off)
+  static bool flow1Active = false, flow2Active = false, flow3Active = false, flow4Active = false;
   if (w.flowLine1 != nullptr) {
-    if (std::fabs(d.pvPower) > 10.0f) lv_obj_clear_flag(w.flowLine1, LV_OBJ_FLAG_HIDDEN);
+    if (flow1Active) { if (std::fabs(d.pvPower) < 10.0f) flow1Active = false; }
+    else { if (std::fabs(d.pvPower) > 25.0f) flow1Active = true; }
+    if (flow1Active) lv_obj_clear_flag(w.flowLine1, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(w.flowLine1, LV_OBJ_FLAG_HIDDEN);
   }
   if (w.flowLine2 != nullptr) {
-    if (std::fabs(d.gridPower) > 10.0f) lv_obj_clear_flag(w.flowLine2, LV_OBJ_FLAG_HIDDEN);
+    if (flow2Active) { if (std::fabs(d.gridPower) < 10.0f) flow2Active = false; }
+    else { if (std::fabs(d.gridPower) > 25.0f) flow2Active = true; }
+    if (flow2Active) lv_obj_clear_flag(w.flowLine2, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(w.flowLine2, LV_OBJ_FLAG_HIDDEN);
   }
   if (w.flowLine3 != nullptr) {
-    if (std::fabs(d.batteryPower) > 10.0f) lv_obj_clear_flag(w.flowLine3, LV_OBJ_FLAG_HIDDEN);
+    if (flow3Active) { if (std::fabs(d.batteryPower) < 10.0f) flow3Active = false; }
+    else { if (std::fabs(d.batteryPower) > 25.0f) flow3Active = true; }
+    if (flow3Active) lv_obj_clear_flag(w.flowLine3, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(w.flowLine3, LV_OBJ_FLAG_HIDDEN);
   }
   if (w.flowLine4 != nullptr) {
-    if (std::fabs(d.housePower) > 10.0f) lv_obj_clear_flag(w.flowLine4, LV_OBJ_FLAG_HIDDEN);
+    if (flow4Active) { if (std::fabs(d.housePower) < 10.0f) flow4Active = false; }
+    else { if (std::fabs(d.housePower) > 25.0f) flow4Active = true; }
+    if (flow4Active) lv_obj_clear_flag(w.flowLine4, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(w.flowLine4, LV_OBJ_FLAG_HIDDEN);
   }
 }
