@@ -451,9 +451,9 @@ void create(lv_obj_t *parent) {
   label(w.page4, 675, 205, 0, F_SMALL, C_TEXT, "Wallbox");
 
   // Energy flow lines (simple)
-  static lv_point_precise_t pvToHouse[] = {{99, 80}, {336, 160}};
-  static lv_point_precise_t gridToHouse[] = {{99, 260}, {336, 180}};
-  static lv_point_precise_t batToHouse[] = {{395, 260}, {395, 230}};
+  static lv_point_precise_t pvToHouse[] = {{99, 80}, {360, 165}};
+  static lv_point_precise_t gridToHouse[] = {{99, 260}, {360, 175}};
+  static lv_point_precise_t batToHouse[] = {{395, 260}, {395, 200}};
   static lv_point_precise_t houseToWb[] = {{455, 170}, {660, 170}};
   w.flowLine1 = lv_line_create(w.page4);
   lv_line_set_points(w.flowLine1, pvToHouse, 2);
@@ -602,7 +602,7 @@ void create(lv_obj_t *parent) {
     if (w.flowDot1 != nullptr) {
       if (w.flow1Active) {
         lv_obj_clear_flag(w.flowDot1, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_pos(w.flowDot1, (int)(99 + (336-99) * s) - 3, (int)(80 + (160-80) * s) - 3);
+        lv_obj_set_pos(w.flowDot1, (int)(99 + (360-99) * s) - 3, (int)(80 + (165-80) * s) - 3);
       } else {
         lv_obj_add_flag(w.flowDot1, LV_OBJ_FLAG_HIDDEN);
       }
@@ -613,11 +613,11 @@ void create(lv_obj_t *parent) {
         int x, y;
         if (w.gridExporting) {
           // house -> grid (up-left to down-left reversed): from (365,170) to (70,270)
-          x = (int)(336 + (99-336) * s) - 3;
-          y = (int)(180 + (260-180) * s) - 3;
+          x = (int)(360 + (99-360) * s) - 3;
+          y = (int)(175 + (260-175) * s) - 3;
         } else {
-          x = (int)(99 + (336-99) * s) - 3;
-          y = (int)(260 + (180-260) * s) - 3;
+          x = (int)(99 + (360-99) * s) - 3;
+          y = (int)(260 + (175-260) * s) - 3;
         }
         lv_obj_set_pos(w.flowDot2, x, y);
       } else {
@@ -629,9 +629,9 @@ void create(lv_obj_t *parent) {
         lv_obj_clear_flag(w.flowDot3, LV_OBJ_FLAG_HIDDEN);
         int y;
         if (w.batCharging) {
-          y = (int)(230 + (260-230) * s) - 3;  // house -> battery (down)
+          y = (int)(200 + (260-200) * s) - 3;  // house -> battery (down)
         } else {
-          y = (int)(260 + (230-260) * s) - 3;  // battery -> house (up)
+          y = (int)(260 + (200-260) * s) - 3;  // battery -> house (up)
         }
         lv_obj_set_pos(w.flowDot3, 395 - 3, y);
       } else {
