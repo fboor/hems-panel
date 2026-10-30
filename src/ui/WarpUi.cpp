@@ -467,6 +467,7 @@ void create(lv_obj_t *parent) {
     lv_obj_clear_flag(w.page1, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(w.page2, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(w.page3, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(w.page4, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(w.caption1, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(w.caption2, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(w.caption3, LV_OBJ_FLAG_HIDDEN);
@@ -482,6 +483,7 @@ void create(lv_obj_t *parent) {
     lv_obj_add_flag(w.page1, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(w.page2, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(w.page3, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(w.page4, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(w.caption1, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(w.caption2, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(w.caption3, LV_OBJ_FLAG_HIDDEN);
@@ -497,6 +499,7 @@ void create(lv_obj_t *parent) {
     lv_obj_add_flag(w.page1, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(w.page2, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(w.page3, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(w.page4, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(w.caption1, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(w.caption2, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(w.caption3, LV_OBJ_FLAG_HIDDEN);
