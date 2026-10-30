@@ -178,9 +178,9 @@ void create(lv_obj_t *parent) {
   // Header ---------------------------------------------------------------
   label(parent, 16, 8, 0, F_TITLE, C_TEXT, "WARP Energy Manager");
   // Page captions
-  w.caption1 = label(parent, 16, 40, 0, F_SMALL, C_MUTED, "Energie");
-  w.caption2 = label(parent, 16, 40, 0, F_SMALL, C_MUTED, "Verlauf");
-  w.caption3 = label(parent, 16, 40, 0, F_SMALL, C_MUTED, "Service");
+  w.caption1 = label(parent, 16, 40, 0, F_BODY, C_MUTED, "Energie");
+  w.caption2 = label(parent, 16, 40, 0, F_BODY, C_MUTED, "Verlauf");
+  w.caption3 = label(parent, 16, 40, 0, F_BODY, C_MUTED, "Service");
   lv_obj_add_flag(w.caption2, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(w.caption3, LV_OBJ_FLAG_HIDDEN);
 
