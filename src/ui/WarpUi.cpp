@@ -948,8 +948,8 @@ void update(const WarpData &d) {
     w.batCharging = (d.batteryPower < 0.0f);
   }
   if (w.flowLine4 != nullptr) {
-    if (w.flow4Active) { if (std::fabs(d.housePower) < 10.0f) w.flow4Active = false; }
-    else { if (std::fabs(d.housePower) > 25.0f) w.flow4Active = true; }
+    if (w.flow4Active) { if (d.charge_power < 10.0f) w.flow4Active = false; }
+    else { if (d.charge_power > 25.0f && d.charge_state == 2) w.flow4Active = true; }
     if (w.flow4Active) lv_obj_clear_flag(w.flowLine4, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(w.flowLine4, LV_OBJ_FLAG_HIDDEN);
   }
