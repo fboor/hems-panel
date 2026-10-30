@@ -354,12 +354,56 @@ void create(lv_obj_t *parent) {
   lv_obj_set_size(w.page4, 790, 372);
   lv_obj_add_flag(w.page4, LV_OBJ_FLAG_HIDDEN);
 
-  // Simple energy flow labels
-  label(w.page4, 16, 16, 0, F_BODY, C_TEXT, "PV");
-  label(w.page4, 16, 60, 0, F_BODY, C_TEXT, "Netz");
-  label(w.page4, 380, 16, 0, F_BODY, C_TEXT, "Haus");
-  label(w.page4, 380, 120, 0, F_BODY, C_TEXT, "Wallbox");
-  label(w.page4, 380, 220, 0, F_BODY, C_TEXT, "Batterie");
+  // Simple energy flow nodes
+  // PV (top left)
+  lv_obj_t *pvNode = lv_obj_create(w.page4);
+  lv_obj_remove_style_all(pvNode);
+  lv_obj_set_pos(pvNode, 40, 40);
+  lv_obj_set_size(pvNode, 60, 60);
+  lv_obj_set_style_radius(pvNode, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_color(pvNode, lv_color_hex(0x4A90D9), 0);
+  lv_obj_set_style_bg_opa(pvNode, LV_OPA_COVER, 0);
+  label(w.page4, 50, 105, 0, F_SMALL, C_TEXT, "PV");
+
+  // Grid (bottom left)
+  lv_obj_t *gridNode = lv_obj_create(w.page4);
+  lv_obj_remove_style_all(gridNode);
+  lv_obj_set_pos(gridNode, 40, 240);
+  lv_obj_set_size(gridNode, 60, 60);
+  lv_obj_set_style_radius(gridNode, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_color(gridNode, lv_color_hex(0xFFA726), 0);
+  lv_obj_set_style_bg_opa(gridNode, LV_OPA_COVER, 0);
+  label(w.page4, 45, 305, 0, F_SMALL, C_TEXT, "Netz");
+
+  // House (center)
+  lv_obj_t *houseNode = lv_obj_create(w.page4);
+  lv_obj_remove_style_all(houseNode);
+  lv_obj_set_pos(houseNode, 365, 140);
+  lv_obj_set_size(houseNode, 60, 60);
+  lv_obj_set_style_radius(houseNode, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_color(houseNode, lv_color_hex(0xFF5D5D), 0);
+  lv_obj_set_style_bg_opa(houseNode, LV_OPA_COVER, 0);
+  label(w.page4, 360, 205, 0, F_SMALL, C_TEXT, "Haus");
+
+  // Battery (bottom center)
+  lv_obj_t *batNode = lv_obj_create(w.page4);
+  lv_obj_remove_style_all(batNode);
+  lv_obj_set_pos(batNode, 365, 260);
+  lv_obj_set_size(batNode, 60, 60);
+  lv_obj_set_style_radius(batNode, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_color(batNode, lv_color_hex(0x66BB6A), 0);
+  lv_obj_set_style_bg_opa(batNode, LV_OPA_COVER, 0);
+  label(w.page4, 355, 325, 0, F_SMALL, C_TEXT, "Akku");
+
+  // Wallbox (right)
+  lv_obj_t *wbNode = lv_obj_create(w.page4);
+  lv_obj_remove_style_all(wbNode);
+  lv_obj_set_pos(wbNode, 690, 140);
+  lv_obj_set_size(wbNode, 60, 60);
+  lv_obj_set_style_radius(wbNode, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_color(wbNode, lv_color_hex(0x9C27B0), 0);
+  lv_obj_set_style_bg_opa(wbNode, LV_OPA_COVER, 0);
+  label(w.page4, 675, 205, 0, F_SMALL, C_TEXT, "Wallbox");
 
   // Background cycle button
   w.bgBtn = lv_btn_create(w.page3);
