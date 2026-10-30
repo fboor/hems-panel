@@ -45,6 +45,8 @@ struct Widgets {
   lv_obj_t *flowLine2 = nullptr;
   lv_obj_t *flowLine3 = nullptr;
   lv_obj_t *flowLine4 = nullptr;
+  lv_obj_t *batFill = nullptr;
+  lv_obj_t *batBolt = nullptr;
   lv_obj_t *caption2 = nullptr;
   lv_obj_t *caption3 = nullptr;
   lv_obj_t *page1 = nullptr;
@@ -409,10 +411,21 @@ void create(lv_obj_t *parent) {
   lv_obj_set_style_radius(batNode, LV_RADIUS_CIRCLE, 0);
   lv_obj_set_style_bg_color(batNode, lv_color_hex(0x66BB6A), 0);
   lv_obj_set_style_bg_opa(batNode, LV_OPA_COVER, 0);
+  w.batFill = lv_obj_create(batNode);
+  lv_obj_remove_style_all(w.batFill);
+  lv_obj_set_pos(w.batFill, 0, 0);
+  lv_obj_set_size(w.batFill, 60, 60);
+  lv_obj_set_style_bg_color(w.batFill, lv_color_hex(0x66BB6A), 0);
+  lv_obj_set_style_bg_opa(w.batFill, LV_OPA_COVER, 0);
   lv_obj_t *batIcon = lv_label_create(batNode);
   lv_label_set_text(batIcon, LV_SYMBOL_BATTERY_FULL);
   lv_obj_center(batIcon);
   lv_obj_set_style_text_color(batIcon, lv_color_hex(0xFFFFFF), 0);
+  w.batBolt = lv_label_create(batNode);
+  lv_label_set_text(w.batBolt, LV_SYMBOL_CHARGE);
+  lv_obj_center(w.batBolt);
+  lv_obj_set_style_text_color(w.batBolt, lv_color_hex(0xFFFF00), 0);
+  lv_obj_add_flag(w.batBolt, LV_OBJ_FLAG_HIDDEN);
   label(w.page4, 355, 325, 0, F_SMALL, C_TEXT, "Akku");
 
   // Wallbox (right)
@@ -825,7 +838,18 @@ void update(const WarpData &d) {
       lv_chart_refresh(w.powerChart);
     }
   }
-  // Energy flow line visibility with hysteresis (25W on, 10W off)
+  // Battery SoC fill and charge bolt
+  if (w.batFill != nullptr) {
+    int fillH = (int)(60.0f * d.soc / 100.0f);
+    if (fillH < 0) fillH = 0;
+    if (fillH > 60) fillH = 60;
+    lv_obj_set_size(w.batFill, 60, fillH);
+    lv_obj_set_pos(w.batFill, 0, 60 - fillH);
+  }
+  if (w.batBolt != nullptr) {
+    if (d.batteryPower < -10.0f) lv_obj_clear_flag(w.batBolt, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(w.batBolt, LV_OBJ_FLAG_HIDDEN);
+  }
   static bool flow1Active = false, flow2Active = false, flow3Active = false, flow4Active = false;
   if (w.flowLine1 != nullptr) {
     if (flow1Active) { if (std::fabs(d.pvPower) < 10.0f) flow1Active = false; }
