@@ -467,16 +467,37 @@ void create(lv_obj_t *parent) {
   lv_line_set_points(w.flowLine2, gridToHouse, 2);
   lv_obj_set_style_line_width(w.flowLine2, 2, 0);
   lv_obj_set_style_line_color(w.flowLine2, lv_color_hex(0xFFA726), 0);
+  w.flowDot2 = lv_obj_create(w.page4);
+  lv_obj_remove_style_all(w.flowDot2);
+  lv_obj_set_size(w.flowDot2, 6, 6);
+  lv_obj_set_style_radius(w.flowDot2, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_color(w.flowDot2, lv_color_hex(0xFFA726), 0);
+  lv_obj_set_style_bg_opa(w.flowDot2, LV_OPA_COVER, 0);
+  lv_obj_add_flag(w.flowDot2, LV_OBJ_FLAG_HIDDEN);
 
   w.flowLine3 = lv_line_create(w.page4);
   lv_line_set_points(w.flowLine3, batToHouse, 2);
   lv_obj_set_style_line_width(w.flowLine3, 2, 0);
   lv_obj_set_style_line_color(w.flowLine3, lv_color_hex(0x66BB6A), 0);
+  w.flowDot3 = lv_obj_create(w.page4);
+  lv_obj_remove_style_all(w.flowDot3);
+  lv_obj_set_size(w.flowDot3, 6, 6);
+  lv_obj_set_style_radius(w.flowDot3, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_color(w.flowDot3, lv_color_hex(0x66BB6A), 0);
+  lv_obj_set_style_bg_opa(w.flowDot3, LV_OPA_COVER, 0);
+  lv_obj_add_flag(w.flowDot3, LV_OBJ_FLAG_HIDDEN);
 
   w.flowLine4 = lv_line_create(w.page4);
   lv_line_set_points(w.flowLine4, houseToWb, 2);
   lv_obj_set_style_line_width(w.flowLine4, 2, 0);
   lv_obj_set_style_line_color(w.flowLine4, lv_color_hex(0x9C27B0), 0);
+  w.flowDot4 = lv_obj_create(w.page4);
+  lv_obj_remove_style_all(w.flowDot4);
+  lv_obj_set_size(w.flowDot4, 6, 6);
+  lv_obj_set_style_radius(w.flowDot4, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_color(w.flowDot4, lv_color_hex(0x9C27B0), 0);
+  lv_obj_set_style_bg_opa(w.flowDot4, LV_OPA_COVER, 0);
+  lv_obj_add_flag(w.flowDot4, LV_OBJ_FLAG_HIDDEN);
 
   // Background cycle button
   w.bgBtn = lv_btn_create(w.page3);
@@ -898,6 +919,36 @@ void update(const WarpData &d) {
       lv_obj_set_pos(w.flowDot1, x, y);
     } else {
       lv_obj_add_flag(w.flowDot1, LV_OBJ_FLAG_HIDDEN);
+    }
+  }
+  if (w.flowDot2 != nullptr) {
+    if (flow2Active) {
+      lv_obj_clear_flag(w.flowDot2, LV_OBJ_FLAG_HIDDEN);
+      int x = (int)(70 + (365-70) * t);
+      int y = (int)(270 + (170-270) * t);
+      lv_obj_set_pos(w.flowDot2, x, y);
+    } else {
+      lv_obj_add_flag(w.flowDot2, LV_OBJ_FLAG_HIDDEN);
+    }
+  }
+  if (w.flowDot3 != nullptr) {
+    if (flow3Active) {
+      lv_obj_clear_flag(w.flowDot3, LV_OBJ_FLAG_HIDDEN);
+      int x = 395;
+      int y = (int)(290 + (200-290) * t);
+      lv_obj_set_pos(w.flowDot3, x, y);
+    } else {
+      lv_obj_add_flag(w.flowDot3, LV_OBJ_FLAG_HIDDEN);
+    }
+  }
+  if (w.flowDot4 != nullptr) {
+    if (flow4Active) {
+      lv_obj_clear_flag(w.flowDot4, LV_OBJ_FLAG_HIDDEN);
+      int x = (int)(425 + (690-425) * t);
+      int y = 170;
+      lv_obj_set_pos(w.flowDot4, x, y);
+    } else {
+      lv_obj_add_flag(w.flowDot4, LV_OBJ_FLAG_HIDDEN);
     }
   }
 }
