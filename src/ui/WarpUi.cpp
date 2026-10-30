@@ -41,6 +41,10 @@ struct Widgets {
   lv_obj_t *caption1 = nullptr;
   lv_obj_t *pageBtn4 = nullptr;
   lv_obj_t *page4 = nullptr;
+  lv_obj_t *flowLine1 = nullptr;
+  lv_obj_t *flowLine2 = nullptr;
+  lv_obj_t *flowLine3 = nullptr;
+  lv_obj_t *flowLine4 = nullptr;
   lv_obj_t *caption2 = nullptr;
   lv_obj_t *caption3 = nullptr;
   lv_obj_t *page1 = nullptr;
@@ -427,28 +431,28 @@ void create(lv_obj_t *parent) {
 
   // Energy flow lines (simple)
   static lv_point_precise_t pvToHouse[] = {{70, 70}, {365, 170}};
-  lv_obj_t *line1 = lv_line_create(w.page4);
-  lv_line_set_points(line1, pvToHouse, 2);
-  lv_obj_set_style_line_width(line1, 2, 0);
-  lv_obj_set_style_line_color(line1, lv_color_hex(0x4A90D9), 0);
-
   static lv_point_precise_t gridToHouse[] = {{70, 270}, {365, 170}};
-  lv_obj_t *line2 = lv_line_create(w.page4);
-  lv_line_set_points(line2, gridToHouse, 2);
-  lv_obj_set_style_line_width(line2, 2, 0);
-  lv_obj_set_style_line_color(line2, lv_color_hex(0xFFA726), 0);
-
   static lv_point_precise_t batToHouse[] = {{395, 290}, {395, 200}};
-  lv_obj_t *line3 = lv_line_create(w.page4);
-  lv_line_set_points(line3, batToHouse, 2);
-  lv_obj_set_style_line_width(line3, 2, 0);
-  lv_obj_set_style_line_color(line3, lv_color_hex(0x66BB6A), 0);
-
   static lv_point_precise_t houseToWb[] = {{425, 170}, {690, 170}};
-  lv_obj_t *line4 = lv_line_create(w.page4);
-  lv_line_set_points(line4, houseToWb, 2);
-  lv_obj_set_style_line_width(line4, 2, 0);
-  lv_obj_set_style_line_color(line4, lv_color_hex(0x9C27B0), 0);
+  w.flowLine1 = lv_line_create(w.page4);
+  lv_line_set_points(w.flowLine1, pvToHouse, 2);
+  lv_obj_set_style_line_width(w.flowLine1, 2, 0);
+  lv_obj_set_style_line_color(w.flowLine1, lv_color_hex(0x4A90D9), 0);
+
+  w.flowLine2 = lv_line_create(w.page4);
+  lv_line_set_points(w.flowLine2, gridToHouse, 2);
+  lv_obj_set_style_line_width(w.flowLine2, 2, 0);
+  lv_obj_set_style_line_color(w.flowLine2, lv_color_hex(0xFFA726), 0);
+
+  w.flowLine3 = lv_line_create(w.page4);
+  lv_line_set_points(w.flowLine3, batToHouse, 2);
+  lv_obj_set_style_line_width(w.flowLine3, 2, 0);
+  lv_obj_set_style_line_color(w.flowLine3, lv_color_hex(0x66BB6A), 0);
+
+  w.flowLine4 = lv_line_create(w.page4);
+  lv_line_set_points(w.flowLine4, houseToWb, 2);
+  lv_obj_set_style_line_width(w.flowLine4, 2, 0);
+  lv_obj_set_style_line_color(w.flowLine4, lv_color_hex(0x9C27B0), 0);
 
   // Background cycle button
   w.bgBtn = lv_btn_create(w.page3);
@@ -820,6 +824,23 @@ void update(const WarpData &d) {
       if (w.seriesBat != nullptr) lv_chart_set_next_value(w.powerChart, w.seriesBat, (lv_coord_t)d.batteryPower);
       lv_chart_refresh(w.powerChart);
     }
+  }
+  // Energy flow line visibility based on 10W threshold
+  if (w.flowLine1 != nullptr) {
+    if (std::fabs(d.pvPower) > 10.0f) lv_obj_clear_flag(w.flowLine1, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(w.flowLine1, LV_OBJ_FLAG_HIDDEN);
+  }
+  if (w.flowLine2 != nullptr) {
+    if (std::fabs(d.gridPower) > 10.0f) lv_obj_clear_flag(w.flowLine2, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(w.flowLine2, LV_OBJ_FLAG_HIDDEN);
+  }
+  if (w.flowLine3 != nullptr) {
+    if (std::fabs(d.batteryPower) > 10.0f) lv_obj_clear_flag(w.flowLine3, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(w.flowLine3, LV_OBJ_FLAG_HIDDEN);
+  }
+  if (w.flowLine4 != nullptr) {
+    if (std::fabs(d.housePower) > 10.0f) lv_obj_clear_flag(w.flowLine4, LV_OBJ_FLAG_HIDDEN);
+    else lv_obj_add_flag(w.flowLine4, LV_OBJ_FLAG_HIDDEN);
   }
 }
 
