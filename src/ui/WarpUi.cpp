@@ -384,7 +384,7 @@ void create(lv_obj_t *parent) {
   lv_label_set_text(pvIcon, LV_SYMBOL_CHARGE);
   lv_obj_center(pvIcon);
   lv_obj_set_style_text_color(pvIcon, lv_color_hex(0xFFFFFF), 0);
-  label(w.page4, 50, 105, 0, F_SMALL, C_TEXT, "PV");
+  label(w.page4, 350, 105, 0, F_SMALL, C_TEXT, "PV");
 
   // Grid (bottom left)
   w.gridNode = lv_obj_create(w.page4);
@@ -398,7 +398,7 @@ void create(lv_obj_t *parent) {
   lv_label_set_text(gridIcon, LV_SYMBOL_POWER);
   lv_obj_center(gridIcon);
   lv_obj_set_style_text_color(gridIcon, lv_color_hex(0xFFFFFF), 0);
-  label(w.page4, 45, 305, 0, F_SMALL, C_TEXT, "Netz");
+  label(w.page4, 45, 205, 0, F_SMALL, C_TEXT, "Netz");
 
   // House (center)
   lv_obj_t *houseNode = lv_obj_create(w.page4);
