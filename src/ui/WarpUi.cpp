@@ -97,6 +97,8 @@ struct Widgets {
   lv_obj_t *energyImport = nullptr;
   lv_obj_t *energyExport = nullptr;
   lv_obj_t *energyBattery = nullptr;
+  bool flow1Active = false, flow2Active = false, flow3Active = false, flow4Active = false;
+  int animPhase = 0;
 };
 
 Widgets w;
@@ -591,6 +593,42 @@ void create(lv_obj_t *parent) {
     lv_obj_add_flag(w.page3, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(w.page4, LV_OBJ_FLAG_HIDDEN);
   }, LV_EVENT_CLICKED, nullptr);
+  lv_timer_create([](lv_timer_t *t) {
+    w.animPhase = (w.animPhase + 8) % 40;
+    float tt = w.animPhase / 40.0f;
+    if (w.flowDot1 != nullptr) {
+      if (w.flow1Active) {
+        lv_obj_clear_flag(w.flowDot1, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_pos(w.flowDot1, (int)(70 + (365-70) * tt) - 3, (int)(70 + (170-70) * tt) - 3);
+      } else {
+        lv_obj_add_flag(w.flowDot1, LV_OBJ_FLAG_HIDDEN);
+      }
+    }
+    if (w.flowDot2 != nullptr) {
+      if (w.flow2Active) {
+        lv_obj_clear_flag(w.flowDot2, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_pos(w.flowDot2, (int)(70 + (365-70) * tt) - 3, (int)(270 + (170-270) * tt) - 3);
+      } else {
+        lv_obj_add_flag(w.flowDot2, LV_OBJ_FLAG_HIDDEN);
+      }
+    }
+    if (w.flowDot3 != nullptr) {
+      if (w.flow3Active) {
+        lv_obj_clear_flag(w.flowDot3, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_pos(w.flowDot3, 395 - 3, (int)(290 + (200-290) * tt) - 3);
+      } else {
+        lv_obj_add_flag(w.flowDot3, LV_OBJ_FLAG_HIDDEN);
+      }
+    }
+    if (w.flowDot4 != nullptr) {
+      if (w.flow4Active) {
+        lv_obj_clear_flag(w.flowDot4, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_pos(w.flowDot4, (int)(425 + (690-425) * tt) - 3, 170 - 3);
+      } else {
+        lv_obj_add_flag(w.flowDot4, LV_OBJ_FLAG_HIDDEN);
+      }
+    }
+  }, 50, nullptr);
 }
 
 void setStatus(const char *text, bool ok) {
@@ -882,74 +920,30 @@ void update(const WarpData &d) {
     if (d.batteryPower < -10.0f) lv_obj_clear_flag(w.batBolt, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(w.batBolt, LV_OBJ_FLAG_HIDDEN);
   }
-  static bool flow1Active = false, flow2Active = false, flow3Active = false, flow4Active = false;
+  // Energy flow line visibility with hysteresis (25W on, 10W off)
   if (w.flowLine1 != nullptr) {
-    if (flow1Active) { if (std::fabs(d.pvPower) < 10.0f) flow1Active = false; }
-    else { if (std::fabs(d.pvPower) > 25.0f) flow1Active = true; }
-    if (flow1Active) lv_obj_clear_flag(w.flowLine1, LV_OBJ_FLAG_HIDDEN);
+    if (w.flow1Active) { if (std::fabs(d.pvPower) < 10.0f) w.flow1Active = false; }
+    else { if (std::fabs(d.pvPower) > 25.0f) w.flow1Active = true; }
+    if (w.flow1Active) lv_obj_clear_flag(w.flowLine1, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(w.flowLine1, LV_OBJ_FLAG_HIDDEN);
   }
   if (w.flowLine2 != nullptr) {
-    if (flow2Active) { if (std::fabs(d.gridPower) < 10.0f) flow2Active = false; }
-    else { if (std::fabs(d.gridPower) > 25.0f) flow2Active = true; }
-    if (flow2Active) lv_obj_clear_flag(w.flowLine2, LV_OBJ_FLAG_HIDDEN);
+    if (w.flow2Active) { if (std::fabs(d.gridPower) < 10.0f) w.flow2Active = false; }
+    else { if (std::fabs(d.gridPower) > 25.0f) w.flow2Active = true; }
+    if (w.flow2Active) lv_obj_clear_flag(w.flowLine2, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(w.flowLine2, LV_OBJ_FLAG_HIDDEN);
   }
   if (w.flowLine3 != nullptr) {
-    if (flow3Active) { if (std::fabs(d.batteryPower) < 10.0f) flow3Active = false; }
-    else { if (std::fabs(d.batteryPower) > 25.0f) flow3Active = true; }
-    if (flow3Active) lv_obj_clear_flag(w.flowLine3, LV_OBJ_FLAG_HIDDEN);
+    if (w.flow3Active) { if (std::fabs(d.batteryPower) < 10.0f) w.flow3Active = false; }
+    else { if (std::fabs(d.batteryPower) > 25.0f) w.flow3Active = true; }
+    if (w.flow3Active) lv_obj_clear_flag(w.flowLine3, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(w.flowLine3, LV_OBJ_FLAG_HIDDEN);
   }
   if (w.flowLine4 != nullptr) {
-    if (flow4Active) { if (std::fabs(d.housePower) < 10.0f) flow4Active = false; }
-    else { if (std::fabs(d.housePower) > 25.0f) flow4Active = true; }
-    if (flow4Active) lv_obj_clear_flag(w.flowLine4, LV_OBJ_FLAG_HIDDEN);
+    if (w.flow4Active) { if (std::fabs(d.housePower) < 10.0f) w.flow4Active = false; }
+    else { if (std::fabs(d.housePower) > 25.0f) w.flow4Active = true; }
+    if (w.flow4Active) lv_obj_clear_flag(w.flowLine4, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(w.flowLine4, LV_OBJ_FLAG_HIDDEN);
-  }
-  // Animated flow dots
-  static int animPhase = 0;
-  animPhase = (animPhase + 8) % 40;
-  float t = animPhase / 40.0f;
-  if (w.flowDot1 != nullptr) {
-    if (flow1Active) {
-      lv_obj_clear_flag(w.flowDot1, LV_OBJ_FLAG_HIDDEN);
-      int x = (int)(70 + (365-70) * t) - 3;
-      int y = (int)(70 + (170-70) * t) - 3;
-      lv_obj_set_pos(w.flowDot1, x, y);
-    } else {
-      lv_obj_add_flag(w.flowDot1, LV_OBJ_FLAG_HIDDEN);
-    }
-  }
-  if (w.flowDot2 != nullptr) {
-    if (flow2Active) {
-      lv_obj_clear_flag(w.flowDot2, LV_OBJ_FLAG_HIDDEN);
-      int x = (int)(70 + (365-70) * t) - 3;
-      int y = (int)(270 + (170-270) * t) - 3;
-      lv_obj_set_pos(w.flowDot2, x, y);
-    } else {
-      lv_obj_add_flag(w.flowDot2, LV_OBJ_FLAG_HIDDEN);
-    }
-  }
-  if (w.flowDot3 != nullptr) {
-    if (flow3Active) {
-      lv_obj_clear_flag(w.flowDot3, LV_OBJ_FLAG_HIDDEN);
-      int x = 395 - 3;
-      int y = (int)(290 + (200-290) * t) - 3;
-      lv_obj_set_pos(w.flowDot3, x, y);
-    } else {
-      lv_obj_add_flag(w.flowDot3, LV_OBJ_FLAG_HIDDEN);
-    }
-  }
-  if (w.flowDot4 != nullptr) {
-    if (flow4Active) {
-      lv_obj_clear_flag(w.flowDot4, LV_OBJ_FLAG_HIDDEN);
-      int x = (int)(425 + (690-425) * t) - 3;
-      int y = 170 - 3;
-      lv_obj_set_pos(w.flowDot4, x, y);
-    } else {
-      lv_obj_add_flag(w.flowDot4, LV_OBJ_FLAG_HIDDEN);
-    }
   }
 }
 
