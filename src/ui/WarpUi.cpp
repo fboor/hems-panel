@@ -99,6 +99,7 @@ struct Widgets {
   lv_obj_t *energyBattery = nullptr;
   bool flow1Active = false, flow2Active = false, flow3Active = false, flow4Active = false;
   bool batCharging = false;
+  bool gridExporting = false;
   int animPhase = 0;
 };
 
@@ -608,7 +609,16 @@ void create(lv_obj_t *parent) {
     if (w.flowDot2 != nullptr) {
       if (w.flow2Active) {
         lv_obj_clear_flag(w.flowDot2, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_pos(w.flowDot2, (int)(70 + (365-70) * tt) - 3, (int)(270 + (170-270) * tt) - 3);
+        int x, y;
+        if (w.gridExporting) {
+          // house -> grid (up-left to down-left reversed): from (365,170) to (70,270)
+          x = (int)(365 + (70-365) * tt) - 3;
+          y = (int)(170 + (270-170) * tt) - 3;
+        } else {
+          x = (int)(70 + (365-70) * tt) - 3;
+          y = (int)(270 + (170-270) * tt) - 3;
+        }
+        lv_obj_set_pos(w.flowDot2, x, y);
       } else {
         lv_obj_add_flag(w.flowDot2, LV_OBJ_FLAG_HIDDEN);
       }
@@ -939,6 +949,7 @@ void update(const WarpData &d) {
     else { if (std::fabs(d.gridPower) > 25.0f) w.flow2Active = true; }
     if (w.flow2Active) lv_obj_clear_flag(w.flowLine2, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(w.flowLine2, LV_OBJ_FLAG_HIDDEN);
+    w.gridExporting = (d.gridPower < 0.0f);
   }
   if (w.flowLine3 != nullptr) {
     if (w.flow3Active) { if (std::fabs(d.batteryPower) < 10.0f) w.flow3Active = false; }
