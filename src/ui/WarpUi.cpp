@@ -598,10 +598,11 @@ void create(lv_obj_t *parent) {
   lv_timer_create([](lv_timer_t *t) {
     w.animPhase = (w.animPhase + 8) % 400;
     float tt = w.animPhase / 400.0f;
+    float s = 0.12f + 0.76f * tt;  // stop at circle edges
     if (w.flowDot1 != nullptr) {
       if (w.flow1Active) {
         lv_obj_clear_flag(w.flowDot1, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_pos(w.flowDot1, (int)(70 + (365-70) * tt) - 3, (int)(70 + (170-70) * tt) - 3);
+        lv_obj_set_pos(w.flowDot1, (int)(70 + (365-70) * s) - 3, (int)(70 + (170-70) * s) - 3);
       } else {
         lv_obj_add_flag(w.flowDot1, LV_OBJ_FLAG_HIDDEN);
       }
@@ -612,11 +613,11 @@ void create(lv_obj_t *parent) {
         int x, y;
         if (w.gridExporting) {
           // house -> grid (up-left to down-left reversed): from (365,170) to (70,270)
-          x = (int)(365 + (70-365) * tt) - 3;
-          y = (int)(170 + (270-170) * tt) - 3;
+          x = (int)(365 + (70-365) * s) - 3;
+          y = (int)(170 + (270-170) * s) - 3;
         } else {
-          x = (int)(70 + (365-70) * tt) - 3;
-          y = (int)(270 + (170-270) * tt) - 3;
+          x = (int)(70 + (365-70) * s) - 3;
+          y = (int)(270 + (170-270) * s) - 3;
         }
         lv_obj_set_pos(w.flowDot2, x, y);
       } else {
@@ -628,9 +629,9 @@ void create(lv_obj_t *parent) {
         lv_obj_clear_flag(w.flowDot3, LV_OBJ_FLAG_HIDDEN);
         int y;
         if (w.batCharging) {
-          y = (int)(200 + (290-200) * tt) - 3;  // house -> battery (down)
+          y = (int)(200 + (290-200) * s) - 3;  // house -> battery (down)
         } else {
-          y = (int)(290 + (200-290) * tt) - 3;  // battery -> house (up)
+          y = (int)(290 + (200-290) * s) - 3;  // battery -> house (up)
         }
         lv_obj_set_pos(w.flowDot3, 395 - 3, y);
       } else {
@@ -640,7 +641,7 @@ void create(lv_obj_t *parent) {
     if (w.flowDot4 != nullptr) {
       if (w.flow4Active) {
         lv_obj_clear_flag(w.flowDot4, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_pos(w.flowDot4, (int)(425 + (690-425) * tt) - 3, 170 - 3);
+        lv_obj_set_pos(w.flowDot4, (int)(425 + (690-425) * s) - 3, 170 - 3);
       } else {
         lv_obj_add_flag(w.flowDot4, LV_OBJ_FLAG_HIDDEN);
       }
