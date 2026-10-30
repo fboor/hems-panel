@@ -38,6 +38,9 @@ struct Widgets {
   lv_obj_t *pageBtn1 = nullptr;
   lv_obj_t *pageBtn2 = nullptr;
   lv_obj_t *pageBtn3 = nullptr;
+  lv_obj_t *caption1 = nullptr;
+  lv_obj_t *caption2 = nullptr;
+  lv_obj_t *caption3 = nullptr;
   lv_obj_t *page1 = nullptr;
   lv_obj_t *page2 = nullptr;
   lv_obj_t *page3 = nullptr;
@@ -174,6 +177,12 @@ void create(lv_obj_t *parent) {
 
   // Header ---------------------------------------------------------------
   label(parent, 16, 8, 0, F_TITLE, C_TEXT, "WARP Energy Manager");
+  // Page captions
+  w.caption1 = label(parent, 16, 40, 0, F_SMALL, C_MUTED, "Energie");
+  w.caption2 = label(parent, 16, 40, 0, F_SMALL, C_MUTED, "Verlauf");
+  w.caption3 = label(parent, 16, 40, 0, F_SMALL, C_MUTED, "Service");
+  lv_obj_add_flag(w.caption2, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(w.caption3, LV_OBJ_FLAG_HIDDEN);
 
   w.statusDot = lv_obj_create(parent);
   lv_obj_remove_style_all(w.statusDot);
@@ -338,11 +347,11 @@ void create(lv_obj_t *parent) {
 
   // Background cycle button
   w.bgBtn = lv_btn_create(w.page3);
-  lv_obj_set_pos(w.bgBtn, 16, 16);
+  lv_obj_set_pos(w.bgBtn, 16, 18);
   lv_obj_set_size(w.bgBtn, 200, 40);
   lv_obj_t *bgLbl = lv_label_create(w.page3);
   lv_label_set_text(bgLbl, "Hintergrund");
-  lv_obj_set_pos(bgLbl, 16, -6);
+  lv_obj_set_pos(bgLbl, 16, -4);
   lv_obj_set_style_text_color(bgLbl, lv_color_hex(0xFFFFFF), 0);
   lv_obj_t *bgBtnLbl = lv_label_create(w.bgBtn);
   lv_label_set_text(bgBtnLbl, "Schwarz");
@@ -378,6 +387,9 @@ void create(lv_obj_t *parent) {
     lv_obj_clear_flag(w.page1, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(w.page2, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(w.page3, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(w.caption1, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(w.caption2, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(w.caption3, LV_OBJ_FLAG_HIDDEN);
   }, LV_EVENT_CLICKED, nullptr);
 
   w.pageBtn2 = lv_btn_create(parent);
@@ -390,6 +402,9 @@ void create(lv_obj_t *parent) {
     lv_obj_add_flag(w.page1, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(w.page2, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(w.page3, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(w.caption1, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(w.caption2, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(w.caption3, LV_OBJ_FLAG_HIDDEN);
   }, LV_EVENT_CLICKED, nullptr);
 
   w.pageBtn3 = lv_btn_create(parent);
@@ -402,6 +417,9 @@ void create(lv_obj_t *parent) {
     lv_obj_add_flag(w.page1, LV_OBJ_FLAG_HIDDEN);
     lv_obj_add_flag(w.page2, LV_OBJ_FLAG_HIDDEN);
     lv_obj_clear_flag(w.page3, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(w.caption1, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(w.caption2, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(w.caption3, LV_OBJ_FLAG_HIDDEN);
   }, LV_EVENT_CLICKED, nullptr);
 }
 
