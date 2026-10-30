@@ -98,6 +98,7 @@ struct Widgets {
   lv_obj_t *energyExport = nullptr;
   lv_obj_t *energyBattery = nullptr;
   bool flow1Active = false, flow2Active = false, flow3Active = false, flow4Active = false;
+  bool batCharging = false;
   int animPhase = 0;
 };
 
@@ -615,7 +616,13 @@ void create(lv_obj_t *parent) {
     if (w.flowDot3 != nullptr) {
       if (w.flow3Active) {
         lv_obj_clear_flag(w.flowDot3, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_pos(w.flowDot3, 395 - 3, (int)(290 + (200-290) * tt) - 3);
+        int y;
+        if (w.batCharging) {
+          y = (int)(200 + (290-200) * tt) - 3;  // house -> battery (down)
+        } else {
+          y = (int)(290 + (200-290) * tt) - 3;  // battery -> house (up)
+        }
+        lv_obj_set_pos(w.flowDot3, 395 - 3, y);
       } else {
         lv_obj_add_flag(w.flowDot3, LV_OBJ_FLAG_HIDDEN);
       }
@@ -938,6 +945,7 @@ void update(const WarpData &d) {
     else { if (std::fabs(d.batteryPower) > 25.0f) w.flow3Active = true; }
     if (w.flow3Active) lv_obj_clear_flag(w.flowLine3, LV_OBJ_FLAG_HIDDEN);
     else lv_obj_add_flag(w.flowLine3, LV_OBJ_FLAG_HIDDEN);
+    w.batCharging = (d.batteryPower < 0.0f);
   }
   if (w.flowLine4 != nullptr) {
     if (w.flow4Active) { if (std::fabs(d.housePower) < 10.0f) w.flow4Active = false; }
