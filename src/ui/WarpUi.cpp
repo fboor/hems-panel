@@ -375,7 +375,7 @@ void create(lv_obj_t *parent) {
   // PV (top left)
   w.pvNode = lv_obj_create(w.page4);
   lv_obj_remove_style_all(w.pvNode);
-  lv_obj_set_pos(w.pvNode, 40, 40);
+  lv_obj_set_pos(w.pvNode, 335, 40);
   lv_obj_set_size(w.pvNode, 60, 60);
   lv_obj_set_style_radius(w.pvNode, LV_RADIUS_CIRCLE, 0);
   lv_obj_set_style_bg_color(w.pvNode, lv_color_hex(0x4A90D9), 0);
@@ -389,7 +389,7 @@ void create(lv_obj_t *parent) {
   // Grid (bottom left)
   w.gridNode = lv_obj_create(w.page4);
   lv_obj_remove_style_all(w.gridNode);
-  lv_obj_set_pos(w.gridNode, 40, 240);
+  lv_obj_set_pos(w.gridNode, 40, 140);
   lv_obj_set_size(w.gridNode, 60, 60);
   lv_obj_set_style_radius(w.gridNode, LV_RADIUS_CIRCLE, 0);
   lv_obj_set_style_bg_color(w.gridNode, lv_color_hex(0xFFA726), 0);
