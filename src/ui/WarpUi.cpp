@@ -1,6 +1,10 @@
 // SPDX-License-Identifier: MIT
+#include <functional>
 #include "WarpUi.h"
 
+LV_IMG_DECLARE(chart_bg);
+
+#include <lvgl.h>
 #include <cmath>
 #include <cstdio>
 #include <cstring>
@@ -31,6 +35,22 @@ struct Widgets {
   lv_obj_t *islandBadge = nullptr;
   lv_obj_t *islandText = nullptr;
   lv_obj_t *updatedText = nullptr;
+  lv_obj_t *pageBtn1 = nullptr;
+  lv_obj_t *pageBtn2 = nullptr;
+  lv_obj_t *pageBtn3 = nullptr;
+  lv_obj_t *page1 = nullptr;
+  lv_obj_t *page2 = nullptr;
+  lv_obj_t *page3 = nullptr;
+  lv_obj_t *bgBtn = nullptr;
+  lv_obj_t *powerChart = nullptr;
+  lv_chart_series_t *powerSeries = nullptr;
+  lv_chart_series_t *seriesGrid = nullptr;
+  lv_chart_series_t *seriesPv = nullptr;
+  lv_chart_series_t *seriesHouse = nullptr;
+  lv_chart_series_t *seriesBat = nullptr;
+  lv_obj_t *scaleMax = nullptr;
+  lv_obj_t *scaleMid = nullptr;
+  lv_obj_t *scaleMin = nullptr;
 
   lv_obj_t *gridTotal = nullptr;
   lv_obj_t *gridDir = nullptr;
@@ -127,9 +147,9 @@ void fmtSignedPower(char *out, size_t n, double watts) {
 
 void fmtEnergy(char *out, size_t n, double wh) {
   if (std::fabs(wh) >= 1000.0) {
-    snprintf(out, n, "%.1f kWh", wh / 1000.0);
+    snprintf(out, n, "%.2f MWh", wh / 1000.0);
   } else {
-    snprintf(out, n, "%.0f Wh", wh);
+    snprintf(out, n, "%.1f kWh", wh);
   }
 }
 
@@ -154,8 +174,6 @@ void create(lv_obj_t *parent) {
 
   // Header ---------------------------------------------------------------
   label(parent, 16, 8, 0, F_TITLE, C_TEXT, "WARP Energy Manager");
-  label(parent, 16, 34, 0, F_SMALL, C_MUTED,
-        "Energy Manager V2  ·  Live-Werte");
 
   w.statusDot = lv_obj_create(parent);
   lv_obj_remove_style_all(w.statusDot);
@@ -176,8 +194,14 @@ void create(lv_obj_t *parent) {
   w.islandText = label(w.islandBadge, 0, 6, 92, F_SMALL, C_MUTED, "Netz",
                        LV_TEXT_ALIGN_CENTER);
 
+  lv_obj_t *page1 = lv_obj_create(parent);
+  lv_obj_remove_style_all(page1);
+  lv_obj_set_pos(page1, 0, 0);
+  lv_obj_set_size(page1, 790, 480);
+  w.page1 = page1;
+
   // Grid ---------------------------------------------------------------
-  lv_obj_t *grid = card(parent, 12, 68, 250, 176);
+  lv_obj_t *grid = card(page1, 12, 68, 250, 176);
   title(grid, "NETZ");
   w.gridTotal = label(grid, 16, 30, 0, F_BIG, C_TEXT, "--");
   w.gridDir = label(grid, 16, 76, 0, F_SMALL, C_MUTED, "Bezug");
@@ -191,7 +215,7 @@ void create(lv_obj_t *parent) {
   }
 
   // Household ----------------------------------------------------------
-  lv_obj_t *house = card(parent, 274, 68, 250, 176);
+  lv_obj_t *house = card(page1, 274, 68, 250, 176);
   title(house, "HAUS");
   w.houseTotal = label(house, 16, 30, 0, F_BIG, C_TEXT, "--");
   label(house, 16, 76, 0, F_SMALL, C_MUTED, "Verbrauch");
@@ -203,7 +227,7 @@ void create(lv_obj_t *parent) {
   }
 
   // Battery ------------------------------------------------------------
-  lv_obj_t *bat = card(parent, 536, 68, 250, 176);
+  lv_obj_t *bat = card(page1, 536, 68, 250, 176);
   title(bat, "BATTERIE");
   w.batSoc = label(bat, 16, 28, 120, F_BIG, C_TEXT, "-- %");
   w.batDir = label(bat, 130, 42, 104, F_SMALL, C_MUTED, "--",
@@ -227,7 +251,7 @@ void create(lv_obj_t *parent) {
   row(bat, 16, 152, 218, "Strom", &w.batCurrent);
 
   // PV -----------------------------------------------------------------
-  lv_obj_t *pv = card(parent, 12, 256, 250, 176);
+  lv_obj_t *pv = card(page1, 12, 256, 250, 176);
   title(pv, "PV");
   w.pvTotal = label(pv, 16, 30, 0, F_BIG, C_GREEN, "--");
   label(pv, 16, 76, 0, F_SMALL, C_MUTED, "Erzeugung");
@@ -235,29 +259,146 @@ void create(lv_obj_t *parent) {
   row(pv, 16, 134, 218, "String B", &w.pvB);
 
   // Wallbox -----------------------------------------------------------
-  lv_obj_t *wallbox = card(parent, 274, 256, 250, 176);
-  title(wallbox, "Wallbox");
+  lv_obj_t *wallbox = card(page1, 274, 256, 250, 176);
+  title(wallbox, "WALLBOX");
   w.wallboxValue = label(wallbox, 16, 30, 0, F_BIG, C_GREEN, "--");
   w.wallboxNote = label(wallbox, 16, 76, 0, F_SMALL, C_MUTED, "--");
   w.wallboxMode = label(wallbox, 16, 96, 0, F_SMALL, C_MUTED, "--");
   w.wallboxPhase = label(wallbox, 16, 116, 0, F_SMALL, C_MUTED, "--");
 
   // Energy totals ------------------------------------------------------
-  lv_obj_t *energy = card(parent, 536, 256, 250, 176);
+  lv_obj_t *energy = card(page1, 536, 256, 250, 176);
   title(energy, "ENERGIE");
   row(energy, 16, 30, 218, "PV", &w.energyPv, F_SMALL);
-  row(energy, 16, 52, 218, "Haus", &w.energyHouse, F_SMALL);
+  row(energy, 16, 52, 218, "Verbrauch", &w.energyHouse, F_SMALL);
   row(energy, 16, 74, 218, "Netzbezug", &w.energyImport, F_SMALL);
   row(energy, 16, 96, 218, "Einspeisung", &w.energyExport, F_SMALL);
-  row(energy, 16, 118, 218, "Akku L/E", &w.energyBattery, F_SMALL);
+  row(energy, 16, 118, 218, "Akku", &w.energyBattery, F_SMALL);
   label(energy, 16, 144, 218, F_SMALL, C_MUTED, "seit Inbetriebnahme",
         LV_TEXT_ALIGN_RIGHT);
 
   // Footer -------------------------------------------------------------
-  w.updatedText = label(parent, 16, 446, 0, F_SMALL, C_MUTED,
-                        "Letzte Aktualisierung: --");
-  label(parent, 600, 446, 184, F_SMALL, C_MUTED, "Abfrage alle 10 s",
-        LV_TEXT_ALIGN_RIGHT);
+  // Second page (power graph) -----------------------------------------
+  w.page2 = lv_obj_create(parent);
+  lv_obj_remove_style_all(w.page2);
+  lv_obj_set_pos(w.page2, 0, 68);
+  lv_obj_set_size(w.page2, 790, 372);
+  lv_obj_add_flag(w.page2, LV_OBJ_FLAG_HIDDEN);
+
+  w.powerChart = lv_chart_create(w.page2);
+  lv_obj_set_pos(w.powerChart, 12, 0);
+  lv_obj_set_size(w.powerChart, 766, 320);
+  lv_chart_set_type(w.powerChart, LV_CHART_TYPE_LINE);
+  lv_chart_set_point_count(w.powerChart, 48);
+  lv_chart_set_range(w.powerChart, LV_CHART_AXIS_PRIMARY_Y, -5000, 5000);
+  lv_obj_set_style_bg_color(w.powerChart, lv_color_hex(C_CARD), 0);
+  lv_obj_set_style_width(w.powerChart, 6, LV_PART_INDICATOR);
+  lv_obj_set_style_height(w.powerChart, 6, LV_PART_INDICATOR);
+  lv_obj_set_style_bg_image_src(w.powerChart, &chart_bg, 0);
+  lv_obj_set_style_bg_image_opa(w.powerChart, LV_OPA_60, 0);
+  lv_obj_set_style_border_width(w.powerChart, 1, 0);
+  lv_obj_set_style_border_color(w.powerChart, lv_color_hex(C_LINE), 0);
+  lv_obj_set_style_line_color(w.powerChart, lv_color_hex(C_MUTED), 0);
+  lv_obj_set_style_pad_all(w.powerChart, 0, 0);
+  w.scaleMax = label(w.page2, 20, 5, 60, F_SMALL, C_MUTED, "--", LV_TEXT_ALIGN_LEFT);
+  w.scaleMid = label(w.page2, 20, 162, 60, F_SMALL, C_MUTED, "--", LV_TEXT_ALIGN_LEFT);
+  w.scaleMin = label(w.page2, 20, 302, 60, F_SMALL, C_MUTED, "--", LV_TEXT_ALIGN_LEFT);
+  w.seriesPv = lv_chart_add_series(w.powerChart, lv_color_hex(0x4A90D9), LV_CHART_AXIS_PRIMARY_Y);
+  w.seriesHouse = lv_chart_add_series(w.powerChart, lv_color_hex(0xFF5D5D), LV_CHART_AXIS_PRIMARY_Y);
+  w.seriesBat = lv_chart_add_series(w.powerChart, lv_color_hex(0x66BB6A), LV_CHART_AXIS_PRIMARY_Y);
+
+  // Time labels at bottom (reversed: new values on right)
+  const char *times[5] = {"24h", "18h", "12h", "6h", "0h"};
+  int xpos[5] = {8, 185, 375, 565, 755};
+  for (int i = 0; i < 5; ++i) {
+    label(w.page2, xpos[i], 322, 40, F_SMALL, C_MUTED, times[i], LV_TEXT_ALIGN_CENTER);
+  }
+
+  // Legend (centered)
+  const char *names[4] = {"Netz", "PV", "Verbrauch", "Akku"};
+  lv_color_t colors[4] = {lv_color_hex(0xFFA726), lv_color_hex(0x4A90D9), lv_color_hex(0xFF5D5D), lv_color_hex(0x66BB6A)};
+  for (int i = 0; i < 4; ++i) {
+    lv_obj_t *dot = lv_obj_create(w.page2);
+    lv_obj_remove_style_all(dot);
+    int xoff = (i < 2) ? 20 : 0;
+    lv_obj_set_pos(dot, 180 + i * 120 + xoff, 345);
+    lv_obj_set_size(dot, 10, 10);
+    lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(dot, colors[i], 0);
+    lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
+    label(w.page2, 194 + i * 120 + xoff, 341, 0, F_SMALL, C_MUTED, names[i]);
+  }
+
+  // Third page (settings) ---------------------------------------------
+  w.page3 = lv_obj_create(parent);
+  lv_obj_remove_style_all(w.page3);
+  lv_obj_set_pos(w.page3, 0, 68);
+  lv_obj_set_size(w.page3, 790, 372);
+  lv_obj_add_flag(w.page3, LV_OBJ_FLAG_HIDDEN);
+
+  // Background cycle button
+  w.bgBtn = lv_btn_create(w.page3);
+  lv_obj_set_pos(w.bgBtn, 16, 16);
+  lv_obj_set_size(w.bgBtn, 200, 40);
+  lv_obj_t *bgLbl = lv_label_create(w.bgBtn);
+  lv_label_set_text(bgLbl, "Hintergrund: Schwarz");
+  lv_obj_center(bgLbl);
+  lv_obj_add_event_cb(w.bgBtn, [](lv_event_t *e) {
+    static int mode = 0;
+    mode = (mode + 1) % 3;
+    lv_color_t colors[3] = {lv_color_hex(0x000000), lv_color_hex(0x808080), lv_color_hex(0xE6E6E6)};
+    const char *names[3] = {"Schwarz", "Grau", "Weiss"};
+    lv_obj_set_style_bg_color(lv_scr_act(), colors[mode], 0);
+    lv_label_set_text(lv_obj_get_child(w.bgBtn, 0), names[mode]);
+    // Update text colors: white on dark, black on white
+    lv_color_t textColor = (mode == 2) ? lv_color_hex(0x000000) : lv_color_hex(0xFFFFFF);
+    // Recursive label color update
+    std::function<void(lv_obj_t*)> updateLabels = [&](lv_obj_t *obj) {
+      if (lv_obj_check_type(obj, &lv_label_class)) {
+        lv_obj_set_style_text_color(obj, textColor, 0);
+      }
+      uint32_t cnt = lv_obj_get_child_cnt(obj);
+      for (uint32_t i = 0; i < cnt; i++) {
+        updateLabels(lv_obj_get_child(obj, i));
+      }
+    };
+    updateLabels(lv_scr_act());
+  }, LV_EVENT_CLICKED, nullptr);
+  w.pageBtn1 = lv_btn_create(parent);
+  lv_obj_set_pos(w.pageBtn1, 500, 440);
+  lv_obj_set_size(w.pageBtn1, 50, 30);
+  lv_obj_t *lbl1 = lv_label_create(w.pageBtn1);
+  lv_label_set_text(lbl1, "1");
+  lv_obj_center(lbl1);
+  lv_obj_add_event_cb(w.pageBtn1, [](lv_event_t *e) {
+    lv_obj_clear_flag(w.page1, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(w.page2, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(w.page3, LV_OBJ_FLAG_HIDDEN);
+  }, LV_EVENT_CLICKED, nullptr);
+
+  w.pageBtn2 = lv_btn_create(parent);
+  lv_obj_set_pos(w.pageBtn2, 560, 440);
+  lv_obj_set_size(w.pageBtn2, 50, 30);
+  lv_obj_t *lbl2 = lv_label_create(w.pageBtn2);
+  lv_label_set_text(lbl2, "2");
+  lv_obj_center(lbl2);
+  lv_obj_add_event_cb(w.pageBtn2, [](lv_event_t *e) {
+    lv_obj_add_flag(w.page1, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(w.page2, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(w.page3, LV_OBJ_FLAG_HIDDEN);
+  }, LV_EVENT_CLICKED, nullptr);
+
+  w.pageBtn3 = lv_btn_create(parent);
+  lv_obj_set_pos(w.pageBtn3, 620, 440);
+  lv_obj_set_size(w.pageBtn3, 50, 30);
+  lv_obj_t *lbl3 = lv_label_create(w.pageBtn3);
+  lv_label_set_text(lbl3, "3");
+  lv_obj_center(lbl3);
+  lv_obj_add_event_cb(w.pageBtn3, [](lv_event_t *e) {
+    lv_obj_add_flag(w.page1, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_add_flag(w.page2, LV_OBJ_FLAG_HIDDEN);
+    lv_obj_clear_flag(w.page3, LV_OBJ_FLAG_HIDDEN);
+  }, LV_EVENT_CLICKED, nullptr);
 }
 
 void setStatus(const char *text, bool ok) {
@@ -484,14 +625,58 @@ void update(const WarpData &d) {
     }
   }
 
-  // Footer -------------------------------------------------------------
-  if (w.updatedText != nullptr) {
-    uint32_t ageS = 0;
-    if (d.lastUpdateMs > 0) {
-      ageS = (lv_tick_get() - d.lastUpdateMs) / 1000u;
+  // Power chart --------------------------------------------------------
+  if (w.powerChart != nullptr) {
+    static float histGrid[48] = {0};
+    static float histPv[48] = {0};
+    static float histHouse[48] = {0};
+    static float histBat[48] = {0};
+    static int histCount = 0;
+    static int histIdx = 0;
+
+    // Store current values in history
+    histGrid[histIdx] = d.gridPower;
+    histPv[histIdx] = d.pvPower;
+    histHouse[histIdx] = d.housePower;
+    histBat[histIdx] = d.batteryPower;
+    histIdx = (histIdx + 1) % 48;
+    if (histCount < 48) histCount++;
+
+    // Compute min/max from all stored values
+    float mn = histGrid[0], mx = histGrid[0];
+    for (int i = 0; i < histCount; i++) {
+      float vals[4] = {histGrid[i], histPv[i], histHouse[i], histBat[i]};
+      for (int j = 0; j < 4; j++) {
+        if (vals[j] < mn) mn = vals[j];
+        if (vals[j] > mx) mx = vals[j];
+      }
     }
-    snprintf(buf, sizeof(buf), "Letzte Aktualisierung: vor %u s", ageS);
-    setText(w.updatedText, buf);
+    float absMax = fmax(std::fabs(mn), std::fabs(mx));
+    int steps = (int)(absMax / 1000.0f) + 1;
+    if (steps < 1) steps = 1;
+    if (steps > 100) steps = 100;
+    float range = steps * 1000.0f;
+    lv_chart_set_range(w.powerChart, LV_CHART_AXIS_PRIMARY_Y,
+                       (lv_coord_t)(-range), (lv_coord_t)(range));
+    char sbuf[16];
+    snprintf(sbuf, sizeof(sbuf), "%.0f W", range);
+    setText(w.scaleMax, sbuf);
+    snprintf(sbuf, sizeof(sbuf), "0 W");
+    setText(w.scaleMid, sbuf);
+    snprintf(sbuf, sizeof(sbuf), "%.0f W", -range);
+    setText(w.scaleMin, sbuf);
+
+    // Add data point periodically
+    static int pollCount = 0;
+    pollCount++;
+    if (pollCount >= 3) {
+      pollCount = 0;
+      if (w.seriesGrid != nullptr) lv_chart_set_next_value(w.powerChart, w.seriesGrid, (lv_coord_t)d.gridPower);
+      if (w.seriesPv != nullptr) lv_chart_set_next_value(w.powerChart, w.seriesPv, (lv_coord_t)d.pvPower);
+      if (w.seriesHouse != nullptr) lv_chart_set_next_value(w.powerChart, w.seriesHouse, (lv_coord_t)d.housePower);
+      if (w.seriesBat != nullptr) lv_chart_set_next_value(w.powerChart, w.seriesBat, (lv_coord_t)d.batteryPower);
+      lv_chart_refresh(w.powerChart);
+    }
   }
 }
 
