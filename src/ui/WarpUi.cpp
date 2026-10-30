@@ -909,8 +909,8 @@ void update(const WarpData &d) {
   }
   // Animated flow dots
   static int animPhase = 0;
-  animPhase = (animPhase + 1) % 4;
-  float t = animPhase / 4.0f;
+  animPhase = (animPhase + 4) % 40;
+  float t = animPhase / 40.0f;
   if (w.flowDot1 != nullptr) {
     if (flow1Active) {
       lv_obj_clear_flag(w.flowDot1, LV_OBJ_FLAG_HIDDEN);
