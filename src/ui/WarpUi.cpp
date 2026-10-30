@@ -363,6 +363,10 @@ void create(lv_obj_t *parent) {
   lv_obj_set_style_radius(pvNode, LV_RADIUS_CIRCLE, 0);
   lv_obj_set_style_bg_color(pvNode, lv_color_hex(0x4A90D9), 0);
   lv_obj_set_style_bg_opa(pvNode, LV_OPA_COVER, 0);
+  lv_obj_t *pvIcon = lv_label_create(pvNode);
+  lv_label_set_text(pvIcon, LV_SYMBOL_CHARGE);
+  lv_obj_center(pvIcon);
+  lv_obj_set_style_text_color(pvIcon, lv_color_hex(0xFFFFFF), 0);
   label(w.page4, 50, 105, 0, F_SMALL, C_TEXT, "PV");
 
   // Grid (bottom left)
@@ -373,6 +377,10 @@ void create(lv_obj_t *parent) {
   lv_obj_set_style_radius(gridNode, LV_RADIUS_CIRCLE, 0);
   lv_obj_set_style_bg_color(gridNode, lv_color_hex(0xFFA726), 0);
   lv_obj_set_style_bg_opa(gridNode, LV_OPA_COVER, 0);
+  lv_obj_t *gridIcon = lv_label_create(gridNode);
+  lv_label_set_text(gridIcon, LV_SYMBOL_POWER);
+  lv_obj_center(gridIcon);
+  lv_obj_set_style_text_color(gridIcon, lv_color_hex(0xFFFFFF), 0);
   label(w.page4, 45, 305, 0, F_SMALL, C_TEXT, "Netz");
 
   // House (center)
@@ -383,6 +391,10 @@ void create(lv_obj_t *parent) {
   lv_obj_set_style_radius(houseNode, LV_RADIUS_CIRCLE, 0);
   lv_obj_set_style_bg_color(houseNode, lv_color_hex(0xFF5D5D), 0);
   lv_obj_set_style_bg_opa(houseNode, LV_OPA_COVER, 0);
+  lv_obj_t *houseIcon = lv_label_create(houseNode);
+  lv_label_set_text(houseIcon, LV_SYMBOL_HOME);
+  lv_obj_center(houseIcon);
+  lv_obj_set_style_text_color(houseIcon, lv_color_hex(0xFFFFFF), 0);
   label(w.page4, 360, 205, 0, F_SMALL, C_TEXT, "Haus");
 
   // Battery (bottom center)
@@ -393,6 +405,10 @@ void create(lv_obj_t *parent) {
   lv_obj_set_style_radius(batNode, LV_RADIUS_CIRCLE, 0);
   lv_obj_set_style_bg_color(batNode, lv_color_hex(0x66BB6A), 0);
   lv_obj_set_style_bg_opa(batNode, LV_OPA_COVER, 0);
+  lv_obj_t *batIcon = lv_label_create(batNode);
+  lv_label_set_text(batIcon, LV_SYMBOL_BATTERY_FULL);
+  lv_obj_center(batIcon);
+  lv_obj_set_style_text_color(batIcon, lv_color_hex(0xFFFFFF), 0);
   label(w.page4, 355, 325, 0, F_SMALL, C_TEXT, "Akku");
 
   // Wallbox (right)
@@ -403,6 +419,10 @@ void create(lv_obj_t *parent) {
   lv_obj_set_style_radius(wbNode, LV_RADIUS_CIRCLE, 0);
   lv_obj_set_style_bg_color(wbNode, lv_color_hex(0x9C27B0), 0);
   lv_obj_set_style_bg_opa(wbNode, LV_OPA_COVER, 0);
+  lv_obj_t *wbIcon = lv_label_create(wbNode);
+  lv_label_set_text(wbIcon, LV_SYMBOL_CHARGE);
+  lv_obj_center(wbIcon);
+  lv_obj_set_style_text_color(wbIcon, lv_color_hex(0xFFFFFF), 0);
   label(w.page4, 675, 205, 0, F_SMALL, C_TEXT, "Wallbox");
 
   // Background cycle button
