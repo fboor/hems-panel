@@ -594,8 +594,8 @@ void create(lv_obj_t *parent) {
     lv_obj_clear_flag(w.page4, LV_OBJ_FLAG_HIDDEN);
   }, LV_EVENT_CLICKED, nullptr);
   lv_timer_create([](lv_timer_t *t) {
-    w.animPhase = (w.animPhase + 8) % 40;
-    float tt = w.animPhase / 40.0f;
+    w.animPhase = (w.animPhase + 8) % 400;
+    float tt = w.animPhase / 400.0f;
     if (w.flowDot1 != nullptr) {
       if (w.flow1Active) {
         lv_obj_clear_flag(w.flowDot1, LV_OBJ_FLAG_HIDDEN);
