@@ -340,9 +340,12 @@ void create(lv_obj_t *parent) {
   w.bgBtn = lv_btn_create(w.page3);
   lv_obj_set_pos(w.bgBtn, 16, 16);
   lv_obj_set_size(w.bgBtn, 200, 40);
-  lv_obj_t *bgLbl = lv_label_create(w.bgBtn);
-  lv_label_set_text(bgLbl, "Hintergrund: Schwarz");
-  lv_obj_center(bgLbl);
+  lv_obj_t *bgLbl = lv_label_create(w.page3);
+  lv_label_set_text(bgLbl, "Hintergrund");
+  lv_obj_set_pos(bgLbl, 16, 60);
+  lv_obj_t *bgBtnLbl = lv_label_create(w.bgBtn);
+  lv_label_set_text(bgBtnLbl, "Schwarz");
+  lv_obj_center(bgBtnLbl);
   lv_obj_add_event_cb(w.bgBtn, [](lv_event_t *e) {
     static int mode = 0;
     mode = (mode + 1) % 3;
