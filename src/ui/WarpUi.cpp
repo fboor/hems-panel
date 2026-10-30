@@ -342,7 +342,7 @@ void create(lv_obj_t *parent) {
   lv_obj_set_size(w.bgBtn, 200, 40);
   lv_obj_t *bgLbl = lv_label_create(w.page3);
   lv_label_set_text(bgLbl, "Hintergrund");
-  lv_obj_set_pos(bgLbl, 16, -4);
+  lv_obj_set_pos(bgLbl, 16, -6);
   lv_obj_set_style_text_color(bgLbl, lv_color_hex(0xFFFFFF), 0);
   lv_obj_t *bgBtnLbl = lv_label_create(w.bgBtn);
   lv_label_set_text(bgBtnLbl, "Schwarz");
