@@ -909,13 +909,13 @@ void update(const WarpData &d) {
   }
   // Animated flow dots
   static int animPhase = 0;
-  animPhase = (animPhase + 1) % 20;
-  float t = animPhase / 20.0f;
+  animPhase = (animPhase + 1) % 4;
+  float t = animPhase / 4.0f;
   if (w.flowDot1 != nullptr) {
     if (flow1Active) {
       lv_obj_clear_flag(w.flowDot1, LV_OBJ_FLAG_HIDDEN);
-      int x = (int)(70 + (365-70) * t);
-      int y = (int)(70 + (170-70) * t);
+      int x = (int)(70 + (365-70) * t) - 3;
+      int y = (int)(70 + (170-70) * t) - 3;
       lv_obj_set_pos(w.flowDot1, x, y);
     } else {
       lv_obj_add_flag(w.flowDot1, LV_OBJ_FLAG_HIDDEN);
@@ -924,8 +924,8 @@ void update(const WarpData &d) {
   if (w.flowDot2 != nullptr) {
     if (flow2Active) {
       lv_obj_clear_flag(w.flowDot2, LV_OBJ_FLAG_HIDDEN);
-      int x = (int)(70 + (365-70) * t);
-      int y = (int)(270 + (170-270) * t);
+      int x = (int)(70 + (365-70) * t) - 3;
+      int y = (int)(270 + (170-270) * t) - 3;
       lv_obj_set_pos(w.flowDot2, x, y);
     } else {
       lv_obj_add_flag(w.flowDot2, LV_OBJ_FLAG_HIDDEN);
@@ -934,8 +934,8 @@ void update(const WarpData &d) {
   if (w.flowDot3 != nullptr) {
     if (flow3Active) {
       lv_obj_clear_flag(w.flowDot3, LV_OBJ_FLAG_HIDDEN);
-      int x = 395;
-      int y = (int)(290 + (200-290) * t);
+      int x = 395 - 3;
+      int y = (int)(290 + (200-290) * t) - 3;
       lv_obj_set_pos(w.flowDot3, x, y);
     } else {
       lv_obj_add_flag(w.flowDot3, LV_OBJ_FLAG_HIDDEN);
@@ -944,8 +944,8 @@ void update(const WarpData &d) {
   if (w.flowDot4 != nullptr) {
     if (flow4Active) {
       lv_obj_clear_flag(w.flowDot4, LV_OBJ_FLAG_HIDDEN);
-      int x = (int)(425 + (690-425) * t);
-      int y = 170;
+      int x = (int)(425 + (690-425) * t) - 3;
+      int y = 170 - 3;
       lv_obj_set_pos(w.flowDot4, x, y);
     } else {
       lv_obj_add_flag(w.flowDot4, LV_OBJ_FLAG_HIDDEN);
