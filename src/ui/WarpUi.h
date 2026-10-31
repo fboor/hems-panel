@@ -18,4 +18,8 @@ void update(const WarpData &data);
 // Header status: dot colour and text ("Verbunden", "Keine Daten", ...).
 void setStatus(const char *text, bool ok);
 
+// Switch the visible page (1..4). Used by the emulator to render a specific
+// page for screenshots; the on-screen navigation calls the same helper.
+void setPage(int page);
+
 }  // namespace warpui

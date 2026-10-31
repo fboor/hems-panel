@@ -23,6 +23,22 @@ constexpr uint32_t C_RED = 0xFF5D5D;
 constexpr uint32_t C_BLUE = 0x4AA3FF;
 constexpr uint32_t C_AMBER = 0xFFB347;
 
+// Energy-flow identity colours. Warm solar, cool grid, green storage,
+// violet wallbox. Each has a dark tint for icon badges and card borders.
+constexpr uint32_t C_SOLAR = 0xFFC247;
+constexpr uint32_t C_BAT = 0x3AD07F;
+constexpr uint32_t C_EV = 0xB388FF;
+constexpr uint32_t C_SOLAR_DIM = 0x3A2E12;
+constexpr uint32_t C_GRID_DIM = 0x142A40;
+constexpr uint32_t C_BAT_DIM = 0x123225;
+constexpr uint32_t C_EV_DIM = 0x2A1E44;
+// Pale highlights for the moving particles, so they read as a separate
+// layer on top of the thick coloured link.
+constexpr uint32_t C_SOLAR_HI = 0xFFF0B8;
+constexpr uint32_t C_GRID_HI = 0xCFE8FF;
+constexpr uint32_t C_BAT_HI = 0xCFFFE4;
+constexpr uint32_t C_EV_HI = 0xE9DBFF;
+
 constexpr const lv_font_t *F_SMALL = &lv_font_montserrat_14;
 constexpr const lv_font_t *F_BODY = &lv_font_montserrat_16;
 constexpr const lv_font_t *F_TITLE = &lv_font_montserrat_20;
@@ -38,28 +54,45 @@ struct Widgets {
   lv_obj_t *pageBtn1 = nullptr;
   lv_obj_t *pageBtn2 = nullptr;
   lv_obj_t *pageBtn3 = nullptr;
-  lv_obj_t *caption1 = nullptr;
   lv_obj_t *pageBtn4 = nullptr;
-  lv_obj_t *page4 = nullptr;
-  lv_obj_t *flowLine1 = nullptr;
-  lv_obj_t *flowLine2 = nullptr;
-  lv_obj_t *flowLine3 = nullptr;
-  lv_obj_t *flowLine4 = nullptr;
-  lv_obj_t *pvNode = nullptr;
-  lv_obj_t *gridNode = nullptr;
-  lv_obj_t *batNode = nullptr;
-  lv_obj_t *batFill = nullptr;
-  lv_obj_t *batBolt = nullptr;
-  lv_obj_t *flowDot1 = nullptr;
-  lv_obj_t *flowDot2 = nullptr;
-  lv_obj_t *flowDot3 = nullptr;
-  lv_obj_t *flowDot4 = nullptr;
+  lv_obj_t *caption1 = nullptr;
   lv_obj_t *caption2 = nullptr;
   lv_obj_t *caption3 = nullptr;
+  lv_obj_t *caption4 = nullptr;
   lv_obj_t *page1 = nullptr;
   lv_obj_t *page2 = nullptr;
   lv_obj_t *page3 = nullptr;
+  lv_obj_t *page4 = nullptr;
   lv_obj_t *bgBtn = nullptr;
+
+  // Energy flow page ----------------------------------------------------
+  lv_obj_t *pvNode = nullptr;
+  lv_obj_t *pvValue = nullptr;
+  lv_obj_t *pvState = nullptr;
+  lv_obj_t *gridNode = nullptr;
+  lv_obj_t *gridValue = nullptr;
+  lv_obj_t *gridState = nullptr;
+  lv_obj_t *batNode = nullptr;
+  lv_obj_t *batValue = nullptr;
+  lv_obj_t *batState = nullptr;
+  lv_obj_t *wbNode = nullptr;
+  lv_obj_t *wbValue = nullptr;
+  lv_obj_t *wbState = nullptr;
+  lv_obj_t *hubNode = nullptr;
+  lv_obj_t *hubValue = nullptr;
+  lv_obj_t *hubState = nullptr;
+
+  // Four links: PV, grid, battery, wallbox. `flowTrack` is the dim base,
+  // `flowLine` the coloured active line, `flowDot` the moving particles.
+  lv_obj_t *flowTrack[4] = {};
+  lv_obj_t *flowLine[4] = {};
+  lv_obj_t *flowDot[4][2] = {};
+  lv_point_precise_t flowPts[4][2] = {};
+  float flowPower[4] = {};
+  bool flowActive[4] = {};
+  int flowPhase[4] = {};
+  bool gridExporting = false;
+  bool batCharging = false;
   lv_obj_t *powerChart = nullptr;
   lv_chart_series_t *powerSeries = nullptr;
   lv_chart_series_t *seriesGrid = nullptr;
@@ -100,10 +133,6 @@ struct Widgets {
   lv_obj_t *energyImport = nullptr;
   lv_obj_t *energyExport = nullptr;
   lv_obj_t *energyBattery = nullptr;
-  bool flow1Active = false, flow2Active = false, flow3Active = false, flow4Active = false;
-  bool batCharging = false;
-  bool gridExporting = false;
-  int animPhase = 0;
 };
 
 Widgets w;
@@ -187,6 +216,118 @@ void setColor(lv_obj_t *l, uint32_t color) {
   }
 }
 
+struct FlowNode {
+  lv_obj_t *card = nullptr;
+  lv_obj_t *value = nullptr;
+  lv_obj_t *state = nullptr;
+};
+
+// One source/sink card on the flow page: coloured icon badge, name, live
+// value and a short state line. Kept flat (no shadow/layer) so a redraw stays
+// cheap on the ESP32.
+FlowNode flowNode(lv_obj_t *parent, int x, int y, const char *name,
+                  const char *symbol, uint32_t accent, uint32_t accentDim) {
+  FlowNode n;
+  n.card = lv_obj_create(parent);
+  lv_obj_remove_style_all(n.card);
+  lv_obj_set_pos(n.card, x, y);
+  lv_obj_set_size(n.card, 176, 94);
+  lv_obj_set_style_bg_color(n.card, lv_color_hex(C_CARD), 0);
+  lv_obj_set_style_bg_opa(n.card, LV_OPA_COVER, 0);
+  lv_obj_set_style_radius(n.card, 16, 0);
+  lv_obj_set_style_border_width(n.card, 1, 0);
+  lv_obj_set_style_border_color(n.card, lv_color_hex(accentDim), 0);
+  lv_obj_clear_flag(n.card, LV_OBJ_FLAG_SCROLLABLE);
+
+  lv_obj_t *badge = lv_obj_create(n.card);
+  lv_obj_remove_style_all(badge);
+  lv_obj_set_pos(badge, 12, 14);
+  lv_obj_set_size(badge, 44, 44);
+  lv_obj_set_style_radius(badge, 14, 0);
+  lv_obj_set_style_bg_color(badge, lv_color_hex(accentDim), 0);
+  lv_obj_set_style_bg_opa(badge, LV_OPA_COVER, 0);
+  lv_obj_t *icon = label(badge, 0, 0, 44, F_TITLE, accent, symbol,
+                         LV_TEXT_ALIGN_CENTER);
+  lv_obj_center(icon);
+
+  label(n.card, 68, 12, 96, F_SMALL, C_MUTED, name);
+  n.value = label(n.card, 68, 30, 96, F_TITLE, accent, "--");
+  n.state = label(n.card, 12, 68, 152, F_SMALL, C_MUTED, "--");
+  return n;
+}
+
+// Static thick link. The dim track is always visible so the topology stays
+// readable; the coloured line is shown only while power actually flows.
+void flowLink(lv_obj_t *parent, int idx, int x1, int y1, int x2, int y2,
+              uint32_t color) {
+  w.flowPts[idx][0] = {static_cast<lv_value_precise_t>(x1),
+                       static_cast<lv_value_precise_t>(y1)};
+  w.flowPts[idx][1] = {static_cast<lv_value_precise_t>(x2),
+                       static_cast<lv_value_precise_t>(y2)};
+
+  w.flowTrack[idx] = lv_line_create(parent);
+  lv_line_set_points(w.flowTrack[idx], w.flowPts[idx], 2);
+  lv_obj_set_style_line_width(w.flowTrack[idx], 7, 0);
+  lv_obj_set_style_line_color(w.flowTrack[idx], lv_color_hex(C_LINE), 0);
+  lv_obj_set_style_line_rounded(w.flowTrack[idx], true, 0);
+
+  w.flowLine[idx] = lv_line_create(parent);
+  lv_line_set_points(w.flowLine[idx], w.flowPts[idx], 2);
+  lv_obj_set_style_line_width(w.flowLine[idx], 7, 0);
+  lv_obj_set_style_line_color(w.flowLine[idx], lv_color_hex(color), 0);
+  lv_obj_set_style_line_rounded(w.flowLine[idx], true, 0);
+  lv_obj_add_flag(w.flowLine[idx], LV_OBJ_FLAG_HIDDEN);
+}
+
+void flowDots(lv_obj_t *parent, int idx, uint32_t color) {
+  for (int d = 0; d < 2; ++d) {
+    lv_obj_t *dot = lv_obj_create(parent);
+    lv_obj_remove_style_all(dot);
+    lv_obj_set_size(dot, 12, 12);
+    lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(dot, lv_color_hex(color), 0);
+    lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
+    lv_obj_add_flag(dot, LV_OBJ_FLAG_HIDDEN);
+    w.flowDot[idx][d] = dot;
+  }
+}
+
+void showPage(int page) {
+  // Display order. The flow view was built as page4, but it is the first page
+  // users should see; the original energy/history/service pages follow it.
+  lv_obj_t *pages[4] = {w.page4, w.page1, w.page2, w.page3};
+  lv_obj_t *captions[4] = {w.caption4, w.caption1, w.caption2, w.caption3};
+  lv_obj_t *buttons[4] = {w.pageBtn1, w.pageBtn2, w.pageBtn3, w.pageBtn4};
+
+  for (int i = 0; i < 4; ++i) {
+    const bool active = (i == page - 1);
+    if (pages[i] != nullptr) {
+      if (active) {
+        lv_obj_clear_flag(pages[i], LV_OBJ_FLAG_HIDDEN);
+      } else {
+        lv_obj_add_flag(pages[i], LV_OBJ_FLAG_HIDDEN);
+      }
+    }
+    if (captions[i] != nullptr) {
+      if (active) {
+        lv_obj_clear_flag(captions[i], LV_OBJ_FLAG_HIDDEN);
+      } else {
+        lv_obj_add_flag(captions[i], LV_OBJ_FLAG_HIDDEN);
+      }
+    }
+    if (buttons[i] != nullptr) {
+      lv_obj_set_style_bg_color(buttons[i],
+                                lv_color_hex(active ? C_BLUE : C_CARD2), 0);
+      lv_obj_set_style_bg_opa(buttons[i], LV_OPA_COVER, 0);
+      lv_obj_t *lbl = lv_obj_get_child(buttons[i], 0);
+      if (lbl != nullptr) {
+        lv_obj_set_style_text_color(
+            lbl, lv_color_hex(active ? 0xFFFFFF : C_MUTED), 0);
+      }
+    }
+  }
+}
+
 }  // namespace
 
 void create(lv_obj_t *parent) {
@@ -200,8 +341,10 @@ void create(lv_obj_t *parent) {
   w.caption1 = label(parent, 16, 40, 0, F_BODY, C_MUTED, "Energie");
   w.caption2 = label(parent, 16, 40, 0, F_BODY, C_MUTED, "Verlauf");
   w.caption3 = label(parent, 16, 40, 0, F_BODY, C_MUTED, "Service");
+  w.caption4 = label(parent, 16, 40, 0, F_BODY, C_MUTED, "Energiefluss");
   lv_obj_add_flag(w.caption2, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(w.caption3, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(w.caption4, LV_OBJ_FLAG_HIDDEN);
 
   w.statusDot = lv_obj_create(parent);
   lv_obj_remove_style_all(w.statusDot);
@@ -371,140 +514,61 @@ void create(lv_obj_t *parent) {
   lv_obj_set_size(w.page4, 790, 372);
   lv_obj_add_flag(w.page4, LV_OBJ_FLAG_HIDDEN);
 
-  // Simple energy flow nodes
-  // PV (top left)
-  w.pvNode = lv_obj_create(w.page4);
-  lv_obj_remove_style_all(w.pvNode);
-  lv_obj_set_pos(w.pvNode, 335, 40);
-  lv_obj_set_size(w.pvNode, 60, 60);
-  lv_obj_set_style_radius(w.pvNode, LV_RADIUS_CIRCLE, 0);
-  lv_obj_set_style_bg_color(w.pvNode, lv_color_hex(0x4A90D9), 0);
-  lv_obj_set_style_bg_opa(w.pvNode, LV_OPA_COVER, 0);
-  lv_obj_t *pvIcon = lv_label_create(w.pvNode);
-  lv_label_set_text(pvIcon, LV_SYMBOL_CHARGE);
-  lv_obj_center(pvIcon);
-  lv_obj_set_style_text_color(pvIcon, lv_color_hex(0xFFFFFF), 0);
-  label(w.page4, 350, 105, 0, F_SMALL, C_TEXT, "PV");
+  // Energy flow: four links around a central house hub. Links are drawn
+  // first, particles next and cards last, so particles slide underneath the
+  // nodes instead of crossing their text.
+  flowLink(w.page4, 0, 200, 108, 332, 161, C_SOLAR);  // PV <-> house
+  flowLink(w.page4, 1, 200, 264, 332, 211, C_BLUE);   // grid <-> house
+  flowLink(w.page4, 2, 590, 108, 458, 161, C_BAT);    // battery <-> house
+  flowLink(w.page4, 3, 458, 211, 590, 264, C_EV);     // house -> wallbox
+  flowDots(w.page4, 0, C_SOLAR_HI);
+  flowDots(w.page4, 1, C_GRID_HI);
+  flowDots(w.page4, 2, C_BAT_HI);
+  flowDots(w.page4, 3, C_EV_HI);
 
-  // Grid (bottom left)
-  w.gridNode = lv_obj_create(w.page4);
-  lv_obj_remove_style_all(w.gridNode);
-  lv_obj_set_pos(w.gridNode, 40, 140);
-  lv_obj_set_size(w.gridNode, 60, 60);
-  lv_obj_set_style_radius(w.gridNode, LV_RADIUS_CIRCLE, 0);
-  lv_obj_set_style_bg_color(w.gridNode, lv_color_hex(0xFFA726), 0);
-  lv_obj_set_style_bg_opa(w.gridNode, LV_OPA_COVER, 0);
-  lv_obj_t *gridIcon = lv_label_create(w.gridNode);
-  lv_label_set_text(gridIcon, LV_SYMBOL_POWER);
-  lv_obj_center(gridIcon);
-  lv_obj_set_style_text_color(gridIcon, lv_color_hex(0xFFFFFF), 0);
-  label(w.page4, 45, 205, 0, F_SMALL, C_TEXT, "Netz");
+  FlowNode pvFlow = flowNode(w.page4, 24, 26, "PV", LV_SYMBOL_CHARGE,
+                             C_SOLAR, C_SOLAR_DIM);
+  w.pvNode = pvFlow.card;
+  w.pvValue = pvFlow.value;
+  w.pvState = pvFlow.state;
 
-  // House (center)
-  lv_obj_t *houseNode = lv_obj_create(w.page4);
-  lv_obj_remove_style_all(houseNode);
-  lv_obj_set_pos(houseNode, 365, 140);
-  lv_obj_set_size(houseNode, 60, 60);
-  lv_obj_set_style_radius(houseNode, LV_RADIUS_CIRCLE, 0);
-  lv_obj_set_style_bg_color(houseNode, lv_color_hex(0xFF5D5D), 0);
-  lv_obj_set_style_bg_opa(houseNode, LV_OPA_COVER, 0);
-  lv_obj_t *houseIcon = lv_label_create(houseNode);
-  lv_label_set_text(houseIcon, LV_SYMBOL_HOME);
-  lv_obj_center(houseIcon);
-  lv_obj_set_style_text_color(houseIcon, lv_color_hex(0xFFFFFF), 0);
-  label(w.page4, 360, 205, 0, F_SMALL, C_TEXT, "Haus");
+  FlowNode gridFlow = flowNode(w.page4, 24, 252, "NETZ", LV_SYMBOL_POWER,
+                               C_BLUE, C_GRID_DIM);
+  w.gridNode = gridFlow.card;
+  w.gridValue = gridFlow.value;
+  w.gridState = gridFlow.state;
 
-  // Battery (bottom center)
-  w.batNode = lv_obj_create(w.page4);
-  lv_obj_remove_style_all(w.batNode);
-  lv_obj_set_pos(w.batNode, 365, 260);
-  lv_obj_set_size(w.batNode, 60, 60);
-  lv_obj_set_style_radius(w.batNode, LV_RADIUS_CIRCLE, 0);
-  lv_obj_set_style_bg_color(w.batNode, lv_color_hex(0x66BB6A), 0);
-  lv_obj_set_style_bg_opa(w.batNode, LV_OPA_COVER, 0);
-  w.batFill = lv_obj_create(w.batNode);
-  lv_obj_remove_style_all(w.batFill);
-  lv_obj_set_pos(w.batFill, 0, 0);
-  lv_obj_set_size(w.batFill, 60, 60);
-  lv_obj_set_style_bg_color(w.batFill, lv_color_hex(0x66BB6A), 0);
-  lv_obj_set_style_bg_opa(w.batFill, LV_OPA_COVER, 0);
-  lv_obj_t *batIcon = lv_label_create(w.batNode);
-  lv_label_set_text(batIcon, LV_SYMBOL_BATTERY_FULL);
-  lv_obj_center(batIcon);
-  lv_obj_set_style_text_color(batIcon, lv_color_hex(0xFFFFFF), 0);
-  w.batBolt = lv_label_create(w.batNode);
-  lv_label_set_text(w.batBolt, LV_SYMBOL_CHARGE);
-  lv_obj_center(w.batBolt);
-  lv_obj_set_style_text_color(w.batBolt, lv_color_hex(0xFFFF00), 0);
-  lv_obj_add_flag(w.batBolt, LV_OBJ_FLAG_HIDDEN);
-  label(w.page4, 355, 325, 0, F_SMALL, C_TEXT, "Akku");
+  FlowNode batFlow = flowNode(w.page4, 590, 26, "AKKU",
+                              LV_SYMBOL_BATTERY_FULL, C_BAT, C_BAT_DIM);
+  w.batNode = batFlow.card;
+  w.batValue = batFlow.value;
+  w.batState = batFlow.state;
 
-  // Wallbox (right)
-  lv_obj_t *wbNode = lv_obj_create(w.page4);
-  lv_obj_remove_style_all(wbNode);
-  lv_obj_set_pos(wbNode, 690, 140);
-  lv_obj_set_size(wbNode, 60, 60);
-  lv_obj_set_style_radius(wbNode, LV_RADIUS_CIRCLE, 0);
-  lv_obj_set_style_bg_color(wbNode, lv_color_hex(0x9C27B0), 0);
-  lv_obj_set_style_bg_opa(wbNode, LV_OPA_COVER, 0);
-  lv_obj_t *wbIcon = lv_label_create(wbNode);
-  lv_label_set_text(wbIcon, LV_SYMBOL_CHARGE);
-  lv_obj_center(wbIcon);
-  lv_obj_set_style_text_color(wbIcon, lv_color_hex(0xFFFFFF), 0);
-  label(w.page4, 675, 205, 0, F_SMALL, C_TEXT, "Wallbox");
+  FlowNode wbFlow = flowNode(w.page4, 590, 252, "WALLBOX", LV_SYMBOL_CHARGE,
+                             C_EV, C_EV_DIM);
+  w.wbNode = wbFlow.card;
+  w.wbValue = wbFlow.value;
+  w.wbState = wbFlow.state;
 
-  // Energy flow lines (simple)
-  static lv_point_precise_t pvToHouse[] = {{365, 85}, {395, 155}};
-  static lv_point_precise_t gridToHouse[] = {{100, 170}, {365, 170}};
-  static lv_point_precise_t batToHouse[] = {{395, 260}, {395, 200}};
-  static lv_point_precise_t houseToWb[] = {{425, 170}, {660, 170}};
-  w.flowLine1 = lv_line_create(w.page4);
-  lv_line_set_points(w.flowLine1, pvToHouse, 2);
-  lv_obj_set_style_line_width(w.flowLine1, 2, 0);
-  lv_obj_set_style_line_color(w.flowLine1, lv_color_hex(0x4A90D9), 0);
-  w.flowDot1 = lv_obj_create(w.page4);
-  lv_obj_remove_style_all(w.flowDot1);
-  lv_obj_set_size(w.flowDot1, 6, 6);
-  lv_obj_set_style_radius(w.flowDot1, LV_RADIUS_CIRCLE, 0);
-  lv_obj_set_style_bg_color(w.flowDot1, lv_color_hex(0x4A90D9), 0);
-  lv_obj_set_style_bg_opa(w.flowDot1, LV_OPA_COVER, 0);
-  lv_obj_add_flag(w.flowDot1, LV_OBJ_FLAG_HIDDEN);
-
-  w.flowLine2 = lv_line_create(w.page4);
-  lv_line_set_points(w.flowLine2, gridToHouse, 2);
-  lv_obj_set_style_line_width(w.flowLine2, 2, 0);
-  lv_obj_set_style_line_color(w.flowLine2, lv_color_hex(0xFFA726), 0);
-  w.flowDot2 = lv_obj_create(w.page4);
-  lv_obj_remove_style_all(w.flowDot2);
-  lv_obj_set_size(w.flowDot2, 6, 6);
-  lv_obj_set_style_radius(w.flowDot2, LV_RADIUS_CIRCLE, 0);
-  lv_obj_set_style_bg_color(w.flowDot2, lv_color_hex(0xFFA726), 0);
-  lv_obj_set_style_bg_opa(w.flowDot2, LV_OPA_COVER, 0);
-  lv_obj_add_flag(w.flowDot2, LV_OBJ_FLAG_HIDDEN);
-
-  w.flowLine3 = lv_line_create(w.page4);
-  lv_line_set_points(w.flowLine3, batToHouse, 2);
-  lv_obj_set_style_line_width(w.flowLine3, 2, 0);
-  lv_obj_set_style_line_color(w.flowLine3, lv_color_hex(0x66BB6A), 0);
-  w.flowDot3 = lv_obj_create(w.page4);
-  lv_obj_remove_style_all(w.flowDot3);
-  lv_obj_set_size(w.flowDot3, 6, 6);
-  lv_obj_set_style_radius(w.flowDot3, LV_RADIUS_CIRCLE, 0);
-  lv_obj_set_style_bg_color(w.flowDot3, lv_color_hex(0x66BB6A), 0);
-  lv_obj_set_style_bg_opa(w.flowDot3, LV_OPA_COVER, 0);
-  lv_obj_add_flag(w.flowDot3, LV_OBJ_FLAG_HIDDEN);
-
-  w.flowLine4 = lv_line_create(w.page4);
-  lv_line_set_points(w.flowLine4, houseToWb, 2);
-  lv_obj_set_style_line_width(w.flowLine4, 2, 0);
-  lv_obj_set_style_line_color(w.flowLine4, lv_color_hex(0x9C27B0), 0);
-  w.flowDot4 = lv_obj_create(w.page4);
-  lv_obj_remove_style_all(w.flowDot4);
-  lv_obj_set_size(w.flowDot4, 6, 6);
-  lv_obj_set_style_radius(w.flowDot4, LV_RADIUS_CIRCLE, 0);
-  lv_obj_set_style_bg_color(w.flowDot4, lv_color_hex(0x9C27B0), 0);
-  lv_obj_set_style_bg_opa(w.flowDot4, LV_OPA_COVER, 0);
-  lv_obj_add_flag(w.flowDot4, LV_OBJ_FLAG_HIDDEN);
+  // House hub in the middle: the one place everything flows to or from.
+  w.hubNode = lv_obj_create(w.page4);
+  lv_obj_remove_style_all(w.hubNode);
+  lv_obj_set_pos(w.hubNode, 329, 120);
+  lv_obj_set_size(w.hubNode, 132, 132);
+  lv_obj_set_style_radius(w.hubNode, LV_RADIUS_CIRCLE, 0);
+  lv_obj_set_style_bg_color(w.hubNode, lv_color_hex(C_CARD2), 0);
+  lv_obj_set_style_bg_opa(w.hubNode, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_width(w.hubNode, 2, 0);
+  lv_obj_set_style_border_color(w.hubNode, lv_color_hex(C_LINE), 0);
+  lv_obj_clear_flag(w.hubNode, LV_OBJ_FLAG_SCROLLABLE);
+  label(w.hubNode, 0, 14, 132, F_TITLE, C_TEXT, LV_SYMBOL_HOME,
+        LV_TEXT_ALIGN_CENTER);
+  label(w.hubNode, 0, 44, 132, F_SMALL, C_MUTED, "HAUS",
+        LV_TEXT_ALIGN_CENTER);
+  w.hubValue = label(w.hubNode, 0, 62, 132, F_MED, C_TEXT, "--",
+                     LV_TEXT_ALIGN_CENTER);
+  w.hubState = label(w.hubNode, 0, 98, 132, F_SMALL, C_MUTED, "Verbrauch",
+                     LV_TEXT_ALIGN_CENTER);
 
   // Background cycle button
   w.bgBtn = lv_btn_create(w.page3);
@@ -538,118 +602,99 @@ void create(lv_obj_t *parent) {
     };
     updateLabels(lv_scr_act());
   }, LV_EVENT_CLICKED, nullptr);
-  w.pageBtn1 = lv_btn_create(parent);
-  lv_obj_set_pos(w.pageBtn1, 500, 440);
-  lv_obj_set_size(w.pageBtn1, 50, 30);
-  lv_obj_t *lbl1 = lv_label_create(w.pageBtn1);
-  lv_label_set_text(lbl1, "1");
-  lv_obj_center(lbl1);
-  lv_obj_add_event_cb(w.pageBtn1, [](lv_event_t *e) {
-    lv_obj_clear_flag(w.page1, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(w.page2, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(w.page3, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(w.page4, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_clear_flag(w.caption1, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(w.caption2, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(w.caption3, LV_OBJ_FLAG_HIDDEN);
-  }, LV_EVENT_CLICKED, nullptr);
+  auto makeNav = [](lv_obj_t *p, int x, int y, const char *text) {
+    lv_obj_t *b = lv_btn_create(p);
+    lv_obj_set_pos(b, x, y);
+    lv_obj_set_size(b, 50, 30);
+    lv_obj_set_style_radius(b, 9, 0);
+    lv_obj_set_style_bg_color(b, lv_color_hex(C_CARD2), 0);
+    lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(b, 1, 0);
+    lv_obj_set_style_border_color(b, lv_color_hex(C_LINE), 0);
+    lv_obj_set_style_shadow_width(b, 0, 0);
+    lv_obj_t *lbl = lv_label_create(b);
+    lv_label_set_text(lbl, text);
+    lv_obj_set_style_text_font(lbl, F_BODY, 0);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(C_MUTED), 0);
+    lv_obj_center(lbl);
+    return b;
+  };
 
-  w.pageBtn2 = lv_btn_create(parent);
-  lv_obj_set_pos(w.pageBtn2, 560, 440);
-  lv_obj_set_size(w.pageBtn2, 50, 30);
-  lv_obj_t *lbl2 = lv_label_create(w.pageBtn2);
-  lv_label_set_text(lbl2, "2");
-  lv_obj_center(lbl2);
-  lv_obj_add_event_cb(w.pageBtn2, [](lv_event_t *e) {
-    lv_obj_add_flag(w.page1, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_clear_flag(w.page2, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(w.page3, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(w.page4, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(w.caption1, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_clear_flag(w.caption2, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(w.caption3, LV_OBJ_FLAG_HIDDEN);
-  }, LV_EVENT_CLICKED, nullptr);
+  w.pageBtn1 = makeNav(parent, 500, 440, "1");
+  w.pageBtn2 = makeNav(parent, 560, 440, "2");
+  w.pageBtn3 = makeNav(parent, 620, 440, "3");
+  w.pageBtn4 = makeNav(parent, 680, 440, "4");
+  lv_obj_add_event_cb(w.pageBtn1, [](lv_event_t *) { showPage(1); },
+                      LV_EVENT_CLICKED, nullptr);
+  lv_obj_add_event_cb(w.pageBtn2, [](lv_event_t *) { showPage(2); },
+                      LV_EVENT_CLICKED, nullptr);
+  lv_obj_add_event_cb(w.pageBtn3, [](lv_event_t *) { showPage(3); },
+                      LV_EVENT_CLICKED, nullptr);
+  lv_obj_add_event_cb(w.pageBtn4, [](lv_event_t *) { showPage(4); },
+                      LV_EVENT_CLICKED, nullptr);
+  showPage(1);
 
-  w.pageBtn3 = lv_btn_create(parent);
-  lv_obj_set_pos(w.pageBtn3, 620, 440);
-  lv_obj_set_size(w.pageBtn3, 50, 30);
-  lv_obj_t *lbl3 = lv_label_create(w.pageBtn3);
-  lv_label_set_text(lbl3, "3");
-  lv_obj_center(lbl3);
-  lv_obj_add_event_cb(w.pageBtn3, [](lv_event_t *e) {
-    lv_obj_add_flag(w.page1, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(w.page2, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_clear_flag(w.page3, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(w.page4, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(w.caption1, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(w.caption2, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_clear_flag(w.caption3, LV_OBJ_FLAG_HIDDEN);
-  }, LV_EVENT_CLICKED, nullptr);
-
-  w.pageBtn4 = lv_btn_create(parent);
-  lv_obj_set_pos(w.pageBtn4, 680, 440);
-  lv_obj_set_size(w.pageBtn4, 50, 30);
-  lv_obj_t *lbl4 = lv_label_create(w.pageBtn4);
-  lv_label_set_text(lbl4, "4");
-  lv_obj_center(lbl4);
-  lv_obj_add_event_cb(w.pageBtn4, [](lv_event_t *e) {
-    lv_obj_add_flag(w.page1, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(w.page2, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_add_flag(w.page3, LV_OBJ_FLAG_HIDDEN);
-    lv_obj_clear_flag(w.page4, LV_OBJ_FLAG_HIDDEN);
-  }, LV_EVENT_CLICKED, nullptr);
-  lv_timer_create([](lv_timer_t *t) {
-    w.animPhase = (w.animPhase + 8) % 400;
-    float tt = w.animPhase / 400.0f;
-    float s = 0.12f + 0.76f * tt;  // stop at circle edges
-    if (w.flowDot1 != nullptr) {
-      if (w.flow1Active) {
-        lv_obj_clear_flag(w.flowDot1, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_pos(w.flowDot1, (int)(365 + (395-365) * s) - 3, (int)(85 + (155-85) * s) - 3);
-      } else {
-        lv_obj_add_flag(w.flowDot1, LV_OBJ_FLAG_HIDDEN);
-      }
+  // Particle animation. 12.5 fps on purpose: small 12 px objects, no opacity
+  // layers and no full-page invalidation. Speed scales with power, so a strong
+  // flow visibly moves faster without ever exceeding the CPU budget.
+  lv_timer_create([](lv_timer_t *) {
+    if (w.page4 == nullptr ||
+        lv_obj_has_flag(w.page4, LV_OBJ_FLAG_HIDDEN)) {
+      return;
     }
-    if (w.flowDot2 != nullptr) {
-      if (w.flow2Active) {
-        lv_obj_clear_flag(w.flowDot2, LV_OBJ_FLAG_HIDDEN);
-        int x, y;
-        if (w.gridExporting) {
-          // house -> grid (up-left to down-left reversed): from (365,170) to (70,270)
-          x = (int)(365 + (100-365) * s) - 3;
-          y = 170 - 3;
-        } else {
-          x = (int)(100 + (365-100) * s) - 3;
-          y = 170 - 3;
+
+    static const float fullScale[4] = {5000.0f, 5000.0f, 5000.0f, 11000.0f};
+    for (int i = 0; i < 4; ++i) {
+      if (!w.flowActive[i]) {
+        for (int d = 0; d < 2; ++d) {
+          if (w.flowDot[i][d] != nullptr) {
+            lv_obj_add_flag(w.flowDot[i][d], LV_OBJ_FLAG_HIDDEN);
+          }
         }
-        lv_obj_set_pos(w.flowDot2, x, y);
-      } else {
-        lv_obj_add_flag(w.flowDot2, LV_OBJ_FLAG_HIDDEN);
+        continue;
       }
-    }
-    if (w.flowDot3 != nullptr) {
-      if (w.flow3Active) {
-        lv_obj_clear_flag(w.flowDot3, LV_OBJ_FLAG_HIDDEN);
-        int y;
-        if (w.batCharging) {
-          y = (int)(200 + (260-200) * s) - 3;  // house -> battery (down)
-        } else {
-          y = (int)(260 + (200-260) * s) - 3;  // battery -> house (up)
+
+      float norm = std::fabs(w.flowPower[i]) / fullScale[i];
+      if (norm > 1.0f) {
+        norm = 1.0f;
+      }
+      const int step = 18 + static_cast<int>(42.0f * norm);
+      w.flowPhase[i] = (w.flowPhase[i] + step) % 1000;
+
+      const bool reverse =
+          (i == 1 && w.gridExporting) || (i == 2 && w.batCharging);
+      const int x1 = static_cast<int>(w.flowPts[i][0].x);
+      const int y1 = static_cast<int>(w.flowPts[i][0].y);
+      const int x2 = static_cast<int>(w.flowPts[i][1].x);
+      const int y2 = static_cast<int>(w.flowPts[i][1].y);
+
+      for (int d = 0; d < 2; ++d) {
+        lv_obj_t *dot = w.flowDot[i][d];
+        if (dot == nullptr) {
+          continue;
         }
-        lv_obj_set_pos(w.flowDot3, 395 - 3, y);
-      } else {
-        lv_obj_add_flag(w.flowDot3, LV_OBJ_FLAG_HIDDEN);
+        int phase = (w.flowPhase[i] + d * 500) % 1000;
+        float s = phase / 1000.0f;
+        if (reverse) {
+          s = 1.0f - s;
+        }
+        const int x = static_cast<int>(x1 + (x2 - x1) * s + 0.5f) - 6;
+        const int y = static_cast<int>(y1 + (y2 - y1) * s + 0.5f) - 6;
+        lv_obj_clear_flag(dot, LV_OBJ_FLAG_HIDDEN);
+        lv_obj_set_pos(dot, x, y);
       }
     }
-    if (w.flowDot4 != nullptr) {
-      if (w.flow4Active) {
-        lv_obj_clear_flag(w.flowDot4, LV_OBJ_FLAG_HIDDEN);
-        lv_obj_set_pos(w.flowDot4, (int)(455 + (660-455) * s) - 3, 170 - 3);
-      } else {
-        lv_obj_add_flag(w.flowDot4, LV_OBJ_FLAG_HIDDEN);
-      }
-    }
-  }, 50, nullptr);
+  }, 80, nullptr);
+}
+
+void setPage(int page) {
+  if (page < 1) {
+    page = 1;
+  }
+  if (page > 4) {
+    page = 4;
+  }
+  showPage(page);
 }
 
 void setStatus(const char *text, bool ok) {
@@ -929,56 +974,159 @@ void update(const WarpData &d) {
       lv_chart_refresh(w.powerChart);
     }
   }
-  // Show/hide nodes based on availability
-  if (w.pvNode != nullptr) {
-    if (d.hasPv) lv_obj_clear_flag(w.pvNode, LV_OBJ_FLAG_HIDDEN);
-    else lv_obj_add_flag(w.pvNode, LV_OBJ_FLAG_HIDDEN);
-  }
-  if (w.gridNode != nullptr) {
-    if (d.hasGrid) lv_obj_clear_flag(w.gridNode, LV_OBJ_FLAG_HIDDEN);
-    else lv_obj_add_flag(w.gridNode, LV_OBJ_FLAG_HIDDEN);
-  }
-  if (w.batNode != nullptr) {
-    if (d.hasBattery) lv_obj_clear_flag(w.batNode, LV_OBJ_FLAG_HIDDEN);
-    else lv_obj_add_flag(w.batNode, LV_OBJ_FLAG_HIDDEN);
-  }
-  if (w.batFill != nullptr) {
-    int fillH = (int)(60.0f * d.soc / 100.0f);
-    if (fillH < 0) fillH = 0;
-    if (fillH > 60) fillH = 60;
-    lv_obj_set_size(w.batFill, 60, fillH);
-    lv_obj_set_pos(w.batFill, 0, 60 - fillH);
-  }
-  if (w.batBolt != nullptr) {
-    if (d.batteryPower < -10.0f) lv_obj_clear_flag(w.batBolt, LV_OBJ_FLAG_HIDDEN);
-    else lv_obj_add_flag(w.batBolt, LV_OBJ_FLAG_HIDDEN);
-  }
-  // Energy flow line visibility with hysteresis (25W on, 10W off)
-  if (w.flowLine1 != nullptr) {
-    if (w.flow1Active) { if (std::fabs(d.pvPower) < 10.0f) w.flow1Active = false; }
-    else { if (std::fabs(d.pvPower) > 25.0f) w.flow1Active = true; }
-    if (w.flow1Active) lv_obj_clear_flag(w.flowLine1, LV_OBJ_FLAG_HIDDEN);
-    else lv_obj_add_flag(w.flowLine1, LV_OBJ_FLAG_HIDDEN);
-  }
-  if (w.flowLine2 != nullptr) {
-    if (w.flow2Active) { if (std::fabs(d.gridPower) < 10.0f) w.flow2Active = false; }
-    else { if (std::fabs(d.gridPower) > 25.0f) w.flow2Active = true; }
-    if (w.flow2Active) lv_obj_clear_flag(w.flowLine2, LV_OBJ_FLAG_HIDDEN);
-    else lv_obj_add_flag(w.flowLine2, LV_OBJ_FLAG_HIDDEN);
-    w.gridExporting = (d.gridPower < 0.0f);
-  }
-  if (w.flowLine3 != nullptr) {
-    if (w.flow3Active) { if (std::fabs(d.batteryPower) < 10.0f) w.flow3Active = false; }
-    else { if (std::fabs(d.batteryPower) > 25.0f) w.flow3Active = true; }
-    if (w.flow3Active) lv_obj_clear_flag(w.flowLine3, LV_OBJ_FLAG_HIDDEN);
-    else lv_obj_add_flag(w.flowLine3, LV_OBJ_FLAG_HIDDEN);
-    w.batCharging = (d.batteryPower < 0.0f);
-  }
-  if (w.flowLine4 != nullptr) {
-    if (w.flow4Active) { if (d.charge_power < 10.0f) w.flow4Active = false; }
-    else { if (d.charge_power > 25.0f && d.charge_state == 2) w.flow4Active = true; }
-    if (w.flow4Active) lv_obj_clear_flag(w.flowLine4, LV_OBJ_FLAG_HIDDEN);
-    else lv_obj_add_flag(w.flowLine4, LV_OBJ_FLAG_HIDDEN);
+  // Energy flow page ---------------------------------------------------
+  {
+    char pbuf[24];
+
+    // PV ---------------------------------------------------------------
+    if (d.hasPv) {
+      fmtPower(buf, sizeof(buf), d.pvPower);
+      setText(w.pvValue, buf);
+      setColor(w.pvValue, d.pvPower > 25.0f ? C_SOLAR : C_MUTED);
+      setText(w.pvState, d.pvPower > 25.0f ? "Erzeugung" : "Keine Erzeugung");
+      setColor(w.pvState, d.pvPower > 25.0f ? C_SOLAR : C_MUTED);
+    } else {
+      setText(w.pvValue, "--");
+      setColor(w.pvValue, C_MUTED);
+      setText(w.pvState, "kein Messwert");
+      setColor(w.pvState, C_MUTED);
+    }
+
+    // Grid -------------------------------------------------------------
+    if (d.hasGrid && !d.island) {
+      fmtPower(buf, sizeof(buf), std::fabs(d.gridPower));
+      setText(w.gridValue, buf);
+      setColor(w.gridValue, std::fabs(d.gridPower) < 10.0f ? C_MUTED : C_BLUE);
+      if (std::fabs(d.gridPower) < 10.0f) {
+        setText(w.gridState, "Ausgeglichen");
+        setColor(w.gridState, C_MUTED);
+      } else if (d.gridPower < 0.0f) {
+        setText(w.gridState, "Einspeisung");
+        setColor(w.gridState, C_GREEN);
+      } else {
+        setText(w.gridState, "Bezug");
+        setColor(w.gridState, C_BLUE);
+      }
+    } else if (d.island) {
+      setText(w.gridValue, "--");
+      setColor(w.gridValue, C_MUTED);
+      setText(w.gridState, "Inselbetrieb");
+      setColor(w.gridState, C_RED);
+    } else {
+      setText(w.gridValue, "--");
+      setColor(w.gridValue, C_MUTED);
+      setText(w.gridState, "kein Messwert");
+      setColor(w.gridState, C_MUTED);
+    }
+
+    // Battery ----------------------------------------------------------
+    if (d.hasBattery) {
+      snprintf(buf, sizeof(buf), "%.0f %%", d.soc);
+      setText(w.batValue, buf);
+      setColor(w.batValue, C_BAT);
+      if (d.batteryPower > 25.0f) {
+        fmtPower(pbuf, sizeof(pbuf), d.batteryPower);
+        snprintf(buf, sizeof(buf), "Laden %s", pbuf);
+        setText(w.batState, buf);
+        setColor(w.batState, C_BAT);
+      } else if (d.batteryPower < -25.0f) {
+        fmtPower(pbuf, sizeof(pbuf), -d.batteryPower);
+        snprintf(buf, sizeof(buf), "Entladen %s", pbuf);
+        setText(w.batState, buf);
+        setColor(w.batState, C_BAT);
+      } else {
+        setText(w.batState, "Ruhe");
+        setColor(w.batState, C_MUTED);
+      }
+    } else {
+      setText(w.batValue, "--");
+      setColor(w.batValue, C_MUTED);
+      setText(w.batState, "kein Messwert");
+      setColor(w.batState, C_MUTED);
+    }
+
+    // Wallbox ----------------------------------------------------------
+    double wallboxW = d.charge_power;
+    if (wallboxW <= 0.0 && d.charge_current > 0.1) {
+      wallboxW = d.charge_current / 1000.0 * 230.0 * (d.is_3phase ? 3.0 : 1.0);
+    }
+    const bool wallboxOn = wallboxW > 10.0 || d.charge_current > 0.1;
+    if (wallboxOn) {
+      fmtPower(pbuf, sizeof(pbuf), wallboxW);
+      setText(w.wbValue, pbuf);
+      setColor(w.wbValue, C_EV);
+      setText(w.wbState, d.charge_state == 2 ? "Laden" : "Verbunden");
+      setColor(w.wbState, C_EV);
+    } else if (d.charge_name[0] != '\0') {
+      setText(w.wbValue, "--");
+      setColor(w.wbValue, C_MUTED);
+      if (d.charge_state == 1) {
+        setText(w.wbState, "Bereit");
+        setColor(w.wbState, C_MUTED);
+      } else if (d.charge_state == 3) {
+        setText(w.wbState, "Fehler");
+        setColor(w.wbState, C_RED);
+      } else {
+        setText(w.wbState, "Verbunden");
+        setColor(w.wbState, C_MUTED);
+      }
+    } else {
+      setText(w.wbValue, "--");
+      setColor(w.wbValue, C_MUTED);
+      setText(w.wbState, "Getrennt");
+      setColor(w.wbState, C_MUTED);
+    }
+
+    // House hub --------------------------------------------------------
+    if (d.hasHouse) {
+      fmtPower(buf, sizeof(buf), d.housePower);
+      setText(w.hubValue, buf);
+      setColor(w.hubValue, C_TEXT);
+      setText(w.hubState, "Verbrauch");
+      setColor(w.hubState, C_MUTED);
+    } else {
+      setText(w.hubValue, "--");
+      setColor(w.hubValue, C_MUTED);
+      setText(w.hubState, "kein Messwert");
+      setColor(w.hubState, C_MUTED);
+    }
+
+    // Links: hysteresis (25 W on, 10 W off) avoids flickering around zero.
+    // Line width encodes magnitude, the particle speed in the timer does too.
+    auto setFlow = [](int i, bool enabled, double power) {
+      if (w.flowActive[i]) {
+        if (!enabled || std::fabs(power) < 10.0) {
+          w.flowActive[i] = false;
+        }
+      } else if (enabled && std::fabs(power) > 25.0) {
+        w.flowActive[i] = true;
+      }
+      w.flowPower[i] = static_cast<float>(std::fabs(power));
+      if (w.flowLine[i] == nullptr) {
+        return;
+      }
+      if (w.flowActive[i]) {
+        const float full = (i == 3) ? 11000.0f : 5000.0f;
+        float norm = w.flowPower[i] / full;
+        if (norm > 1.0f) {
+          norm = 1.0f;
+        }
+        lv_obj_set_style_line_width(w.flowLine[i],
+                                    7 + static_cast<int>(5.0f * norm), 0);
+        lv_obj_clear_flag(w.flowLine[i], LV_OBJ_FLAG_HIDDEN);
+      } else {
+        lv_obj_add_flag(w.flowLine[i], LV_OBJ_FLAG_HIDDEN);
+      }
+    };
+
+    setFlow(0, d.hasPv, d.pvPower);
+    setFlow(1, d.hasGrid && !d.island, d.gridPower);
+    setFlow(2, d.hasBattery, d.batteryPower);
+    setFlow(3, wallboxOn, wallboxW);
+
+    // Directions: grid/battery links run card -> hub by default.
+    w.gridExporting = d.hasGrid && !d.island && d.gridPower < 0.0f;
+    w.batCharging = d.hasBattery && d.batteryPower > 0.0f;
   }
 }
 

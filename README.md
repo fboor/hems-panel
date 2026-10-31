@@ -9,6 +9,14 @@ source as the firmware and talks to the same WARP HTTP API.
 
 ![panel](screenshots/panel.png)
 
+The first page is a live energy-flow view: PV, grid, battery and wallbox
+around the house hub, with link width and particle speed following the actual
+power. Flow particles only redraw small areas, and the animation timer stops
+when the page is hidden. The energy overview, history and service pages follow
+in their previous order.
+
+![energy flow](screenshots/flow.png)
+
 ## Why the earlier attempt showed no data
 
 The `rct-panel` emulator only knows three device drivers: `SIM` (its own mock),
@@ -44,6 +52,7 @@ Override with `LVGL_DIR=/path/to/lvgl`.
 ```sh
 ./run.sh                     # starts the module-API mock on :8082, opens the window
 ./run.sh --shot out.png      # render one frame and exit
+./run.sh --shot flow.png --page 1   # render a specific page (1..4)
 ./run.sh --probe             # print the mapped values, no window
 ```
 

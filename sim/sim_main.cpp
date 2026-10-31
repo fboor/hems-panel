@@ -56,6 +56,7 @@ struct Options {
     int intervalMs = 10000;
   int timeoutMs = 5000;
   int afterS = 2;
+  int page = 1;
   bool probe = false;
 };
 
@@ -122,7 +123,9 @@ void fetchLoop(const Options &opt) {
     for (int waited = 0; waited < opt.intervalMs && !g_stop; waited += 100) {
       SDL_Delay(100);
     }
-    // never exit
+    if (g_stop) {
+      return;
+    }
   }
 }
 
@@ -258,6 +261,7 @@ void usage() {
       "  --timeout MS     HTTP timeout (default 5000)\n"
       "  --shot FILE      render one frame to PNG, then exit\n"
       "  --after S        seconds to wait before the shot (default 2)\n"
+      "  --page N         page to show, 1..4 (default 1)\n"
       "  --probe          read once, print the mapped values, exit\n"
       "  --help           this text\n");
 }
@@ -282,6 +286,8 @@ int main(int argc, char **argv) {
       opt.timeoutMs = atoi(value("5000").c_str());
     } else if (a == "--after") {
       opt.afterS = atoi(value("2").c_str());
+    } else if (a == "--page") {
+      opt.page = atoi(value("1").c_str());
     } else if (a == "--probe") {
       opt.probe = true;
     } else if (a == "--help" || a == "-h") {
@@ -354,6 +360,7 @@ int main(int argc, char **argv) {
   // SDL_AddEventWatch(quitWatch, nullptr);
 
   warpui::create(lv_screen_active());
+  warpui::setPage(opt.page);
   warpui::setStatus("Verbinde...", false);
 
   g_lastTick = SDL_GetTicks();
@@ -364,7 +371,7 @@ int main(int argc, char **argv) {
   uint32_t lastUiMs = 0;
   bool shotDone = false;
 
-  while (true) {
+  while (!g_quit) {
     fprintf(stderr, "main: TOP of loop\n");
     fflush(stderr);
     const uint32_t now = SDL_GetTicks();
