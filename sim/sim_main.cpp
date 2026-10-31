@@ -32,15 +32,21 @@ namespace {
 
 class PosixTransport : public warpapi::Transport {
  public:
-  explicit PosixTransport(int timeoutMs) : timeoutMs_(timeoutMs) {}
+  PosixTransport(int timeoutMs, bool verbose)
+      : timeoutMs_(timeoutMs), verbose_(verbose) {}
 
   bool get(const std::string &url, std::string &body,
            std::string &error) override {
-    fprintf(stderr, "transport: GET %s\n", url.c_str());
-    fflush(stderr);
+    if (verbose_) {
+      fprintf(stderr, "transport: GET %s\n", url.c_str());
+      fflush(stderr);
+    }
     const warphttp::Response r = warphttp::get(url, timeoutMs_);
-    fprintf(stderr, "transport: done status=%d err=%s\n", r.status, r.error.c_str());
-    fflush(stderr);
+    if (verbose_) {
+      fprintf(stderr, "transport: done status=%d err=%s\n", r.status,
+              r.error.c_str());
+      fflush(stderr);
+    }
     body = r.body;
     error = r.error;
     return r.ok();
@@ -48,6 +54,7 @@ class PosixTransport : public warpapi::Transport {
 
  private:
   int timeoutMs_;
+  bool verbose_;
 };
 
 struct Options {
@@ -58,6 +65,7 @@ struct Options {
   int afterS = 2;
   int page = 1;
   bool probe = false;
+  bool verbose = false;
 };
 
 struct Shared {
@@ -85,9 +93,11 @@ bool flatFallback(const Options &opt, WarpData &parsed) {
 }
 
 void fetchLoop(const Options &opt) {
-  fprintf(stderr, "fetchLoop: start\n");
-  fflush(stderr);
-  PosixTransport transport(opt.timeoutMs);
+  if (opt.verbose) {
+    fprintf(stderr, "fetchLoop: start\n");
+    fflush(stderr);
+  }
+  PosixTransport transport(opt.timeoutMs, opt.verbose);
   warpapi::Reader reader(transport, opt.url);
   std::string lastError;
 
@@ -141,7 +151,6 @@ void advanceTick(uint32_t now) {
 
 int SDLCALL quitWatch(void *, SDL_Event *ev) {
   if (ev->type == SDL_QUIT) {
-    fprintf(stderr, "SDL_QUIT received\n");
     g_quit = true;
   }
   return 1;
@@ -263,6 +272,7 @@ void usage() {
       "  --after S        seconds to wait before the shot (default 2)\n"
       "  --page N         page to show, 1..4 (default 1)\n"
       "  --probe          read once, print the mapped values, exit\n"
+      "  -v, --verbose    log every HTTP request\n"
       "  --help           this text\n");
 }
 
@@ -290,6 +300,8 @@ int main(int argc, char **argv) {
       opt.page = atoi(value("1").c_str());
     } else if (a == "--probe") {
       opt.probe = true;
+    } else if (a == "--verbose" || a == "-v") {
+      opt.verbose = true;
     } else if (a == "--help" || a == "-h") {
       usage();
       return 0;
@@ -301,7 +313,7 @@ int main(int argc, char **argv) {
   }
 
   if (opt.probe) {
-    PosixTransport transport(opt.timeoutMs);
+    PosixTransport transport(opt.timeoutMs, opt.verbose);
     warpapi::Reader reader(transport, opt.url);
     printf("url:  %s\nbase: %s\n", opt.url.c_str(), reader.base().c_str());
 
@@ -372,8 +384,6 @@ int main(int argc, char **argv) {
   bool shotDone = false;
 
   while (!g_quit) {
-    fprintf(stderr, "main: TOP of loop\n");
-    fflush(stderr);
     const uint32_t now = SDL_GetTicks();
     advanceTick(now);
 
@@ -388,19 +398,10 @@ int main(int argc, char **argv) {
       ok = g_shared.ok;
       seq = g_shared.seq;
     }
-    fprintf(stderr, "main: got seq=%u status=%s\n", seq, status.c_str());
-    fflush(stderr);
 
     // The status text is cheap; refresh it every pass so "vor N s" moves.
-    fprintf(stderr, "main: before setStatus\n");
-    fflush(stderr);
-    fprintf(stderr, "main: before setStatus\n");
-    fflush(stderr);
     warpui::setStatus(status.c_str(), ok);
-    fprintf(stderr, "main: after setStatus\n");
-    fflush(stderr);
-    fprintf(stderr, "main: after setStatus\n");
-    fflush(stderr);
+
     /* Update data on every pass through the main loop */
     if (seq != seenSeq) {
       warpui::update(data);
@@ -408,17 +409,11 @@ int main(int argc, char **argv) {
       lastUiMs = now;
     }
 
-    fprintf(stderr, "main: before lv_timer_handler\n");
-    fflush(stderr);
     uint32_t wait = lv_timer_handler();
-    fprintf(stderr, "main: after lv_timer_handler wait=%u\n", wait);
-    fflush(stderr);
     if (wait > 5) {
       wait = 5;
     }
     SDL_Delay(wait);
-    fprintf(stderr, "main: after SDL_Delay\n");
-    fflush(stderr);
 
     if (!opt.shot.empty() && !shotDone) {
       const uint32_t elapsed = SDL_GetTicks() - startMs;
@@ -444,6 +439,5 @@ int main(int argc, char **argv) {
   g_stop = true;
   worker.join();
   SDL_Quit();
-  fprintf(stderr, "main: normal exit\n");
   return 0;
 }

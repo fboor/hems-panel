@@ -54,6 +54,7 @@ Override with `LVGL_DIR=/path/to/lvgl`.
 ./run.sh --shot out.png      # render one frame and exit
 ./run.sh --shot flow.png --page 1   # render a specific page (1..4)
 ./run.sh --probe             # print the mapped values, no window
+./run.sh --verbose           # log every HTTP request (off by default)
 ```
 
 The mock serves the real module API and also keeps a flat `/json` for the
