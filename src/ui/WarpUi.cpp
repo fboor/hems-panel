@@ -44,6 +44,7 @@ constexpr const lv_font_t *F_BODY = &lv_font_montserrat_16;
 constexpr const lv_font_t *F_TITLE = &lv_font_montserrat_20;
 constexpr const lv_font_t *F_BIG = &lv_font_montserrat_36;
 constexpr const lv_font_t *F_MED = &lv_font_montserrat_28;
+constexpr const lv_font_t *F_ICON = &lv_font_montserrat_48;
 
 struct Widgets {
   lv_obj_t *statusDot = nullptr;
@@ -80,7 +81,6 @@ struct Widgets {
   lv_obj_t *wbState = nullptr;
   lv_obj_t *hubNode = nullptr;
   lv_obj_t *hubValue = nullptr;
-  lv_obj_t *hubState = nullptr;
 
   // Four links: PV, grid, battery, wallbox. `flowTrack` is the dim base,
   // `flowLine` the coloured active line, `flowDot` the moving particles.
@@ -561,13 +561,9 @@ void create(lv_obj_t *parent) {
   lv_obj_set_style_border_width(w.hubNode, 2, 0);
   lv_obj_set_style_border_color(w.hubNode, lv_color_hex(C_LINE), 0);
   lv_obj_clear_flag(w.hubNode, LV_OBJ_FLAG_SCROLLABLE);
-  label(w.hubNode, 0, 14, 132, F_TITLE, C_TEXT, LV_SYMBOL_HOME,
+  label(w.hubNode, 0, 16, 132, F_ICON, C_TEXT, LV_SYMBOL_HOME,
         LV_TEXT_ALIGN_CENTER);
-  label(w.hubNode, 0, 44, 132, F_SMALL, C_MUTED, "HAUS",
-        LV_TEXT_ALIGN_CENTER);
-  w.hubValue = label(w.hubNode, 0, 62, 132, F_MED, C_TEXT, "--",
-                     LV_TEXT_ALIGN_CENTER);
-  w.hubState = label(w.hubNode, 0, 98, 132, F_SMALL, C_MUTED, "Verbrauch",
+  w.hubValue = label(w.hubNode, 0, 78, 132, F_MED, C_TEXT, "--",
                      LV_TEXT_ALIGN_CENTER);
 
   // Background cycle button
@@ -1082,13 +1078,9 @@ void update(const WarpData &d) {
       fmtPower(buf, sizeof(buf), d.housePower);
       setText(w.hubValue, buf);
       setColor(w.hubValue, C_TEXT);
-      setText(w.hubState, "Verbrauch");
-      setColor(w.hubState, C_MUTED);
     } else {
       setText(w.hubValue, "--");
       setColor(w.hubValue, C_MUTED);
-      setText(w.hubState, "kein Messwert");
-      setColor(w.hubState, C_MUTED);
     }
 
     // Links: hysteresis (25 W on, 10 W off) avoids flickering around zero.
