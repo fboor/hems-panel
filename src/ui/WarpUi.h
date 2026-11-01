@@ -22,4 +22,15 @@ void setStatus(const char *text, bool ok);
 // page for screenshots; the on-screen navigation calls the same helper.
 void setPage(int page);
 
+// First-boot Wi-Fi setup overlay. The QR code contains the setup access point
+// credentials, so a phone can join without typing the password. The overlay is
+// created on first use and stays allocated (hidden) afterwards.
+void showSetup(const char *ssid, const char *password, const char *url);
+void hideSetup();
+
+// Service page: current WLAN, panel IP, WARP endpoint and web setup URL.
+// Called again whenever one of these values changes.
+void setNetworkInfo(const char *ssid, const char *ip, const char *warpUrl,
+                    const char *webUrl);
+
 }  // namespace warpui

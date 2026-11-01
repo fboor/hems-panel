@@ -53,6 +53,7 @@ Override with `LVGL_DIR=/path/to/lvgl`.
 ./run.sh                     # starts the module-API mock on :8082, opens the window
 ./run.sh --shot out.png      # render one frame and exit
 ./run.sh --shot flow.png --page 1   # render a specific page (1..4)
+./run.sh --shot setup.png --setup   # render the Wi-Fi setup screen
 ./run.sh --probe             # print the mapped values, no window
 ./run.sh --verbose           # log every HTTP request (off by default)
 ```
@@ -156,11 +157,41 @@ pio run -t upload       # flash over USB
 pio device monitor      # serial log, 115200
 ```
 
-First boot opens the captive portal **WARP-Panel** at
-<http://192.168.4.1/>. Enter the WLAN credentials and the WARP base URL
-(default `http://192.168.1.222`; a trailing `/json` is accepted and normalized).
-The URL is stored in NVS; the portal only needs to be opened again when the
-address changes. OTA is enabled under the hostname `warp-panel`.
+### First-time setup
+
+On first boot, or when the saved WLAN cannot be reached, the panel opens a
+setup access point:
+
+- SSID: `WARP-Panel-XXXX` (the last four hex digits of the chip MAC).
+- Password: random per boot, ten characters plus a hyphen, shown on the panel.
+- Portal: <http://192.168.4.1/> (the captive portal usually opens by itself).
+
+The panel shows a QR code that contains the WLAN join data
+(`WIFI:T:WPA;S:...;P:...;;`), so a phone can join the access point without
+typing the password. The same screen shows the SSID, password and portal URL.
+The setup AP stays active for three minutes without web activity; after that
+the panel restarts if no WLAN was configured.
+
+![Wi-Fi setup screen](screenshots/setup.png)
+
+The portal has two fields:
+
+1. **WLAN**: SSID and password of the local network.
+2. **WARP Energy Manager (IP oder Hostname)**: a bare address such as
+   `192.168.1.222`, a hostname, or a full URL. It is normalized to
+   `http://<address>` before it is stored in NVS. A trailing `/json` is still
+   accepted for the flat fallback.
+
+After a successful connection the same configuration page remains available on
+the local network, normally at <http://warp-panel.local/> (mDNS) or at the
+panel's IP address. It can be used to change the WARP address without wiping
+the WLAN credentials. The service page (page 4) shows the current WLAN, panel
+IP, WARP endpoint and web setup URL. The panel uses DHCP; only the WARP address
+is configured manually.
+
+If a WLAN change made through the local web page cannot be reached, power-cycle
+the panel. The AP fallback opens again because the saved connection failed.
+OTA is enabled under the hostname `warp-panel`.
 
 The display/touch driver files in `src/display` and `src/board` are ported from
 the MIT-licensed `rct-panel` project; their headers carry the original notes on
@@ -171,8 +202,9 @@ the panel timings and the CH422G expander.
 - Module-API adapter: verified against the real WEM2 at `192.168.1.222`; all four
   meter slots (grid, PV, household, battery) map to the expected values.
 - Emulator, mock and UI: working, verified by rendered frames.
-- Firmware: compiles for the 7" board (1.44 MB flash, 52 kB static RAM). Nothing
-  has run on the panel yet; display bring-up is the open item.
+- Firmware: compiles for the 7" board (2.0 MB flash, 53 kB static RAM). Nothing
+  has run on the panel yet; display bring-up is the open item. The Wi-Fi setup
+  screen and portal are implemented but still need hardware verification.
 
 ## License
 

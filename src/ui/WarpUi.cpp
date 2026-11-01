@@ -133,6 +133,19 @@ struct Widgets {
   lv_obj_t *energyImport = nullptr;
   lv_obj_t *energyExport = nullptr;
   lv_obj_t *energyBattery = nullptr;
+
+  // Service page network card.
+  lv_obj_t *netSsid = nullptr;
+  lv_obj_t *netIp = nullptr;
+  lv_obj_t *netWarp = nullptr;
+  lv_obj_t *netWeb = nullptr;
+
+  // First-boot Wi-Fi setup overlay.
+  lv_obj_t *setupOverlay = nullptr;
+  lv_obj_t *setupQr = nullptr;
+  lv_obj_t *setupSsid = nullptr;
+  lv_obj_t *setupPassword = nullptr;
+  lv_obj_t *setupUrl = nullptr;
 };
 
 Widgets w;
@@ -208,6 +221,38 @@ void setText(lv_obj_t *l, const char *text) {
   if (l != nullptr) {
     lv_label_set_text(l, text);
   }
+}
+
+// Network values change rarely; avoid invalidating the service page every
+// second when nothing actually changed.
+void setTextIfChanged(lv_obj_t *l, const char *text) {
+  if (l == nullptr) {
+    return;
+  }
+  const char *current = lv_label_get_text(l);
+  if (current == nullptr || strcmp(current, text) != 0) {
+    lv_label_set_text(l, text);
+  }
+}
+
+// Escape the characters that have a meaning in a WIFI: QR payload. The setup
+// credentials are generated from a safe alphabet, but keeping the helper
+// generic makes the screen safe for a manually supplied SSID too.
+void qrEscape(char *out, size_t n, const char *in) {
+  size_t j = 0;
+  if (out == nullptr || n == 0) {
+    return;
+  }
+  if (in != nullptr) {
+    for (size_t i = 0; in[i] != '\0' && j + 2 < n; ++i) {
+      const char c = in[i];
+      if (c == '\\' || c == ';' || c == ',' || c == ':' || c == '"') {
+        out[j++] = '\\';
+      }
+      out[j++] = c;
+    }
+  }
+  out[j] = '\0';
 }
 
 void setColor(lv_obj_t *l, uint32_t color) {
@@ -598,6 +643,18 @@ void create(lv_obj_t *parent) {
     };
     updateLabels(lv_scr_act());
   }, LV_EVENT_CLICKED, nullptr);
+
+  // Network state. The setup portal stays reachable on the local network, so
+  // this card is also the pointer to it when the WARP address has to change.
+  lv_obj_t *net = card(w.page3, 16, 70, 758, 190);
+  title(net, "NETZWERK");
+  w.netSsid = label(net, 16, 34, 720, F_BODY, C_TEXT, "WLAN: --");
+  w.netIp = label(net, 16, 58, 720, F_BODY, C_TEXT, "IP: --");
+  w.netWarp = label(net, 16, 82, 720, F_BODY, C_TEXT, "WARP: --");
+  w.netWeb = label(net, 16, 106, 720, F_BODY, C_BLUE, "Web: --");
+  label(net, 16, 142, 720, F_SMALL, C_MUTED,
+        "Zum Ändern die Web-Adresse im Browser öffnen.");
+
   auto makeNav = [](lv_obj_t *p, int x, int y, const char *text) {
     lv_obj_t *b = lv_btn_create(p);
     lv_obj_set_pos(b, x, y);
@@ -691,6 +748,99 @@ void setPage(int page) {
     page = 4;
   }
   showPage(page);
+}
+
+void showSetup(const char *ssid, const char *password, const char *url) {
+  if (w.setupOverlay == nullptr) {
+    lv_obj_t *overlay = lv_obj_create(lv_screen_active());
+    lv_obj_remove_style_all(overlay);
+    lv_obj_set_pos(overlay, 0, 0);
+    lv_obj_set_size(overlay, 800, 480);
+    lv_obj_set_style_bg_color(overlay, lv_color_hex(C_BG), 0);
+    lv_obj_set_style_bg_opa(overlay, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(overlay, LV_OBJ_FLAG_SCROLLABLE);
+    w.setupOverlay = overlay;
+
+    label(overlay, 40, 22, 0, F_BIG, C_TEXT, "WLAN einrichten");
+    label(overlay, 40, 66, 0, F_BODY, C_MUTED,
+          "Mit dem WARP-Panel verbinden");
+
+    // White quiet zone around the QR code; the code itself is 260 px so the
+    // camera can lock on from a normal arm's length.
+    lv_obj_t *qrCard = lv_obj_create(overlay);
+    lv_obj_remove_style_all(qrCard);
+    lv_obj_set_pos(qrCard, 40, 110);
+    lv_obj_set_size(qrCard, 300, 300);
+    lv_obj_set_style_radius(qrCard, 18, 0);
+    lv_obj_set_style_bg_color(qrCard, lv_color_hex(0xFFFFFF), 0);
+    lv_obj_set_style_bg_opa(qrCard, LV_OPA_COVER, 0);
+    lv_obj_clear_flag(qrCard, LV_OBJ_FLAG_SCROLLABLE);
+
+    w.setupQr = lv_qrcode_create(qrCard);
+    lv_qrcode_set_size(w.setupQr, 260);
+    lv_qrcode_set_dark_color(w.setupQr, lv_color_hex(0x000000));
+    lv_qrcode_set_light_color(w.setupQr, lv_color_hex(0xFFFFFF));
+    lv_obj_set_pos(w.setupQr, 20, 20);
+
+    label(overlay, 380, 112, 0, F_SMALL, C_MUTED, "NETZWERK");
+    w.setupSsid = label(overlay, 380, 134, 380, F_TITLE, C_TEXT, "--");
+    label(overlay, 380, 174, 0, F_SMALL, C_MUTED, "PASSWORT");
+    w.setupPassword = label(overlay, 380, 196, 380, F_TITLE, C_TEXT, "--");
+    label(overlay, 380, 240, 0, F_SMALL, C_MUTED, "DANACH ÖFFNEN");
+    w.setupUrl = label(overlay, 380, 262, 380, F_TITLE, C_BLUE, "--");
+    label(overlay, 380, 308, 380, F_SMALL, C_MUTED,
+          "QR-Code scannen oder dem Netzwerk beitreten. Im Browser "
+          "WLAN-Zugang und die Adresse des WARP Energy Managers eintragen.");
+    label(overlay, 40, 432, 720, F_SMALL, C_MUTED,
+          "Das Einrichtungsnetz bleibt 3 Minuten ohne Aktivität aktiv.");
+  }
+
+  lv_label_set_text(w.setupSsid, ssid != nullptr ? ssid : "--");
+  if (password != nullptr && password[0] != '\0') {
+    lv_label_set_text(w.setupPassword, password);
+  } else {
+    lv_label_set_text(w.setupPassword, "offen");
+  }
+  lv_label_set_text(w.setupUrl, url != nullptr ? url : "--");
+
+  char ssidEsc[64];
+  char passEsc[64];
+  char payload[192];
+  qrEscape(ssidEsc, sizeof(ssidEsc), ssid != nullptr ? ssid : "");
+  qrEscape(passEsc, sizeof(passEsc), password != nullptr ? password : "");
+  if (passEsc[0] != '\0') {
+    snprintf(payload, sizeof(payload), "WIFI:T:WPA;S:%s;P:%s;;", ssidEsc,
+             passEsc);
+  } else {
+    snprintf(payload, sizeof(payload), "WIFI:T:nopass;S:%s;;", ssidEsc);
+  }
+  lv_qrcode_update(w.setupQr, payload, strlen(payload));
+
+  lv_obj_clear_flag(w.setupOverlay, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_move_foreground(w.setupOverlay);
+}
+
+void hideSetup() {
+  if (w.setupOverlay != nullptr) {
+    lv_obj_add_flag(w.setupOverlay, LV_OBJ_FLAG_HIDDEN);
+  }
+}
+
+void setNetworkInfo(const char *ssid, const char *ip, const char *warpUrl,
+                    const char *webUrl) {
+  char buf[192];
+  snprintf(buf, sizeof(buf), "WLAN: %s",
+           (ssid != nullptr && ssid[0] != '\0') ? ssid : "--");
+  setTextIfChanged(w.netSsid, buf);
+  snprintf(buf, sizeof(buf), "IP: %s",
+           (ip != nullptr && ip[0] != '\0') ? ip : "--");
+  setTextIfChanged(w.netIp, buf);
+  snprintf(buf, sizeof(buf), "WARP: %s",
+           (warpUrl != nullptr && warpUrl[0] != '\0') ? warpUrl : "--");
+  setTextIfChanged(w.netWarp, buf);
+  snprintf(buf, sizeof(buf), "Web: %s",
+           (webUrl != nullptr && webUrl[0] != '\0') ? webUrl : "--");
+  setTextIfChanged(w.netWeb, buf);
 }
 
 void setStatus(const char *text, bool ok) {

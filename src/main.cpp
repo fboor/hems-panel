@@ -7,10 +7,12 @@
 // SPDX-License-Identifier: MIT
 #include <Arduino.h>
 #include <ArduinoOTA.h>
+#include <ESPmDNS.h>
 #include <HTTPClient.h>
 #include <Preferences.h>
 #include <WiFi.h>
 #include <WiFiManager.h>
+#include <esp_system.h>
 #include <lvgl.h>
 
 #include <memory>
@@ -35,6 +37,15 @@ constexpr uint32_t HTTP_TIMEOUT_MS = 4000;
 constexpr char DEFAULT_URL[] = "http://192.168.1.222";
 
 char g_url[96] = "http://192.168.1.222";
+
+// The setup portal is used twice: blocking on first boot (AP + captive
+// portal), and non-blocking afterwards on the local network so the WARP
+// address can be changed without wiping the Wi-Fi credentials.
+WiFiManager *g_wm = nullptr;
+WiFiManagerParameter *g_urlParam = nullptr;
+bool g_mdnsOk = false;
+char g_apSsid[32] = "WARP-Panel";
+char g_apPassword[16] = "";
 
 WarpData g_data;
 bool g_haveData = false;
@@ -84,6 +95,92 @@ void saveUrl() {
   prefs.begin("warp", false);
   prefs.putString("url", g_url);
   prefs.end();
+}
+
+// The form accepts a bare IP, a hostname or a full URL. Store one canonical
+// form so the reader and the service page always see the same string.
+void normalizeUrl(const char *input, char *out, size_t n) {
+  String s(input != nullptr ? input : "");
+  s.trim();
+  if (s.length() == 0 || s == "http://" || s == "https://") {
+    s = DEFAULT_URL;
+  }
+  if (!s.startsWith("http://") && !s.startsWith("https://")) {
+    s = "http://" + s;
+  }
+  while (s.endsWith("/")) {
+    s.remove(s.length() - 1);
+  }
+  snprintf(out, n, "%s", s.c_str());
+}
+
+void applyUrlParam() {
+  if (g_urlParam == nullptr) {
+    return;
+  }
+  const char *value = g_urlParam->getValue();
+  char normalized[sizeof(g_url)];
+  normalizeUrl(value, normalized, sizeof(normalized));
+  if (strncmp(normalized, g_url, sizeof(g_url)) != 0) {
+    snprintf(g_url, sizeof(g_url), "%s", normalized);
+    saveUrl();
+    g_reader.reset();
+    g_urlParam->setValue(g_url, sizeof(g_url));
+    Serial.printf("WARP endpoint: %s\n", g_url);
+  }
+}
+
+void updateNetworkInfo() {
+  if (WiFi.status() != WL_CONNECTED) {
+    warpui::setNetworkInfo("--", "--", g_url, "--");
+    return;
+  }
+
+  const String ssid = WiFi.SSID();
+  const String ip = WiFi.localIP().toString();
+  char web[80];
+  if (g_mdnsOk) {
+    snprintf(web, sizeof(web), "http://warp-panel.local/");
+  } else {
+    snprintf(web, sizeof(web), "http://%s/", ip.c_str());
+  }
+  warpui::setNetworkInfo(ssid.c_str(), ip.c_str(), g_url, web);
+}
+
+void onParamsSaved() {
+  applyUrlParam();
+  updateNetworkInfo();
+}
+
+void setupMdns() {
+  if (g_mdnsOk) {
+    return;
+  }
+  g_mdnsOk = MDNS.begin("warp-panel");
+  if (g_mdnsOk) {
+    MDNS.addService("http", "tcp", 80);
+    Serial.println(F("mDNS: http://warp-panel.local/"));
+  } else {
+    Serial.println(F("mDNS start failed, use the panel IP"));
+  }
+}
+
+void generateApCredentials() {
+  const uint64_t chip = ESP.getEfuseMac();
+  snprintf(g_apSsid, sizeof(g_apSsid), "WARP-Panel-%04X",
+           static_cast<unsigned>(chip & 0xFFFFu));
+
+  // Random per boot, shown on the panel and carried by the QR code. 10
+  // characters from a 32-symbol alphabet: enough for a three-minute setup AP.
+  static const char alphabet[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  for (int i = 0; i < 5; ++i) {
+    g_apPassword[i] = alphabet[esp_random() % (sizeof(alphabet) - 1)];
+  }
+  g_apPassword[5] = '-';
+  for (int i = 0; i < 5; ++i) {
+    g_apPassword[6 + i] = alphabet[esp_random() % (sizeof(alphabet) - 1)];
+  }
+  g_apPassword[11] = '\0';
 }
 
 bool fetchWarp(WarpData &out) {
@@ -144,34 +241,58 @@ void poll() {
       g_data.island ? 1 : 0);
 }
 
-void connectWifi() {
-  WiFiManager wm;
-  wm.setConfigPortalTimeout(180);
-  wm.setHostname("warp-panel");
+void setupNetwork() {
+  loadUrl();
+  char normalized[sizeof(g_url)];
+  normalizeUrl(g_url, normalized, sizeof(normalized));
+  if (strncmp(normalized, g_url, sizeof(g_url)) != 0) {
+    snprintf(g_url, sizeof(g_url), "%s", normalized);
+    saveUrl();
+  }
 
-  // The URL field is prefilled from NVS, so a second boot only needs the
-  // portal when the device address changes.
-  WiFiManagerParameter urlParam("warp_url", "WARP Basis-URL", g_url,
-                                sizeof(g_url));
-  wm.addParameter(&urlParam);
+  generateApCredentials();
+
+  g_wm = new WiFiManager();
+  g_urlParam = new WiFiManagerParameter(
+      "warp_url", "WARP Energy Manager (IP oder Hostname)", g_url,
+      sizeof(g_url));
+  g_wm->addParameter(g_urlParam);
+
+  g_wm->setDebugOutput(false);
+  g_wm->setConfigPortalTimeout(180);
+  g_wm->setConnectTimeout(20);
+  g_wm->setHostname("warp-panel");
+  g_wm->setTitle("WARP-Panel Setup");
+  g_wm->setDarkMode(true);
+  g_wm->setAPCallback([](WiFiManager *mgr) {
+    const String ssid = mgr->getConfigPortalSSID();
+    Serial.printf("Setup AP: %s / %s\n", ssid.c_str(), g_apPassword);
+    warpui::showSetup(ssid.c_str(), g_apPassword, "http://192.168.4.1");
+    lv_refr_now(nullptr);
+  });
+  g_wm->setSaveParamsCallback(onParamsSaved);
 
   warpui::setStatus("WLAN ...", false);
-  const bool connected = wm.autoConnect("WARP-Panel");
+  const bool connected = g_wm->autoConnect(g_apSsid, g_apPassword);
   if (!connected) {
-    Serial.println("Wi-Fi configuration timed out, restarting");
+    Serial.println(F("Wi-Fi configuration timed out, restarting"));
     delay(500);
     ESP.restart();
   }
 
-  const char *value = urlParam.getValue();
-  if (value != nullptr && value[0] != '\0' &&
-      strncmp(value, g_url, sizeof(g_url)) != 0) {
-    snprintf(g_url, sizeof(g_url), "%s", value);
-    saveUrl();
-    g_reader.reset();
-  }
+  applyUrlParam();
+  warpui::hideSetup();
+  setupMdns();
+  updateNetworkInfo();
   Serial.printf("Wi-Fi: %s   endpoint: %s\n", WiFi.localIP().toString().c_str(),
                 g_url);
+
+  // Keep the same configuration page reachable on the local network. The AP
+  // is only used for the first boot; afterwards this is a normal HTTP server
+  // on the panel's address.
+  g_wm->setConfigPortalTimeout(0);
+  g_wm->setConfigPortalBlocking(false);
+  g_wm->startWebPortal();
 }
 
 }  // namespace
@@ -180,8 +301,6 @@ void setup() {
   Serial.begin(115200);
   delay(200);
   Serial.println(F("\nWARP Energy Manager panel"));
-
-  loadUrl();
 
   if (!displayInit()) {
     Serial.println(F("FATAL: display init failed"));
@@ -200,7 +319,7 @@ void setup() {
   g_lastTick = millis();
   displayLooper();
 
-  connectWifi();
+  setupNetwork();
 
   ArduinoOTA.setHostname("warp-panel");
   ArduinoOTA.begin();
@@ -220,14 +339,22 @@ void loop() {
 
   ArduinoOTA.handle();
 
+  if (g_wm != nullptr && g_wm->process()) {
+    setupMdns();
+    updateNetworkInfo();
+  }
+
   if (now - g_lastPoll >= POLL_MS) {
     g_lastPoll = now;
     poll();
   }
 
-  if (g_haveData && now - g_lastUi >= UI_MS) {
+  if (now - g_lastUi >= UI_MS) {
     g_lastUi = now;
-    warpui::update(g_data);
+    updateNetworkInfo();
+    if (g_haveData) {
+      warpui::update(g_data);
+    }
   }
 
   displayLooper();

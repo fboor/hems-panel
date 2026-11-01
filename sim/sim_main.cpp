@@ -65,6 +65,7 @@ struct Options {
   int afterS = 2;
   int page = 1;
   bool probe = false;
+  bool setup = false;
   bool verbose = false;
 };
 
@@ -271,6 +272,7 @@ void usage() {
       "  --shot FILE      render one frame to PNG, then exit\n"
       "  --after S        seconds to wait before the shot (default 2)\n"
       "  --page N         page to show, 1..4 (default 1)\n"
+      "  --setup          show the first-boot Wi-Fi setup screen\n"
       "  --probe          read once, print the mapped values, exit\n"
       "  -v, --verbose    log every HTTP request\n"
       "  --help           this text\n");
@@ -298,6 +300,8 @@ int main(int argc, char **argv) {
       opt.afterS = atoi(value("2").c_str());
     } else if (a == "--page") {
       opt.page = atoi(value("1").c_str());
+    } else if (a == "--setup") {
+      opt.setup = true;
     } else if (a == "--probe") {
       opt.probe = true;
     } else if (a == "--verbose" || a == "-v") {
@@ -374,6 +378,12 @@ int main(int argc, char **argv) {
   warpui::create(lv_screen_active());
   warpui::setPage(opt.page);
   warpui::setStatus("Verbinde...", false);
+  warpui::setNetworkInfo("WLAN-Demo", "192.168.1.50", "http://192.168.1.222",
+                         "http://warp-panel.local/");
+  if (opt.setup) {
+    warpui::showSetup("WARP-Panel-A1B2", "K7M4P-QX2R9",
+                      "http://192.168.4.1");
+  }
 
   g_lastTick = SDL_GetTicks();
   std::thread worker(fetchLoop, opt);
