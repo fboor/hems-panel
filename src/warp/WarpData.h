@@ -71,6 +71,17 @@ struct WarpData {
   float gridVoltageL3 = 0.0f;
   float gridFrequency = 0.0f;
 
+  // Autarkie: share of consumption supplied by PV/battery instead of the grid,
+  // in percent. Calculated from the cumulative energy counters when the device
+  // provides them, otherwise from the current house/grid power.
+  bool hasAutarky = false;
+  float autarky = 0.0f;
+
+  // Solar forecast for today, Wh. WARP reports -1 when the forecast module has
+  // no usable data, so hasForecast distinguishes "0 Wh" from "not available".
+  bool hasForecast = false;
+  float forecastTodayWh = 0.0f;
+
   // Which parts of the page have a usable source. The UI uses these to show a
   // dash instead of a misleading zero when a meter is not configured.
   bool hasGrid = false;

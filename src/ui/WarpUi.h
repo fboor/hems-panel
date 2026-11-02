@@ -15,8 +15,16 @@ void create(lv_obj_t *parent);
 // Copies the values into the labels. Safe to call before create().
 void update(const WarpData &data);
 
-// Header status: dot colour and text ("Verbunden", "Keine Daten", ...).
-void setStatus(const char *text, bool ok);
+// Header connection state. One compact item replaces the old dot + text pair:
+// no WLAN, WLAN up but WARP unreachable, data flowing, or reachable but empty.
+enum class ConnectionState {
+  NoNet,
+  Disconnected,
+  Data,
+  NoData,
+};
+
+void setConnectionState(ConnectionState state);
 
 // Switch the visible page (1..4). Used by the emulator to render a specific
 // page for screenshots; the on-screen navigation calls the same helper.

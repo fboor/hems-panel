@@ -2,7 +2,9 @@
 
 An ESP32-S3 panel (7" Waveshare, 800x480) that shows the live state of a WARP
 Energy Manager V2: grid per phase and exchange, PV, external/S0, household,
-battery SOC/power/voltage/current, island mode and energy totals.
+battery SOC/power/voltage/current, island mode and energy totals. The header
+shows autarky and today's solar forecast next to one compact connection-state
+chip.
 
 The desktop emulator is the primary development target. It runs the same LVGL UI
 source as the firmware and talks to the same WARP HTTP API.
@@ -11,9 +13,15 @@ source as the firmware and talks to the same WARP HTTP API.
 
 The first page is a live energy-flow view: PV, grid, battery and wallbox
 around the house hub, with link width and particle speed following the actual
-power. Flow particles only redraw small areas, and the animation timer stops
-when the page is hidden. The energy overview, history and service pages follow
-in their previous order.
+power. The grid node uses a drawn pylon instead of a generic power symbol. Flow
+particles only redraw small areas, and the animation timer stops when the page
+is hidden. The energy overview, history and service pages follow in their
+previous order.
+
+The header keeps one connection chip (`Kein WLAN`, `Getrennt`, `Daten`,
+`Keine Daten`) and uses the freed space for autarky and today's solar forecast.
+Autarky comes from the WARP energy counters when available; without them the
+panel falls back to the live house/grid ratio.
 
 ![energy flow](screenshots/flow.png)
 
@@ -31,6 +39,7 @@ endpoint (`/json` is 404). It exposes modules instead:
 /info/name, /info/version
 /meters/N/config, /meters/N/value_ids, /meters/N/values
 /power_manager/low_level_state
+/solar_forecast/state
 ```
 
 `src/warp/WarpApi.h` discovers the configured meter slots, identifies them by
@@ -128,6 +137,8 @@ a few aliases; the first match wins.
 | island | `island_flag`, `island`, `island_mode` |
 | energy totals | `pv_energy_wh`, `house_energy_wh`, `grid_import_wh`, `grid_export_wh`, `battery_charge_wh`, `battery_discharge_wh` |
 | today (legacy) | `day_generation_wh`, `day_load_wh`, `day_feed_in_wh`, `day_grid_draw_wh` |
+| autarky | `autarky`, `autarkie`, `self_sufficiency` (otherwise calculated from energy totals or live power) |
+| forecast | `wh_today`, `forecast_today_wh`, `solar_forecast_today_wh` |
 | identity | `device_name`, `firmware_version` |
 
 The energy card shows the cumulative meter totals since commissioning. The

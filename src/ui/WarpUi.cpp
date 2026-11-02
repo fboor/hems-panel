@@ -47,8 +47,11 @@ constexpr const lv_font_t *F_MED = &lv_font_montserrat_28;
 constexpr const lv_font_t *F_ICON = &lv_font_montserrat_48;
 
 struct Widgets {
+  lv_obj_t *statusChip = nullptr;
   lv_obj_t *statusDot = nullptr;
   lv_obj_t *statusText = nullptr;
+  lv_obj_t *autarkyValue = nullptr;
+  lv_obj_t *forecastValue = nullptr;
   lv_obj_t *islandBadge = nullptr;
   lv_obj_t *islandText = nullptr;
   lv_obj_t *updatedText = nullptr;
@@ -261,6 +264,27 @@ void setColor(lv_obj_t *l, uint32_t color) {
   }
 }
 
+// A small transmission pylon for the grid node. LVGL's built-in symbol font
+// has no tower glyph, so draw the few lines directly. The point arrays are
+// static because lv_line keeps the pointer; there is only one grid node.
+void gridTower(lv_obj_t *parent, uint32_t color) {
+  static lv_point_precise_t leftLeg[2] = {{22, 6}, {11, 36}};
+  static lv_point_precise_t rightLeg[2] = {{22, 6}, {33, 36}};
+  static lv_point_precise_t base[2] = {{9, 36}, {35, 36}};
+  static lv_point_precise_t crossTop[2] = {{17, 17}, {27, 17}};
+  static lv_point_precise_t crossBottom[2] = {{14, 27}, {30, 27}};
+  static lv_point_precise_t *segments[] = {leftLeg, rightLeg, base,
+                                           crossTop, crossBottom};
+
+  for (lv_point_precise_t *segment : segments) {
+    lv_obj_t *line = lv_line_create(parent);
+    lv_line_set_points(line, segment, 2);
+    lv_obj_set_style_line_width(line, 2, 0);
+    lv_obj_set_style_line_color(line, lv_color_hex(color), 0);
+    lv_obj_set_style_line_rounded(line, true, 0);
+  }
+}
+
 struct FlowNode {
   lv_obj_t *card = nullptr;
   lv_obj_t *value = nullptr;
@@ -271,7 +295,8 @@ struct FlowNode {
 // value and a short state line. Kept flat (no shadow/layer) so a redraw stays
 // cheap on the ESP32.
 FlowNode flowNode(lv_obj_t *parent, int x, int y, const char *name,
-                  const char *symbol, uint32_t accent, uint32_t accentDim) {
+                  const char *symbol, uint32_t accent, uint32_t accentDim,
+                  bool pylon = false) {
   FlowNode n;
   n.card = lv_obj_create(parent);
   lv_obj_remove_style_all(n.card);
@@ -291,9 +316,13 @@ FlowNode flowNode(lv_obj_t *parent, int x, int y, const char *name,
   lv_obj_set_style_radius(badge, 14, 0);
   lv_obj_set_style_bg_color(badge, lv_color_hex(accentDim), 0);
   lv_obj_set_style_bg_opa(badge, LV_OPA_COVER, 0);
-  lv_obj_t *icon = label(badge, 0, 0, 44, F_TITLE, accent, symbol,
-                         LV_TEXT_ALIGN_CENTER);
-  lv_obj_center(icon);
+  if (pylon) {
+    gridTower(badge, accent);
+  } else {
+    lv_obj_t *icon = label(badge, 0, 0, 44, F_TITLE, accent, symbol,
+                           LV_TEXT_ALIGN_CENTER);
+    lv_obj_center(icon);
+  }
 
   label(n.card, 68, 12, 96, F_SMALL, C_MUTED, name);
   n.value = label(n.card, 68, 30, 96, F_TITLE, accent, "--");
@@ -391,14 +420,34 @@ void create(lv_obj_t *parent) {
   lv_obj_add_flag(w.caption3, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(w.caption4, LV_OBJ_FLAG_HIDDEN);
 
-  w.statusDot = lv_obj_create(parent);
+  // Autarkie and today's solar forecast. They share the header row with the
+  // compact connection chip, so the right side stays readable at a glance.
+  label(parent, 330, 4, 100, F_SMALL, C_MUTED, "Autarkie");
+  w.autarkyValue = label(parent, 330, 20, 100, F_TITLE, C_TEXT, "--");
+  label(parent, 438, 4, 110, F_SMALL, C_MUTED, "Prognose");
+  w.forecastValue = label(parent, 438, 20, 110, F_TITLE, C_SOLAR, "--");
+
+  // One pill for the connection state: "Kein WLAN", "Getrennt", "Daten" or
+  // "Keine Daten". The coloured dot is part of the pill, not a second item.
+  w.statusChip = lv_obj_create(parent);
+  lv_obj_remove_style_all(w.statusChip);
+  lv_obj_set_pos(w.statusChip, 556, 14);
+  lv_obj_set_size(w.statusChip, 130, 32);
+  lv_obj_set_style_radius(w.statusChip, 16, 0);
+  lv_obj_set_style_bg_color(w.statusChip, lv_color_hex(C_CARD2), 0);
+  lv_obj_set_style_bg_opa(w.statusChip, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_width(w.statusChip, 1, 0);
+  lv_obj_set_style_border_color(w.statusChip, lv_color_hex(C_LINE), 0);
+  lv_obj_clear_flag(w.statusChip, LV_OBJ_FLAG_SCROLLABLE);
+
+  w.statusDot = lv_obj_create(w.statusChip);
   lv_obj_remove_style_all(w.statusDot);
-  lv_obj_set_pos(w.statusDot, 548, 21);
+  lv_obj_set_pos(w.statusDot, 12, 11);
   lv_obj_set_size(w.statusDot, 10, 10);
   lv_obj_set_style_radius(w.statusDot, LV_RADIUS_CIRCLE, 0);
   lv_obj_set_style_bg_color(w.statusDot, lv_color_hex(C_MUTED), 0);
   lv_obj_set_style_bg_opa(w.statusDot, LV_OPA_COVER, 0);
-  w.statusText = label(parent, 566, 18, 120, F_SMALL, C_MUTED, "Startet ...");
+  w.statusText = label(w.statusChip, 28, 7, 94, F_SMALL, C_MUTED, "Kein WLAN");
 
   w.islandBadge = lv_obj_create(parent);
   lv_obj_remove_style_all(w.islandBadge);
@@ -578,7 +627,7 @@ void create(lv_obj_t *parent) {
   w.pvState = pvFlow.state;
 
   FlowNode gridFlow = flowNode(w.page4, 24, 252, "NETZ", LV_SYMBOL_POWER,
-                               C_BLUE, C_GRID_DIM);
+                               C_BLUE, C_GRID_DIM, true);
   w.gridNode = gridFlow.card;
   w.gridValue = gridFlow.value;
   w.gridState = gridFlow.state;
@@ -843,17 +892,41 @@ void setNetworkInfo(const char *ssid, const char *ip, const char *warpUrl,
   setTextIfChanged(w.netWeb, buf);
 }
 
-void setStatus(const char *text, bool ok) {
-  if (w.statusText != nullptr) {
-    lv_label_set_text(w.statusText, text);
+void setConnectionState(ConnectionState state) {
+  const char *text = "Kein WLAN";
+  uint32_t color = C_MUTED;
+  uint32_t background = C_CARD2;
+
+  switch (state) {
+    case ConnectionState::NoNet:
+      text = "Kein WLAN";
+      color = C_MUTED;
+      background = C_CARD2;
+      break;
+    case ConnectionState::Disconnected:
+      text = "Getrennt";
+      color = C_RED;
+      background = 0x2A1D22;
+      break;
+    case ConnectionState::Data:
+      text = "Daten";
+      color = C_GREEN;
+      background = 0x173026;
+      break;
+    case ConnectionState::NoData:
+      text = "Keine Daten";
+      color = C_AMBER;
+      background = 0x33280F;
+      break;
   }
-  if (w.statusText != nullptr) {
-    lv_obj_set_style_text_color(w.statusText,
-                                lv_color_hex(ok ? C_GREEN : C_RED), 0);
-  }
+
+  setText(w.statusText, text);
+  setColor(w.statusText, color);
   if (w.statusDot != nullptr) {
-    lv_obj_set_style_bg_color(w.statusDot, lv_color_hex(ok ? C_GREEN : C_RED),
-                              0);
+    lv_obj_set_style_bg_color(w.statusDot, lv_color_hex(color), 0);
+  }
+  if (w.statusChip != nullptr) {
+    lv_obj_set_style_bg_color(w.statusChip, lv_color_hex(background), 0);
   }
 }
 
@@ -861,6 +934,28 @@ void update(const WarpData &d) {
   char buf[48];
   char buf2[64];
   char chargeBuf[32];
+
+  // Header statistics ------------------------------------------------
+  if (w.autarkyValue != nullptr) {
+    if (d.hasAutarky) {
+      snprintf(buf, sizeof(buf), "%.0f %%", d.autarky);
+      setText(w.autarkyValue, buf);
+      setColor(w.autarkyValue, C_TEXT);
+    } else {
+      setText(w.autarkyValue, "--");
+      setColor(w.autarkyValue, C_MUTED);
+    }
+  }
+  if (w.forecastValue != nullptr) {
+    if (d.hasForecast) {
+      fmtEnergy(buf, sizeof(buf), d.forecastTodayWh);
+      setText(w.forecastValue, buf);
+      setColor(w.forecastValue, C_SOLAR);
+    } else {
+      setText(w.forecastValue, "--");
+      setColor(w.forecastValue, C_MUTED);
+    }
+  }
 
   // Grid ---------------------------------------------------------------
   if (w.gridTotal != nullptr) {

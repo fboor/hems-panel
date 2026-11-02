@@ -72,8 +72,7 @@ struct Options {
 struct Shared {
   std::mutex mu;
   WarpData data;
-  std::string status = "Startet ...";
-  bool ok = false;
+  warpui::ConnectionState state = warpui::ConnectionState::NoNet;
   unsigned seq = 0;
 };
 
@@ -122,11 +121,11 @@ void fetchLoop(const Options &opt) {
       if (ok) {
         parsed.lastUpdateMs = lv_tick_get();
         g_shared.data = parsed;
-        g_shared.status = "Verbunden";
-        g_shared.ok = true;
+        g_shared.state = warpui::ConnectionState::Data;
       } else {
-        g_shared.status = "Keine Daten";
-        g_shared.ok = false;
+        g_shared.state = reader.slots().empty()
+                             ? warpui::ConnectionState::Disconnected
+                             : warpui::ConnectionState::NoData;
       }
       ++g_shared.seq;
     }
@@ -251,7 +250,7 @@ void printData(const WarpData &d) {
       "pv:     %.1f + %.1f W  total %.1f W  energy %.1f kWh\n"
       "battery: %.1f %%  %.1f W  %.1f V  %.1f A  charge %.1f kWh  "
       "discharge %.1f kWh\n"
-      "external: %.1f W  island: %s\n",
+      "external: %.1f W  island: %s  autarky: %.0f %%  forecast: %.1f kWh\n",
       d.deviceName, d.firmware, d.gridL1, d.gridL2, d.gridL3, d.gridPower,
       d.gridImportWh / 1000.0f, d.gridExportWh / 1000.0f, d.gridVoltageL1,
       d.gridVoltageL2, d.gridVoltageL3, d.houseL1, d.houseL2, d.houseL3,
@@ -259,7 +258,7 @@ void printData(const WarpData &d) {
       d.pvEnergyWh / 1000.0f, d.soc, d.batteryPower, d.batteryVoltage,
       d.batteryCurrent, d.batteryChargeWh / 1000.0f,
       d.batteryDischargeWh / 1000.0f, d.externalPower,
-      d.island ? "yes" : "no");
+      d.island ? "yes" : "no", d.autarky, d.forecastTodayWh / 1000.0f);
 }
 
 void usage() {
@@ -377,7 +376,7 @@ int main(int argc, char **argv) {
 
   warpui::create(lv_screen_active());
   warpui::setPage(opt.page);
-  warpui::setStatus("Verbinde...", false);
+  warpui::setConnectionState(warpui::ConnectionState::NoNet);
   warpui::setNetworkInfo("WLAN-Demo", "192.168.1.50", "http://192.168.1.222",
                          "http://warp-panel.local/");
   if (opt.setup) {
@@ -398,19 +397,16 @@ int main(int argc, char **argv) {
     advanceTick(now);
 
     WarpData data;
-    std::string status;
-    bool ok = false;
+    warpui::ConnectionState state = warpui::ConnectionState::NoNet;
     unsigned seq = 0;
     {
       std::lock_guard<std::mutex> lock(g_shared.mu);
       data = g_shared.data;
-      status = g_shared.status;
-      ok = g_shared.ok;
+      state = g_shared.state;
       seq = g_shared.seq;
     }
 
-    // The status text is cheap; refresh it every pass so "vor N s" moves.
-    warpui::setStatus(status.c_str(), ok);
+    warpui::setConnectionState(state);
 
     /* Update data on every pass through the main loop */
     if (seq != seenSeq) {

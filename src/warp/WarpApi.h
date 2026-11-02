@@ -651,6 +651,46 @@ class Reader {
       d.island = true;
     }
 
+    // Solar forecast for today. The module returns -1 while it has no data,
+    // which must not be shown as "0 kWh".
+    {
+      std::string body;
+      std::string error;
+      if (get("/solar_forecast/state", body, error)) {
+        double wh = -1.0;
+        if (warpjson::number(body.data(), body.size(), "wh_today", wh) &&
+            wh >= 0.0) {
+          d.forecastTodayWh = static_cast<float>(wh);
+          d.hasForecast = true;
+        }
+      }
+    }
+
+    // Autarkie. Prefer the cumulative meter counters: self-consumed PV is
+    // generation minus export, and total consumption is that plus grid import.
+    // This stays meaningful even when the device has no separate load meter.
+    // Fall back to the live house/grid ratio when only power values exist.
+    if (d.pvEnergyWh > 0.0f &&
+        (d.gridImportWh > 0.0f || d.gridExportWh > 0.0f)) {
+      const float selfConsumed = d.pvEnergyWh - d.gridExportWh;
+      const float consumption = selfConsumed + d.gridImportWh;
+      if (selfConsumed > 0.0f && consumption > 0.0f) {
+        float autarky = selfConsumed / consumption * 100.0f;
+        if (autarky < 0.0f) autarky = 0.0f;
+        if (autarky > 100.0f) autarky = 100.0f;
+        d.autarky = autarky;
+        d.hasAutarky = true;
+      }
+    }
+    if (!d.hasAutarky && d.hasHouse && d.housePower > 20.0f) {
+      const float gridImport = d.gridPower > 0.0f ? d.gridPower : 0.0f;
+      float autarky = (d.housePower - gridImport) / d.housePower * 100.0f;
+      if (autarky < 0.0f) autarky = 0.0f;
+      if (autarky > 100.0f) autarky = 100.0f;
+      d.autarky = autarky;
+      d.hasAutarky = true;
+    }
+
     d.valid = d.hasGrid || d.hasHouse || d.hasPv || d.hasBattery ||
               d.hasExternal || !std::isnan(powerAtMeter);
 

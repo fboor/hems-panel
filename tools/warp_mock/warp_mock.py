@@ -64,6 +64,7 @@ BASE = {
     "day_load_wh": 8300.0,
     "day_feed_in_wh": 3100.0,
     "day_grid_draw_wh": 5700.0,
+    "forecast_today_wh": 24100.0,
 }
 
 
@@ -88,6 +89,7 @@ def scenario(name):
             battery_current=-12.1,
             battery_discharge_wh=4700.0,
             island_flag=0,
+            forecast_today_wh=22000.0,
         )
     elif name == "island":
         d.update(
@@ -107,6 +109,7 @@ def scenario(name):
             battery_current=-3.5,
             island_flag=1,
             external_power=0.0,
+            forecast_today_wh=18000.0,
         )
     elif name == "low_solar":
         d.update(
@@ -120,6 +123,7 @@ def scenario(name):
             battery_power=-80.0,
             battery_current=-1.6,
             island_flag=0,
+            forecast_today_wh=6500.0,
         )
     elif name == "grid_failure":
         d.update(
@@ -137,6 +141,7 @@ def scenario(name):
             battery_current=-2.4,
             island_flag=1,
             external_power=0.0,
+            forecast_today_wh=15000.0,
         )
     return d
 
@@ -396,6 +401,10 @@ class Handler(BaseHTTPRequestHandler):
                 "is_3phase": True,
                 "charging_blocked": 0,
             })
+            return
+
+        if path == "/solar_forecast/state":
+            self._send({"wh_today": d.get("forecast_today_wh", 24100.0)})
             return
 
         if path == "/power_manager/state":

@@ -183,14 +183,16 @@ void generateApCredentials() {
   g_apPassword[11] = '\0';
 }
 
-bool fetchWarp(WarpData &out) {
+enum class FetchResult { Ok, Disconnected, NoData };
+
+FetchResult fetchWarp(WarpData &out) {
   if (!g_reader) {
     g_reader.reset(new warpapi::Reader(g_transport, g_url));
   }
 
   std::string error;
   if (g_reader->poll(out, error)) {
-    return true;
+    return FetchResult::Ok;
   }
   Serial.printf("WARP module API: %s (%s)\n", error.c_str(),
                 g_reader->base().c_str());
@@ -198,7 +200,10 @@ bool fetchWarp(WarpData &out) {
   // A flat JSON bridge is still accepted for development, but the real device
   // uses the module API above.
   if (strstr(g_url, "/json") == nullptr) {
-    return false;
+    // A discovered device that simply returned no measurements is reachable;
+    // no discovered modules means the WARP itself is not answering.
+    return g_reader->slots().empty() ? FetchResult::Disconnected
+                                     : FetchResult::NoData;
   }
   HTTPClient http;
   http.setConnectTimeout(HTTP_TIMEOUT_MS);
@@ -206,31 +211,40 @@ bool fetchWarp(WarpData &out) {
   http.setReuse(false);
   if (!http.begin(g_url)) {
     Serial.printf("HTTP begin failed: %s\n", g_url);
-    return false;
+    return FetchResult::Disconnected;
   }
   const int code = http.GET();
   if (code != HTTP_CODE_OK) {
     Serial.printf("HTTP %d from %s\n", code, g_url);
     http.end();
-    return false;
+    return FetchResult::Disconnected;
   }
   const String body = http.getString();
   http.end();
-  return warpparse::parse(body.c_str(), body.length(), out);
+  return warpparse::parse(body.c_str(), body.length(), out)
+             ? FetchResult::Ok
+             : FetchResult::NoData;
 }
 
 void poll() {
-  warpui::setStatus("Lade ...", true);
+  if (WiFi.status() != WL_CONNECTED) {
+    warpui::setConnectionState(warpui::ConnectionState::NoNet);
+    return;
+  }
+
   WarpData fresh;
-  if (!fetchWarp(fresh)) {
-    warpui::setStatus("Keine Daten", false);
+  const FetchResult result = fetchWarp(fresh);
+  if (result != FetchResult::Ok) {
+    warpui::setConnectionState(result == FetchResult::Disconnected
+                                   ? warpui::ConnectionState::Disconnected
+                                   : warpui::ConnectionState::NoData);
     return;
   }
   fresh.lastUpdateMs = lv_tick_get();
   g_data = fresh;
   g_haveData = true;
   warpui::update(g_data);
-  warpui::setStatus("Verbunden", true);
+  warpui::setConnectionState(warpui::ConnectionState::Data);
 
   Serial.printf(
       "grid %.0f/%.0f/%.0f (%.0f) W  pv %.0f W  ext %.0f W  house %.0f W  "
@@ -272,7 +286,7 @@ void setupNetwork() {
   });
   g_wm->setSaveParamsCallback(onParamsSaved);
 
-  warpui::setStatus("WLAN ...", false);
+  warpui::setConnectionState(warpui::ConnectionState::NoNet);
   const bool connected = g_wm->autoConnect(g_apSsid, g_apPassword);
   if (!connected) {
     Serial.println(F("Wi-Fi configuration timed out, restarting"));
@@ -310,7 +324,7 @@ void setup() {
   }
 
   warpui::create(lv_screen_active());
-  warpui::setStatus("Startet ...", false);
+  warpui::setConnectionState(warpui::ConnectionState::NoNet);
   backlightSetWakeable(touchInit());
   lv_indev_t *indev = lv_indev_create();
   lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
@@ -324,7 +338,6 @@ void setup() {
   ArduinoOTA.setHostname("warp-panel");
   ArduinoOTA.begin();
 
-  warpui::setStatus("Lade ...", true);
   g_lastPoll = millis();
   poll();
 }
