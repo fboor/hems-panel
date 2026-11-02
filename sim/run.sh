@@ -42,11 +42,14 @@ $(find "$lvgl/src" -name '*.c')
 EOF
 wait
 [ $neu -gt 0 ] && echo "LVGL: $neu Dateien gebaut"
+# The generated icon font is C (designated initializers), not C++.
+cc $cflags -c "$repo/src/ui/fonts/lv_font_mdi_icons_28.c" -o "$build/mdi_icons_28.o"
 
 c++ $cflags -std=c++17 \
   "$here/sim_main.cpp" \
   "$repo/src/ui/WarpUi.cpp" \
   "$build"/lvgl/*.o \
+  "$build"/mdi_icons_28.o \
   -o "$out" -lSDL2 -lz -lm -lpthread
 
 echo "gebaut: $out"

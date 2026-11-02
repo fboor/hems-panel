@@ -13,7 +13,7 @@ source as the firmware and talks to the same WARP HTTP API.
 
 The first page is a live energy-flow view: PV, grid, battery and wallbox
 around the house hub, with link width and particle speed following the actual
-power. The grid node uses a drawn pylon instead of a generic power symbol. Flow
+power. The grid node uses the same MDI transmission-tower icon as `rct-panel`. Flow
 particles only redraw small areas, and the animation timer stops when the page
 is hidden. The energy overview, history and service pages follow in their
 previous order.

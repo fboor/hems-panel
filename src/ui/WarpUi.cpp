@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include <functional>
 #include "WarpUi.h"
+#include "fonts/lv_font_mdi_icons_28.h"
 
 LV_IMG_DECLARE(chart_bg);
 
@@ -39,6 +40,10 @@ constexpr uint32_t C_GRID_HI = 0xCFE8FF;
 constexpr uint32_t C_BAT_HI = 0xCFFFE4;
 constexpr uint32_t C_EV_HI = 0xE9DBFF;
 
+// MDI "transmission-tower" (U+F0D3E) from the bundled 28 px icon font. Written
+// as UTF-8 bytes, not \uXXXX, so the compiler keeps the whole code point.
+constexpr const char kFlowGridIcon[] = "\xF3\xB0\xB4\xBE";
+
 constexpr const lv_font_t *F_SMALL = &lv_font_montserrat_14;
 constexpr const lv_font_t *F_BODY = &lv_font_montserrat_16;
 constexpr const lv_font_t *F_TITLE = &lv_font_montserrat_20;
@@ -48,7 +53,7 @@ constexpr const lv_font_t *F_ICON = &lv_font_montserrat_48;
 
 struct Widgets {
   lv_obj_t *statusChip = nullptr;
-  lv_obj_t *statusDot = nullptr;
+  lv_obj_t *statusWifi = nullptr;
   lv_obj_t *statusText = nullptr;
   lv_obj_t *autarkyValue = nullptr;
   lv_obj_t *forecastValue = nullptr;
@@ -264,27 +269,6 @@ void setColor(lv_obj_t *l, uint32_t color) {
   }
 }
 
-// A small transmission pylon for the grid node. LVGL's built-in symbol font
-// has no tower glyph, so draw the few lines directly. The point arrays are
-// static because lv_line keeps the pointer; there is only one grid node.
-void gridTower(lv_obj_t *parent, uint32_t color) {
-  static lv_point_precise_t leftLeg[2] = {{22, 6}, {11, 36}};
-  static lv_point_precise_t rightLeg[2] = {{22, 6}, {33, 36}};
-  static lv_point_precise_t base[2] = {{9, 36}, {35, 36}};
-  static lv_point_precise_t crossTop[2] = {{17, 17}, {27, 17}};
-  static lv_point_precise_t crossBottom[2] = {{14, 27}, {30, 27}};
-  static lv_point_precise_t *segments[] = {leftLeg, rightLeg, base,
-                                           crossTop, crossBottom};
-
-  for (lv_point_precise_t *segment : segments) {
-    lv_obj_t *line = lv_line_create(parent);
-    lv_line_set_points(line, segment, 2);
-    lv_obj_set_style_line_width(line, 2, 0);
-    lv_obj_set_style_line_color(line, lv_color_hex(color), 0);
-    lv_obj_set_style_line_rounded(line, true, 0);
-  }
-}
-
 struct FlowNode {
   lv_obj_t *card = nullptr;
   lv_obj_t *value = nullptr;
@@ -296,7 +280,7 @@ struct FlowNode {
 // cheap on the ESP32.
 FlowNode flowNode(lv_obj_t *parent, int x, int y, const char *name,
                   const char *symbol, uint32_t accent, uint32_t accentDim,
-                  bool pylon = false) {
+                  const lv_font_t *iconFont = F_TITLE) {
   FlowNode n;
   n.card = lv_obj_create(parent);
   lv_obj_remove_style_all(n.card);
@@ -316,13 +300,9 @@ FlowNode flowNode(lv_obj_t *parent, int x, int y, const char *name,
   lv_obj_set_style_radius(badge, 14, 0);
   lv_obj_set_style_bg_color(badge, lv_color_hex(accentDim), 0);
   lv_obj_set_style_bg_opa(badge, LV_OPA_COVER, 0);
-  if (pylon) {
-    gridTower(badge, accent);
-  } else {
-    lv_obj_t *icon = label(badge, 0, 0, 44, F_TITLE, accent, symbol,
-                           LV_TEXT_ALIGN_CENTER);
-    lv_obj_center(icon);
-  }
+  lv_obj_t *icon =
+      label(badge, 0, 0, 44, iconFont, accent, symbol, LV_TEXT_ALIGN_CENTER);
+  lv_obj_center(icon);
 
   label(n.card, 68, 12, 96, F_SMALL, C_MUTED, name);
   n.value = label(n.card, 68, 30, 96, F_TITLE, accent, "--");
@@ -420,15 +400,16 @@ void create(lv_obj_t *parent) {
   lv_obj_add_flag(w.caption3, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(w.caption4, LV_OBJ_FLAG_HIDDEN);
 
-  // Autarkie and today's solar forecast. They share the header row with the
-  // compact connection chip, so the right side stays readable at a glance.
-  label(parent, 330, 4, 100, F_SMALL, C_MUTED, "Autarkie");
-  w.autarkyValue = label(parent, 330, 20, 100, F_TITLE, C_TEXT, "--");
-  label(parent, 438, 4, 110, F_SMALL, C_MUTED, "Prognose");
-  w.forecastValue = label(parent, 438, 20, 110, F_TITLE, C_SOLAR, "--");
+  // Autarkie and today's solar forecast. Value on top, caption below, so the
+  // two readings line up with the title and the connection chip.
+  w.autarkyValue = label(parent, 330, 5, 100, F_TITLE, C_TEXT, "--");
+  label(parent, 330, 29, 100, F_SMALL, C_MUTED, "Autarkie");
+  w.forecastValue = label(parent, 424, 5, 120, F_TITLE, C_SOLAR, "--");
+  label(parent, 424, 29, 120, F_SMALL, C_MUTED, "Prognose (kWh)");
 
-  // One pill for the connection state: "Kein WLAN", "Getrennt", "Daten" or
-  // "Keine Daten". The coloured dot is part of the pill, not a second item.
+  // One pill for the connection state. The WiFi glyph shows whether the
+  // network is up; the text beside it shows whether data is arriving, so both
+  // are visible together instead of replacing each other.
   w.statusChip = lv_obj_create(parent);
   lv_obj_remove_style_all(w.statusChip);
   lv_obj_set_pos(w.statusChip, 556, 14);
@@ -440,14 +421,8 @@ void create(lv_obj_t *parent) {
   lv_obj_set_style_border_color(w.statusChip, lv_color_hex(C_LINE), 0);
   lv_obj_clear_flag(w.statusChip, LV_OBJ_FLAG_SCROLLABLE);
 
-  w.statusDot = lv_obj_create(w.statusChip);
-  lv_obj_remove_style_all(w.statusDot);
-  lv_obj_set_pos(w.statusDot, 12, 11);
-  lv_obj_set_size(w.statusDot, 10, 10);
-  lv_obj_set_style_radius(w.statusDot, LV_RADIUS_CIRCLE, 0);
-  lv_obj_set_style_bg_color(w.statusDot, lv_color_hex(C_MUTED), 0);
-  lv_obj_set_style_bg_opa(w.statusDot, LV_OPA_COVER, 0);
-  w.statusText = label(w.statusChip, 28, 7, 94, F_SMALL, C_MUTED, "Kein WLAN");
+  w.statusWifi = label(w.statusChip, 10, 5, 24, F_BODY, C_MUTED, LV_SYMBOL_WIFI);
+  w.statusText = label(w.statusChip, 32, 7, 92, F_SMALL, C_MUTED, "Kein WLAN");
 
   w.islandBadge = lv_obj_create(parent);
   lv_obj_remove_style_all(w.islandBadge);
@@ -626,8 +601,8 @@ void create(lv_obj_t *parent) {
   w.pvValue = pvFlow.value;
   w.pvState = pvFlow.state;
 
-  FlowNode gridFlow = flowNode(w.page4, 24, 252, "NETZ", LV_SYMBOL_POWER,
-                               C_BLUE, C_GRID_DIM, true);
+  FlowNode gridFlow = flowNode(w.page4, 24, 252, "NETZ", kFlowGridIcon,
+                               C_BLUE, C_GRID_DIM, &lv_font_mdi_icons_28);
   w.gridNode = gridFlow.card;
   w.gridValue = gridFlow.value;
   w.gridState = gridFlow.state;
@@ -894,36 +869,43 @@ void setNetworkInfo(const char *ssid, const char *ip, const char *warpUrl,
 
 void setConnectionState(ConnectionState state) {
   const char *text = "Kein WLAN";
-  uint32_t color = C_MUTED;
+  uint32_t textColor = C_MUTED;
+  uint32_t wifiColor = C_MUTED;
   uint32_t background = C_CARD2;
 
   switch (state) {
     case ConnectionState::NoNet:
       text = "Kein WLAN";
-      color = C_MUTED;
+      textColor = C_MUTED;
+      wifiColor = C_MUTED;
       background = C_CARD2;
       break;
     case ConnectionState::Disconnected:
+      // WLAN is up (green glyph) but the WARP does not answer (red text).
       text = "Getrennt";
-      color = C_RED;
+      textColor = C_RED;
+      wifiColor = C_GREEN;
       background = 0x2A1D22;
       break;
     case ConnectionState::Data:
       text = "Daten";
-      color = C_GREEN;
+      textColor = C_GREEN;
+      wifiColor = C_GREEN;
       background = 0x173026;
       break;
     case ConnectionState::NoData:
+      // WLAN is up and the WARP answers, but it returns no measurements.
       text = "Keine Daten";
-      color = C_AMBER;
+      textColor = C_AMBER;
+      wifiColor = C_GREEN;
       background = 0x33280F;
       break;
   }
 
   setText(w.statusText, text);
-  setColor(w.statusText, color);
-  if (w.statusDot != nullptr) {
-    lv_obj_set_style_bg_color(w.statusDot, lv_color_hex(color), 0);
+  setColor(w.statusText, textColor);
+  if (w.statusWifi != nullptr) {
+    lv_obj_set_style_text_color(w.statusWifi, lv_color_hex(wifiColor), 0);
   }
   if (w.statusChip != nullptr) {
     lv_obj_set_style_bg_color(w.statusChip, lv_color_hex(background), 0);
@@ -948,7 +930,8 @@ void update(const WarpData &d) {
   }
   if (w.forecastValue != nullptr) {
     if (d.hasForecast) {
-      fmtEnergy(buf, sizeof(buf), d.forecastTodayWh);
+      // The caption carries the unit, so the value stays a plain number.
+      snprintf(buf, sizeof(buf), "%.1f", d.forecastTodayWh / 1000.0f);
       setText(w.forecastValue, buf);
       setColor(w.forecastValue, C_SOLAR);
     } else {
