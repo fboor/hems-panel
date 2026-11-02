@@ -57,8 +57,6 @@ struct Widgets {
   lv_obj_t *statusText = nullptr;
   lv_obj_t *autarkyValue = nullptr;
   lv_obj_t *forecastValue = nullptr;
-  lv_obj_t *islandBadge = nullptr;
-  lv_obj_t *islandText = nullptr;
   lv_obj_t *updatedText = nullptr;
   lv_obj_t *pageBtn1 = nullptr;
   lv_obj_t *pageBtn2 = nullptr;
@@ -400,19 +398,19 @@ void create(lv_obj_t *parent) {
   lv_obj_add_flag(w.caption3, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(w.caption4, LV_OBJ_FLAG_HIDDEN);
 
-  // Autarkie and today's solar forecast. Value on top, caption below, so the
-  // two readings line up with the title and the connection chip.
-  w.autarkyValue = label(parent, 330, 5, 100, F_TITLE, C_TEXT, "--");
-  label(parent, 330, 29, 100, F_SMALL, C_MUTED, "Autarkie");
-  w.forecastValue = label(parent, 424, 5, 120, F_TITLE, C_SOLAR, "--");
-  label(parent, 424, 29, 120, F_SMALL, C_MUTED, "Prognose (kWh)");
+  // Autarkie and today's solar forecast. Values align with the title row,
+  // captions sit below them.
+  w.autarkyValue = label(parent, 330, 8, 100, F_TITLE, C_TEXT, "--");
+  label(parent, 330, 32, 100, F_SMALL, C_MUTED, "Autarkie");
+  w.forecastValue = label(parent, 424, 8, 120, F_TITLE, C_TEXT, "--");
+  label(parent, 424, 32, 120, F_SMALL, C_MUTED, "Prognose");
 
   // One pill for the connection state. The WiFi glyph shows whether the
   // network is up; the text beside it shows whether data is arriving, so both
   // are visible together instead of replacing each other.
   w.statusChip = lv_obj_create(parent);
   lv_obj_remove_style_all(w.statusChip);
-  lv_obj_set_pos(w.statusChip, 556, 14);
+  lv_obj_set_pos(w.statusChip, 656, 14);
   lv_obj_set_size(w.statusChip, 130, 32);
   lv_obj_set_style_radius(w.statusChip, 16, 0);
   lv_obj_set_style_bg_color(w.statusChip, lv_color_hex(C_CARD2), 0);
@@ -423,16 +421,6 @@ void create(lv_obj_t *parent) {
 
   w.statusWifi = label(w.statusChip, 10, 5, 24, F_BODY, C_MUTED, LV_SYMBOL_WIFI);
   w.statusText = label(w.statusChip, 32, 7, 92, F_SMALL, C_MUTED, "Kein WLAN");
-
-  w.islandBadge = lv_obj_create(parent);
-  lv_obj_remove_style_all(w.islandBadge);
-  lv_obj_set_pos(w.islandBadge, 694, 14);
-  lv_obj_set_size(w.islandBadge, 92, 30);
-  lv_obj_set_style_radius(w.islandBadge, 15, 0);
-  lv_obj_set_style_bg_color(w.islandBadge, lv_color_hex(C_CARD2), 0);
-  lv_obj_set_style_bg_opa(w.islandBadge, LV_OPA_COVER, 0);
-  w.islandText = label(w.islandBadge, 0, 6, 92, F_SMALL, C_MUTED, "Netz",
-                       LV_TEXT_ALIGN_CENTER);
 
   lv_obj_t *page1 = lv_obj_create(parent);
   lv_obj_remove_style_all(page1);
@@ -930,10 +918,9 @@ void update(const WarpData &d) {
   }
   if (w.forecastValue != nullptr) {
     if (d.hasForecast) {
-      // The caption carries the unit, so the value stays a plain number.
-      snprintf(buf, sizeof(buf), "%.1f", d.forecastTodayWh / 1000.0f);
+      fmtEnergy(buf, sizeof(buf), d.forecastTodayWh);
       setText(w.forecastValue, buf);
-      setColor(w.forecastValue, C_SOLAR);
+      setColor(w.forecastValue, C_TEXT);
     } else {
       setText(w.forecastValue, "--");
       setColor(w.forecastValue, C_MUTED);
@@ -1130,19 +1117,6 @@ void update(const WarpData &d) {
       snprintf(combined, sizeof(combined), "--");
     }
     setText(w.energyBattery, combined);
-  }
-
-  // Island badge -------------------------------------------------------
-  if (w.islandBadge != nullptr && w.islandText != nullptr) {
-    if (d.island) {
-      setText(w.islandText, "Insel");
-      lv_obj_set_style_text_color(w.islandText, lv_color_hex(C_RED), 0);
-      lv_obj_set_style_bg_color(w.islandBadge, lv_color_hex(0x3A1D22), 0);
-    } else {
-      setText(w.islandText, "Netz");
-      lv_obj_set_style_text_color(w.islandText, lv_color_hex(C_GREEN), 0);
-      lv_obj_set_style_bg_color(w.islandBadge, lv_color_hex(0x173026), 0);
-    }
   }
 
   // Power chart --------------------------------------------------------

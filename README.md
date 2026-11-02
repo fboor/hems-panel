@@ -18,10 +18,12 @@ particles only redraw small areas, and the animation timer stops when the page
 is hidden. The energy overview, history and service pages follow in their
 previous order.
 
-The header keeps one connection chip (`Kein WLAN`, `Getrennt`, `Daten`,
-`Keine Daten`) and uses the freed space for autarky and today's solar forecast.
-Autarky comes from the WARP energy counters when available; without them the
-panel falls back to the live house/grid ratio.
+The header keeps one connection chip: a WiFi glyph (green when the network is
+up) plus `Kein WLAN`, `Getrennt`, `Daten` or `Keine Daten`. It sits at the far
+right, where the old `Netz` badge used to be. The freed space shows autarky and
+today's solar forecast, both with their captions below the values. Autarky comes
+from the WARP energy counters when available; without them the panel falls back
+to the live house/grid ratio.
 
 ![energy flow](screenshots/flow.png)
 
