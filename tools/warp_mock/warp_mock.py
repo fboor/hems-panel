@@ -6,6 +6,8 @@ The mock serves the same module API as a real WARP device:
     /info/name, /info/version
     /meters/0..6/config, /value_ids, /values
     /power_manager/low_level_state
+    /charge_manager/state
+    /solar_forecast/state
 
 It also keeps the old flat /json endpoint, so the fallback parser can still be
 exercised. The scenarios only change the source values; the meter arrays are
@@ -65,6 +67,13 @@ BASE = {
     "day_feed_in_wh": 3100.0,
     "day_grid_draw_wh": 5700.0,
     "forecast_today_wh": 24100.0,
+    # Charge manager. BASE has no vehicle; the wallbox scenarios set these.
+    "charge_state": 0,            # CASState: 0 NoVehicle, 4 Charging, ...
+    "charge_current": 0.0,        # allocated current, mA
+    "charge_phases": 0,           # allocated phases, 0..3
+    "charge_supported_phases": 1,  # 1/3, bit 2 set when switchable
+    "charge_name": "WARP Wallbox",
+    "charge_meter_power": None,   # W when the wallbox has its own meter
 }
 
 
@@ -143,10 +152,44 @@ def scenario(name):
             external_power=0.0,
             forecast_today_wh=15000.0,
         )
+    elif name == "wallbox":
+        d.update(
+            charge_state=4,
+            charge_current=10000.0,
+            charge_phases=1,
+            charge_supported_phases=1,
+            forecast_today_wh=20500.0,
+        )
+    elif name == "wallbox_3p":
+        d.update(
+            charge_state=4,
+            charge_current=16000.0,
+            charge_phases=3,
+            charge_supported_phases=7,
+            forecast_today_wh=20500.0,
+        )
+    elif name == "wallbox_meter":
+        d.update(
+            charge_state=4,
+            charge_current=16000.0,
+            charge_phases=3,
+            charge_supported_phases=7,
+            charge_meter_power=11100.0,
+            forecast_today_wh=20500.0,
+        )
     return d
 
 
-SCENARIOS = ("midsummer", "evening", "island", "low_solar", "grid_failure")
+SCENARIOS = (
+    "midsummer",
+    "evening",
+    "island",
+    "low_solar",
+    "grid_failure",
+    "wallbox",
+    "wallbox_3p",
+    "wallbox_meter",
+)
 
 
 def live_tick(d, t):
@@ -178,6 +221,32 @@ def live_tick(d, t):
     return d
 
 
+def wallbox_phase_count(d):
+    phases = int(d.get("charge_phases") or 0)
+    if phases < 1:
+        phases = int(d.get("charge_supported_phases") or 1) & 3
+    return 3 if phases >= 3 else 1
+
+
+def wallbox_phase_voltages(d):
+    volts = [
+        d.get("grid_voltage_l1", 230.0),
+        d.get("grid_voltage_l2", 230.0),
+        d.get("grid_voltage_l3", 230.0),
+    ]
+    return [v if v >= 50.0 else 230.0 for v in volts]
+
+
+def wallbox_power(d):
+    """Power from the wallbox meter, or the same estimate the panel uses."""
+    meter = d.get("charge_meter_power")
+    if meter is not None:
+        return float(meter)
+    amps = float(d.get("charge_current") or 0.0) / 1000.0
+    volts = wallbox_phase_voltages(d)
+    return amps * (sum(volts) if wallbox_phase_count(d) == 3 else volts[0])
+
+
 def meter_payloads(d):
     """Return (config, value_ids, values) for the seven meter slots."""
     pv_total = d["pv_power_a"] + d["pv_power_b"]
@@ -185,6 +254,22 @@ def meter_payloads(d):
     pv_voltage_avg = 0.0
     if d["pv_voltage_a"] > 0 or d["pv_voltage_b"] > 0:
         pv_voltage_avg = (d["pv_voltage_a"] + d["pv_voltage_b"]) / 2.0
+
+    # The load meter sits behind the house connection and therefore includes
+    # the wallbox, like it does on the real installation.
+    wallbox_w = wallbox_power(d)
+    house_l = [
+        d["household_power_l1"],
+        d["household_power_l2"],
+        d["household_power_l3"],
+    ]
+    if wallbox_w > 0:
+        if wallbox_phase_count(d) == 3:
+            for i in range(3):
+                house_l[i] = round(house_l[i] + wallbox_w / 3.0, 1)
+        else:
+            house_l[0] = round(house_l[0] + wallbox_w, 1)
+    house_total = round(sum(house_l), 1)
 
     slots = [
         (
@@ -198,11 +283,11 @@ def meter_payloads(d):
             }],
             [39, 48, 57, 215, 74],
             [
-                d["household_power_l1"],
-                d["household_power_l2"],
-                d["household_power_l3"],
+                house_l[0],
+                house_l[1],
+                house_l[2],
                 d["household_energy_wh"],
-                d["household_power"],
+                house_total,
             ],
         ),
         (
@@ -273,10 +358,28 @@ def meter_payloads(d):
                 d["battery_temperature"],
             ],
         ),
-        ([0, None], [], []),
-        ([0, None], [], []),
-        ([0, None], [], []),
     ]
+    if d.get("charge_meter_power") is not None:
+        wallbox_w = float(d["charge_meter_power"])
+        if wallbox_phase_count(d) == 3:
+            phases = [wallbox_w / 3.0] * 3
+        else:
+            phases = [wallbox_w, 0.0, 0.0]
+        slots.append((
+            [8, {
+                "display_name": "WARP Wallbox",
+                "location": 2,
+                "excluded": False,
+                "host": "127.0.0.1",
+                "port": 8899,
+                "virtual_meter": 0,
+            }],
+            [39, 48, 57, 74],
+            [round(phases[0], 1), round(phases[1], 1), round(phases[2], 1),
+             round(wallbox_w, 1)],
+        ))
+    while len(slots) < 7:
+        slots.append(([0, None], [], []))
     return slots
 
 
@@ -400,6 +503,24 @@ class Handler(BaseHTTPRequestHandler):
                 "max_current_limited": 16000,
                 "is_3phase": True,
                 "charging_blocked": 0,
+            })
+            return
+
+        if path == "/charge_manager/state":
+            current = float(d.get("charge_current") or 0.0)
+            self._send({
+                "state": 1,
+                "chargers": [{
+                    "s": d.get("charge_state", 0),
+                    "e": 0,
+                    "ac": current,
+                    "ap": d.get("charge_phases", 0),
+                    "sc": current,
+                    "sp": d.get("charge_supported_phases", 1),
+                    "lu": 1234,
+                    "n": d.get("charge_name", "WARP Wallbox"),
+                    "uid": 12345,
+                }],
             })
             return
 

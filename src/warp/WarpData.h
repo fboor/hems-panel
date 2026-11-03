@@ -37,12 +37,15 @@ struct WarpData {
   float batteryCurrent = 0.0f; // A
 
   // Charge manager / Wallbox.
-  int charge_state = 0;        // 0=unknown, 1=ready, 2=charging, 3=error
-  float charge_power = 0.0f;   // W from charge_manager/state
-  double charge_current = 0.0;      // mA from charge_manager/state
-  int charge_status = 0;       // 0=stopped, 1=charging, 2=complete, 3=error
-  char charge_name[40] = "";   // Charger name from API
-  int charge_mode = 0;         // 0=Fast,1=Off,2=PV,3=Min+PV from power_manager/charge_mode
+  bool hasCharger = false;      // charge_manager reported at least one charger
+  bool chargeMeter = false;     // a dedicated wallbox meter supplied the power
+  bool chargeEstimated = false; // power derived from current and voltage
+  int charge_state = 0;         // CASState from charge_manager/state
+  float charge_power = 0.0f;    // W, wallbox meter value or estimate
+  double charge_current = 0.0;  // mA allocated current
+  char charge_name[40] = "";    // Charger name from API
+  int charge_mode = 0;          // 0=Fast,1=Off,2=PV,3=Min+PV from power_manager/charge_mode
+  int charge_phases = 0;        // phases used by the wallbox (0 = unknown)
 
   // Grid connection.
   bool island = false;

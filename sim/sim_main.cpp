@@ -259,6 +259,10 @@ void printData(const WarpData &d) {
       d.batteryCurrent, d.batteryChargeWh / 1000.0f,
       d.batteryDischargeWh / 1000.0f, d.externalPower,
       d.island ? "yes" : "no", d.autarky, d.forecastTodayWh / 1000.0f);
+  printf("wallbox: %.1f W  %.1f A  %d ph  state %d  power %s%s\n",
+         d.charge_power, d.charge_current / 1000.0, d.charge_phases,
+         d.charge_state, d.chargeMeter ? "meter" : "calculated",
+         d.chargeEstimated ? " (estimated)" : "");
 }
 
 void usage() {

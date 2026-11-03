@@ -1001,29 +1001,33 @@ void update(const WarpData &d) {
   }
 
   // Wallbox -----------------------------------------------------------
-  /* Wallbox-Zustand aus charge_manager API ableiten */
-  /* States: 0=unbekannt, 1=bereit, 2=laden, 3=fehler */
-  if (d.charge_power > 0.1f || d.charge_current > 0.1) {
-    if (d.charge_current > 0.1) {
-      snprintf(chargeBuf, sizeof(chargeBuf), "%.1f A", d.charge_current / 1000.0);
+  /* CAS states: 0=kein Fahrzeug, 1/2/3/7=blockiert, 4=laden, 5=Fehler,
+   * 6=fertig. The power is either read from a wallbox meter or estimated from
+   * the allocated current and the phase voltages. */
+  if (d.hasCharger && (d.charge_power > 0.1f || d.charge_current > 0.1)) {
+    fmtPower(chargeBuf, sizeof(chargeBuf), d.charge_power);
+    setText(w.wallboxValue, chargeBuf);
+    const bool charging = d.charge_state == 4 || d.charge_power > 10.0f;
+    if (charging) {
+      setText(w.wallboxNote, d.chargeEstimated ? "Laden (geschätzt)" : "Laden");
     } else {
-      snprintf(chargeBuf, sizeof(chargeBuf), "%.1f W", d.charge_power);
+      setText(w.wallboxNote, d.chargeEstimated ? "Bereit (geschätzt)" : "Bereit");
     }
-    setText(w.wallboxValue, chargeBuf);
-    setText(w.wallboxNote, "Laden");
-  } else if (d.charge_name[0] != '\0') {
-    snprintf(chargeBuf, sizeof(chargeBuf), "--");
-    setText(w.wallboxValue, chargeBuf);
-    if (d.charge_state == 1) {
-      setText(w.wallboxNote, "Wartet auf Freigabe");
-    } else if (d.charge_state == 3) {
+  } else if (d.hasCharger) {
+    setText(w.wallboxValue, "--");
+    if (d.charge_state == 5) {
       setText(w.wallboxNote, "Fehler");
+    } else if (d.charge_state == 6) {
+      setText(w.wallboxNote, "Fertig");
+    } else if (d.charge_state == 1 || d.charge_state == 2 ||
+               d.charge_state == 3 || d.charge_state == 7) {
+      setText(w.wallboxNote, "Blockiert");
     } else {
-      setText(w.wallboxNote, "Konfiguriert");
+      setText(w.wallboxNote, "Kein Fahrzeug");
     }
   } else {
-      setText(w.wallboxValue, "--");
-      setText(w.wallboxNote, "Getrennt");
+    setText(w.wallboxValue, "--");
+    setText(w.wallboxNote, "Getrennt");
   }
   const char *modeStr = d.charge_mode == 0 ? "Schnell" :
                         d.charge_mode == 1 ? "Aus" :
@@ -1031,7 +1035,12 @@ void update(const WarpData &d) {
                         d.charge_mode == 3 ? "Min+PV" : "?";
   snprintf(chargeBuf, sizeof(chargeBuf), "Modus: %s", modeStr);
   setText(w.wallboxMode, chargeBuf);
-  snprintf(chargeBuf, sizeof(chargeBuf), "Phase: %s", d.is_3phase ? "3-phasig" : "1-phasig");
+  if (d.hasCharger && d.charge_phases > 0) {
+    snprintf(chargeBuf, sizeof(chargeBuf), "Phase: %s",
+             d.charge_phases >= 3 ? "3-phasig" : "1-phasig");
+  } else {
+    snprintf(chargeBuf, sizeof(chargeBuf), "Phase: --");
+  }
   setText(w.wallboxPhase, chargeBuf);
   if (w.batSoc != nullptr) {
     if (d.hasBattery) {
@@ -1244,28 +1253,31 @@ void update(const WarpData &d) {
     }
 
     // Wallbox ----------------------------------------------------------
-    double wallboxW = d.charge_power;
-    if (wallboxW <= 0.0 && d.charge_current > 0.1) {
-      wallboxW = d.charge_current / 1000.0 * 230.0 * (d.is_3phase ? 3.0 : 1.0);
-    }
-    const bool wallboxOn = wallboxW > 10.0 || d.charge_current > 0.1;
+    const double wallboxW = d.charge_power;
+    const bool wallboxOn =
+        d.hasCharger && (wallboxW > 10.0 || d.charge_current > 0.1);
     if (wallboxOn) {
       fmtPower(pbuf, sizeof(pbuf), wallboxW);
       setText(w.wbValue, pbuf);
       setColor(w.wbValue, C_EV);
-      setText(w.wbState, d.charge_state == 2 ? "Laden" : "Verbunden");
+      setText(w.wbState, (d.charge_state == 4 || wallboxW > 10.0) ? "Laden"
+                                                                : "Verbunden");
       setColor(w.wbState, C_EV);
-    } else if (d.charge_name[0] != '\0') {
+    } else if (d.hasCharger) {
       setText(w.wbValue, "--");
       setColor(w.wbValue, C_MUTED);
-      if (d.charge_state == 1) {
-        setText(w.wbState, "Bereit");
-        setColor(w.wbState, C_MUTED);
-      } else if (d.charge_state == 3) {
+      if (d.charge_state == 5) {
         setText(w.wbState, "Fehler");
         setColor(w.wbState, C_RED);
+      } else if (d.charge_state == 6) {
+        setText(w.wbState, "Fertig");
+        setColor(w.wbState, C_MUTED);
+      } else if (d.charge_state == 1 || d.charge_state == 2 ||
+                 d.charge_state == 3 || d.charge_state == 7) {
+        setText(w.wbState, "Blockiert");
+        setColor(w.wbState, C_MUTED);
       } else {
-        setText(w.wbState, "Verbunden");
+        setText(w.wbState, "Kein Fahrzeug");
         setColor(w.wbState, C_MUTED);
       }
     } else {

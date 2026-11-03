@@ -48,6 +48,7 @@ enum Role : int {
   ROLE_LOAD,
   ROLE_PV,
   ROLE_BATTERY,
+  ROLE_CHARGER,
   ROLE_EXTERNAL,
 };
 
@@ -169,6 +170,7 @@ inline Role roleForLocation(int location) {
       return ROLE_PV;
     case LOC_CHARGER:
     case LOC_VEHICLE:
+      return ROLE_CHARGER;
     case LOC_OTHER:
       return ROLE_EXTERNAL;
     default:
@@ -371,27 +373,30 @@ class Reader {
       }
     }
 
-    /* Charge manager / Wallbox data from /charge_manager/state */
-    int chargeState = 0;          // 0=unknown, 1=ready, 2=charging, 3=error
-    double chargePower = 0.0;     // W
-    double charge_current = 0.0;  // mA
-    int chargeStatus = 0;         // 0=stopped, 1=charging, 2=complete, 3=error
+    /* Charge manager / Wallbox. /charge_manager/state contains an array of
+     * chargers; the panel shows the first one. `s` is the CAS state, `ac` the
+     * allocated current in mA, `ap` the allocated phases. */
+    bool haveCharger = false;
+    int chargeState = 0;          // CASState
+    double chargeCurrent = 0.0;   // mA
+    double chargeAllocatedPhases = 0.0;
+    double chargeSupportedPhases = 0.0;
     char chargeName[40] = "";
     {
       std::string body;
       std::string error;
       if (get("/charge_manager/state", body, error)) {
-        // charger state
-        warpjson::integer(body.data(), body.size(), "state", chargeState);
-        // charger power in W
-        warpjson::number(body.data(), body.size(), "ap", chargePower);
-        // charger current in mA
-        warpjson::number(body.data(), body.size(), "ac", charge_current);
-        // status charge
-        warpjson::integer(body.data(), body.size(), "sc", chargeStatus);
-        // charger name
-        warpjson::string(body.data(), body.size(), "n", chargeName,
-                         sizeof(chargeName));
+        int state = 0;
+        haveCharger = warpjson::integer(body.data(), body.size(), "s", state);
+        if (haveCharger) {
+          chargeState = state;
+        }
+        haveCharger = warpjson::number(body.data(), body.size(), "ac",
+                                       chargeCurrent) || haveCharger;
+        warpjson::number(body.data(), body.size(), "ap", chargeAllocatedPhases);
+        warpjson::number(body.data(), body.size(), "sp", chargeSupportedPhases);
+        haveCharger = warpjson::string(body.data(), body.size(), "n", chargeName,
+                                       sizeof(chargeName)) || haveCharger;
       }
     }
 
@@ -571,6 +576,36 @@ class Reader {
           break;
         }
 
+        case ROLE_CHARGER: {
+          double v = 0.0;
+          if (value(slot, VID_POWER_TOTAL, v)) {
+            d.charge_power += static_cast<float>(v);
+            d.chargeMeter = true;
+            roleFound = true;
+          } else {
+            double sum = 0.0;
+            bool any = false;
+            if (value(slot, VID_POWER_L1, v)) {
+              sum += v;
+              any = true;
+            }
+            if (value(slot, VID_POWER_L2, v)) {
+              sum += v;
+              any = true;
+            }
+            if (value(slot, VID_POWER_L3, v)) {
+              sum += v;
+              any = true;
+            }
+            if (any) {
+              d.charge_power += static_cast<float>(sum);
+              d.chargeMeter = true;
+              roleFound = true;
+            }
+          }
+          break;
+        }
+
         case ROLE_EXTERNAL: {
           double v = 0.0;
           if (value(slot, VID_POWER_TOTAL, v)) {
@@ -598,6 +633,9 @@ class Reader {
           case ROLE_BATTERY:
             d.hasBattery = true;
             break;
+          case ROLE_CHARGER:
+            d.hasCharger = true;
+            break;
           case ROLE_EXTERNAL:
             d.hasExternal = true;
             break;
@@ -623,12 +661,24 @@ class Reader {
       d.hasBattery = true;
     }
 
-    /* Charge manager / Wallbox: map /charge_manager/state to WarpData */
+    /* Charge manager / Wallbox. A configured charger is enough to show the
+     * card; the power comes from a wallbox meter when one exists, otherwise it
+     * is estimated from the allocated current and the measured grid voltage. */
+    d.hasCharger = d.hasCharger || haveCharger;
     d.charge_state = chargeState;
-    d.charge_power = chargePower;
-    d.charge_current = charge_current;
-    d.charge_status = chargeStatus;
+    d.charge_current = chargeCurrent;
     snprintf(d.charge_name, sizeof(d.charge_name), "%s", chargeName);
+
+    int chargePhases = 0;
+    if (chargeAllocatedPhases >= 1.0) {
+      chargePhases = static_cast<int>(chargeAllocatedPhases + 0.5);
+    } else if (chargeSupportedPhases >= 1.0) {
+      chargePhases = static_cast<int>(chargeSupportedPhases) & 3;
+    }
+    if (chargePhases < 1 || chargePhases > 3) {
+      chargePhases = d.is_3phase ? 3 : 1;
+    }
+    d.charge_phases = chargePhases;
 
     // Totals that the device may omit are sums of the phases/strings.
     if (!gridPowerFound && (d.gridL1 != 0.0f || d.gridL2 != 0.0f ||
@@ -641,6 +691,45 @@ class Reader {
     }
     if (!pvPowerFound) {
       d.pvPower = d.pvA + d.pvB;
+    }
+
+    // Without a wallbox meter the charging power is the allocated current
+    // multiplied by the phase voltages. Missing voltage falls back to 230 V,
+    // which also covers island operation with the grid meter switched off.
+    if (!d.chargeMeter && d.hasCharger && chargeCurrent > 0.0) {
+      const double amps = chargeCurrent / 1000.0;
+      double v1 = d.gridVoltageL1;
+      double v2 = d.gridVoltageL2;
+      double v3 = d.gridVoltageL3;
+      if (v1 < 50.0) v1 = 230.0;
+      if (v2 < 50.0) v2 = 230.0;
+      if (v3 < 50.0) v3 = 230.0;
+      const double volts = (chargePhases >= 3) ? (v1 + v2 + v3) : v1;
+      d.charge_power = static_cast<float>(amps * volts);
+      d.chargeEstimated = true;
+    }
+
+    // The load meter usually measures the whole house connection including the
+    // wallbox. Subtract the charging power so the displayed consumption is the
+    // household only.
+    if (d.hasHouse && d.charge_power > 0.0f) {
+      d.housePower -= d.charge_power;
+      if (d.housePower < 0.0f) {
+        d.housePower = 0.0f;
+      }
+      if (d.houseL1 != 0.0f || d.houseL2 != 0.0f || d.houseL3 != 0.0f) {
+        if (chargePhases >= 3) {
+          const float share = d.charge_power / 3.0f;
+          d.houseL1 -= share;
+          d.houseL2 -= share;
+          d.houseL3 -= share;
+        } else {
+          d.houseL1 -= d.charge_power;
+        }
+        if (d.houseL1 < 0.0f) d.houseL1 = 0.0f;
+        if (d.houseL2 < 0.0f) d.houseL2 = 0.0f;
+        if (d.houseL3 < 0.0f) d.houseL3 = 0.0f;
+      }
     }
 
     // A grid meter that reports zero voltage while PV or the battery is active

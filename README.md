@@ -41,6 +41,7 @@ endpoint (`/json` is 404). It exposes modules instead:
 /info/name, /info/version
 /meters/N/config, /meters/N/value_ids, /meters/N/values
 /power_manager/low_level_state
+/charge_manager/state
 /solar_forecast/state
 ```
 
@@ -80,9 +81,11 @@ Scenarios:
 ./run.sh --shot island.png --url 'http://localhost:8082?scenario=island'
 ```
 
-Available: `midsummer`, `evening`, `island`, `low_solar`, `grid_failure`. The
-query string is carried through to every module request, so the emulator sees
-the selected scenario without restarting the mock.
+Available: `midsummer`, `evening`, `island`, `low_solar`, `grid_failure`,
+`wallbox`, `wallbox_3p`, `wallbox_meter`. The query string is carried through to
+every module request, so the emulator sees the selected scenario without
+restarting the mock. `wallbox` and `wallbox_3p` exercise the calculated power
+(1 and 3 phases), `wallbox_meter` adds a meter with location `Charger`.
 
 ## Real device
 
@@ -110,6 +113,7 @@ the UI needs:
 | battery | 5 | voltage `10`, current `396`, power `404`, charge `413`, discharge `415`, SOC `387` |
 | household | 6 | power L1/L2/L3 `39/48/57`, total `74`, energy `215` |
 | PV | 7 | string power `442/443`, total `452`, string energy `454/456`, total `472` |
+| wallbox | 2 or 8 | power L1/L2/L3 `39/48/57`, total `74` |
 
 A meter is also matched by its `virtual_meter` value and, as a last resort, by
 keywords in `display_name` ("Netz", "Akku", "PV", "Verbrauch", ...). If no grid
@@ -120,6 +124,29 @@ or battery meter is configured, the adapter falls back to
 Signs: grid positive = import, negative = export. Battery positive = charging,
 negative = discharging. Island mode is inferred when all grid phase voltages are
 near zero while PV or the battery is active.
+
+### Wallbox power
+
+The wallbox power comes from a meter with location `Charger` (2) or `Vehicle`
+(8) when one is configured. Without a wallbox meter the panel calculates it from
+the allocated current in `/charge_manager/state` (`ac`, mA) and the measured
+grid phase voltages:
+
+```
+P = ac / 1000 * (V1 + V2 + V3)   # 3 allocated phases
+P = ac / 1000 * V1               # 1 allocated phase
+```
+
+`ap` (allocated phases) selects 1 or 3 phases; `sp` (supported phases) and
+`is_3phase` are fallbacks. Missing phase voltages fall back to 230 V, so the
+estimate also works in island mode while the grid meter is off.
+
+The load meter normally measures the whole house connection, including the
+wallbox. The panel subtracts the wallbox power from the displayed household
+power (clamped at zero) so the house value shows the household consumption only.
+The wallbox card marks calculated values as `geschätzt`.
+
+![wallbox](screenshots/wallbox.png)
 
 ### Flat fallback field names
 
