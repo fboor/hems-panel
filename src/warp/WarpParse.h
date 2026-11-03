@@ -151,6 +151,7 @@ inline bool parse(const char *json, size_t len, WarpData &d) {
     d.hasAutarky = true;
     found = true;
   }
+
   if (numAny(json, len, kForecast, kForecastCount, d.forecastTodayWh)) {
     d.hasForecast = d.forecastTodayWh >= 0.0f;
     found = true;
@@ -159,6 +160,15 @@ inline bool parse(const char *json, size_t len, WarpData &d) {
                   sizeof(d.deviceName));
   found |= strAny(json, len, kFirmware, kFirmwareCount, d.firmware,
                   sizeof(d.firmware));
+
+  // Autarky fallback: calculate from energy counters if backend didn't provide it.
+  if (!d.hasAutarky && (d.houseEnergyWh > 0.0f)) {
+      float autarky =  (d.houseEnergyWh - d.gridImportWh) / d.houseEnergyWh * 100.0f;
+      if (autarky < 0.0f) autarky = 0.0f;
+      if (autarky > 100.0f) autarky = 100.0f;
+      d.autarky = autarky;
+      d.hasAutarky = true;
+  }
 
   // Totals that the device may omit are sums of the phases it did send.
   if (!numAny(json, len, kGrid, kGridCount, d.gridPower) ||

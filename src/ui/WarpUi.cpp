@@ -48,7 +48,7 @@ constexpr const lv_font_t *F_SMALL = &lv_font_montserrat_14;
 constexpr const lv_font_t *F_BODY = &lv_font_montserrat_16;
 constexpr const lv_font_t *F_TITLE = &lv_font_montserrat_20;
 constexpr const lv_font_t *F_BIG = &lv_font_montserrat_36;
-constexpr const lv_font_t *F_MED = &lv_font_montserrat_28;
+constexpr const lv_font_t *F_MED = &lv_font_montserrat_20;
 constexpr const lv_font_t *F_ICON = &lv_font_montserrat_48;
 
 struct Widgets {
@@ -216,10 +216,10 @@ void fmtSignedPower(char *out, size_t n, double watts) {
 }
 
 void fmtEnergy(char *out, size_t n, double wh) {
-  if (std::fabs(wh) >= 1000.0) {
-    snprintf(out, n, "%.2f MWh", wh / 1000.0);
+  if (std::fabs(wh) >= 1000000.0) {
+    snprintf(out, n, "%.2f MWh", wh / 1000000.0);
   } else {
-    snprintf(out, n, "%.1f kWh", wh);
+    snprintf(out, n, "%.1f kWh", wh / 1000.0);
   }
 }
 
@@ -401,17 +401,17 @@ void create(lv_obj_t *parent) {
   // Autarkie and today's solar forecast. Values align with the title row,
   // captions sit below them.
   w.autarkyValue = label(parent, 330, 8, 100, F_TITLE, C_TEXT, "--");
-  label(parent, 330, 32, 100, F_SMALL, C_MUTED, "Autarkie");
+  label(parent, 330, 36, 100, F_SMALL, C_MUTED, "Autarkie");
   w.forecastValue = label(parent, 424, 8, 120, F_TITLE, C_TEXT, "--");
-  label(parent, 424, 32, 120, F_SMALL, C_MUTED, "Prognose");
+  label(parent, 424, 36, 120, F_SMALL, C_MUTED, "Prognose");
 
   // One pill for the connection state. The WiFi glyph shows whether the
   // network is up; the text beside it shows whether data is arriving, so both
   // are visible together instead of replacing each other.
   w.statusChip = lv_obj_create(parent);
   lv_obj_remove_style_all(w.statusChip);
-  lv_obj_set_pos(w.statusChip, 656, 14);
-  lv_obj_set_size(w.statusChip, 130, 32);
+  lv_obj_set_pos(w.statusChip, 670, 14);
+  lv_obj_set_size(w.statusChip, 110, 32);
   lv_obj_set_style_radius(w.statusChip, 16, 0);
   lv_obj_set_style_bg_color(w.statusChip, lv_color_hex(C_CARD2), 0);
   lv_obj_set_style_bg_opa(w.statusChip, LV_OPA_COVER, 0);
@@ -420,7 +420,7 @@ void create(lv_obj_t *parent) {
   lv_obj_clear_flag(w.statusChip, LV_OBJ_FLAG_SCROLLABLE);
 
   w.statusWifi = label(w.statusChip, 10, 5, 24, F_BODY, C_MUTED, LV_SYMBOL_WIFI);
-  w.statusText = label(w.statusChip, 32, 7, 92, F_SMALL, C_MUTED, "Kein WLAN");
+  w.statusText = label(w.statusChip, 40, 7, 92, F_SMALL, C_MUTED, "WLAN?");
 
   lv_obj_t *page1 = lv_obj_create(parent);
   lv_obj_remove_style_all(page1);
@@ -480,7 +480,7 @@ void create(lv_obj_t *parent) {
 
   // PV -----------------------------------------------------------------
   lv_obj_t *pv = card(page1, 12, 256, 250, 176);
-  title(pv, "PV");
+  title(pv, "SOLAR");
   w.pvTotal = label(pv, 16, 30, 0, F_BIG, C_GREEN, "--");
   label(pv, 16, 76, 0, F_SMALL, C_MUTED, "Erzeugung");
   row(pv, 16, 108, 218, "String A", &w.pvA);
@@ -497,7 +497,7 @@ void create(lv_obj_t *parent) {
   // Energy totals ------------------------------------------------------
   lv_obj_t *energy = card(page1, 536, 256, 250, 176);
   title(energy, "ENERGIE");
-  row(energy, 16, 30, 218, "PV", &w.energyPv, F_SMALL);
+  row(energy, 16, 30, 218, "Erzeugung", &w.energyPv, F_SMALL);
   row(energy, 16, 52, 218, "Verbrauch", &w.energyHouse, F_SMALL);
   row(energy, 16, 74, 218, "Netzbezug", &w.energyImport, F_SMALL);
   row(energy, 16, 96, 218, "Einspeisung", &w.energyExport, F_SMALL);
@@ -543,7 +543,7 @@ void create(lv_obj_t *parent) {
   }
 
   // Legend (centered)
-  const char *names[4] = {"Netz", "PV", "Verbrauch", "Akku"};
+  const char *names[4] = {"Netz", "Erzeugung", "Verbrauch", "Akku"};
   lv_color_t colors[4] = {lv_color_hex(0xFFA726), lv_color_hex(0x4A90D9), lv_color_hex(0xFF5D5D), lv_color_hex(0x66BB6A)};
   for (int i = 0; i < 4; ++i) {
     lv_obj_t *dot = lv_obj_create(w.page2);
@@ -583,7 +583,7 @@ void create(lv_obj_t *parent) {
   flowDots(w.page4, 2, C_BAT_HI);
   flowDots(w.page4, 3, C_EV_HI);
 
-  FlowNode pvFlow = flowNode(w.page4, 24, 26, "PV", LV_SYMBOL_CHARGE,
+  FlowNode pvFlow = flowNode(w.page4, 24, 26, "SOLAR", LV_SYMBOL_CHARGE,
                              C_SOLAR, C_SOLAR_DIM);
   w.pvNode = pvFlow.card;
   w.pvValue = pvFlow.value;
@@ -856,14 +856,14 @@ void setNetworkInfo(const char *ssid, const char *ip, const char *warpUrl,
 }
 
 void setConnectionState(ConnectionState state) {
-  const char *text = "Kein WLAN";
+  const char *text = "WLAN?";
   uint32_t textColor = C_MUTED;
   uint32_t wifiColor = C_MUTED;
   uint32_t background = C_CARD2;
 
   switch (state) {
     case ConnectionState::NoNet:
-      text = "Kein WLAN";
+      text = "WLAN?";
       textColor = C_MUTED;
       wifiColor = C_MUTED;
       background = C_CARD2;
@@ -883,8 +883,8 @@ void setConnectionState(ConnectionState state) {
       break;
     case ConnectionState::NoData:
       // WLAN is up and the WARP answers, but it returns no measurements.
-      text = "Keine Daten";
-      textColor = C_AMBER;
+      text = "Daten";
+      textColor = C_RED;
       wifiColor = C_GREEN;
       background = 0x33280F;
       break;
@@ -1027,7 +1027,7 @@ void update(const WarpData &d) {
   }
   const char *modeStr = d.charge_mode == 0 ? "Schnell" :
                         d.charge_mode == 1 ? "Aus" :
-                        d.charge_mode == 2 ? "PV" :
+                        d.charge_mode == 2 ? "SOLAR" :
                         d.charge_mode == 3 ? "Min+PV" : "?";
   snprintf(chargeBuf, sizeof(chargeBuf), "Modus: %s", modeStr);
   setText(w.wallboxMode, chargeBuf);
@@ -1050,13 +1050,13 @@ void update(const WarpData &d) {
       setText(w.batDir, "--");
       setColor(w.batDir, C_MUTED);
     } else if (d.batteryPower > 1.0f) {
-      setText(w.batDir, "Laden");
+      setText(w.batDir, "laden");
       setColor(w.batDir, C_GREEN);
     } else if (d.batteryPower < -1.0f) {
-      setText(w.batDir, "Entladen");
+      setText(w.batDir, "entladen");
       setColor(w.batDir, C_AMBER);
     } else {
-      setText(w.batDir, "Ruhe");
+      setText(w.batDir, "inaktiv");
       setColor(w.batDir, C_MUTED);
     }
   }
@@ -1196,7 +1196,7 @@ void update(const WarpData &d) {
       setText(w.gridValue, buf);
       setColor(w.gridValue, std::fabs(d.gridPower) < 10.0f ? C_MUTED : C_BLUE);
       if (std::fabs(d.gridPower) < 10.0f) {
-        setText(w.gridState, "Ausgeglichen");
+        setText(w.gridState, "ausgeglichen");
         setColor(w.gridState, C_MUTED);
       } else if (d.gridPower < 0.0f) {
         setText(w.gridState, "Einspeisung");
@@ -1233,7 +1233,7 @@ void update(const WarpData &d) {
         setText(w.batState, buf);
         setColor(w.batState, C_BAT);
       } else {
-        setText(w.batState, "Ruhe");
+        setText(w.batState, "inaktiv");
         setColor(w.batState, C_MUTED);
       }
     } else {

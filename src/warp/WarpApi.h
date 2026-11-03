@@ -431,11 +431,11 @@ class Reader {
             roleFound = true;
           }
           if (value(slot, VID_GRID_IMPORT, v)) {
-            d.gridImportWh += static_cast<float>(v);
+            d.gridImportWh = static_cast<float>(v);
             roleFound = true;
           }
           if (value(slot, VID_GRID_EXPORT, v)) {
-            d.gridExportWh += static_cast<float>(v);
+            d.gridExportWh = static_cast<float>(v);
             roleFound = true;
           }
           if (value(slot, VID_VOLTAGE_L1, v)) {
@@ -484,14 +484,14 @@ class Reader {
             roleFound = true;
           }
           if (value(slot, VID_HOUSE_ENERGY, v)) {
-            d.houseEnergyWh += static_cast<float>(v);
+            d.houseEnergyWh = static_cast<float>(v);
             roleFound = true;
           } else {
             double imported = 0.0;
             double exported = 0.0;
             if (value(slot, VID_GRID_IMPORT, imported) &&
                 value(slot, VID_GRID_EXPORT, exported)) {
-              d.houseEnergyWh += static_cast<float>(imported - exported);
+              d.houseEnergyWh = static_cast<float>(imported - exported);
               roleFound = true;
             }
           }
@@ -520,15 +520,15 @@ class Reader {
             roleFound = true;
           }
           if (value(slot, VID_PV_ENERGY, v)) {
-            d.pvEnergyWh += static_cast<float>(v);
+            d.pvEnergyWh = static_cast<float>(v);
             roleFound = true;
           }
           if (value(slot, VID_PV1_ENERGY, v)) {
-            d.pvAEnergyWh += static_cast<float>(v);
+            d.pvAEnergyWh = static_cast<float>(v);
             roleFound = true;
           }
           if (value(slot, VID_PV2_ENERGY, v)) {
-            d.pvBEnergyWh += static_cast<float>(v);
+            d.pvBEnergyWh = static_cast<float>(v);
             roleFound = true;
           }
           break;
@@ -561,11 +561,11 @@ class Reader {
             roleFound = true;
           }
           if (value(slot, VID_BATTERY_CHARGE, v)) {
-            d.batteryChargeWh += static_cast<float>(v);
+            d.batteryChargeWh = static_cast<float>(v);
             roleFound = true;
           }
           if (value(slot, VID_BATTERY_DISCHARGE, v)) {
-            d.batteryDischargeWh += static_cast<float>(v);
+            d.batteryDischargeWh = static_cast<float>(v);
             roleFound = true;
           }
           break;
@@ -666,29 +666,17 @@ class Reader {
       }
     }
 
-    // Autarkie. Prefer the cumulative meter counters: self-consumed PV is
+    // Autarky: Prefer the cumulative meter counters: self-consumed PV is
     // generation minus export, and total consumption is that plus grid import.
     // This stays meaningful even when the device has no separate load meter.
-    // Fall back to the live house/grid ratio when only power values exist.
-    if (d.pvEnergyWh > 0.0f &&
-        (d.gridImportWh > 0.0f || d.gridExportWh > 0.0f)) {
-      const float selfConsumed = d.pvEnergyWh - d.gridExportWh;
-      const float consumption = selfConsumed + d.gridImportWh;
-      if (selfConsumed > 0.0f && consumption > 0.0f) {
-        float autarky = selfConsumed / consumption * 100.0f;
+    // Fall back to day counters, then to the live house/grid ratio when only
+    // power values exist.
+    if (!d.hasAutarky && (d.houseEnergyWh > 0.0f)) {
+        float autarky =  (d.houseEnergyWh - d.gridImportWh) / d.houseEnergyWh * 100.0f;
         if (autarky < 0.0f) autarky = 0.0f;
         if (autarky > 100.0f) autarky = 100.0f;
         d.autarky = autarky;
         d.hasAutarky = true;
-      }
-    }
-    if (!d.hasAutarky && d.hasHouse && d.housePower > 20.0f) {
-      const float gridImport = d.gridPower > 0.0f ? d.gridPower : 0.0f;
-      float autarky = (d.housePower - gridImport) / d.housePower * 100.0f;
-      if (autarky < 0.0f) autarky = 0.0f;
-      if (autarky > 100.0f) autarky = 100.0f;
-      d.autarky = autarky;
-      d.hasAutarky = true;
     }
 
     d.valid = d.hasGrid || d.hasHouse || d.hasPv || d.hasBattery ||

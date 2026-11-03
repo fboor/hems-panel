@@ -71,7 +71,7 @@ struct WarpData {
   float gridVoltageL3 = 0.0f;
   float gridFrequency = 0.0f;
 
-  // Autarkie: share of consumption supplied by PV/battery instead of the grid,
+  // Autarky: share of consumption supplied by PV/battery instead of the grid,
   // in percent. Calculated from the cumulative energy counters when the device
   // provides them, otherwise from the current house/grid power.
   bool hasAutarky = false;
