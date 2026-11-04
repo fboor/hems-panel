@@ -186,7 +186,21 @@
 //
 // 1 is right for the board in the flat layer's hand. It is wrong for anyone who
 // flashes a factory board, and the difference is a short, not a colour.
+//
+// The default stays 1 so that a plain `pio run` still builds the modified board.
+// A factory board is built with the matching PlatformIO environment, which passes
+// -DBOARD_CH422G_LCD_DISP_CUT=0, or with that define added to build_flags:
+//
+//   pio run -e esp32-s3-touch-lcd-7-factory
+//
+// Never hand a factory board the default image: GPIO 6 and EXIO2 would then drive
+// the same enable net against each other.
+#ifndef BOARD_CH422G_LCD_DISP_CUT
 #define BOARD_CH422G_LCD_DISP_CUT 1
+#endif
+#if (BOARD_CH422G_LCD_DISP_CUT != 0) && (BOARD_CH422G_LCD_DISP_CUT != 1)
+#error "BOARD_CH422G_LCD_DISP_CUT must be 0 (factory) or 1 (trace cut)."
+#endif
 
 // The level every EXIO0..7 pin drives after the expander is brought up, and with
 // it the board's own start-up line for each of the five pins this firmware uses:

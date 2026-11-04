@@ -183,6 +183,8 @@ src/ui/         LVGL screen, shared by emulator and firmware
 sim/            SDL2 emulator, POSIX HTTP client, lv_conf override
 tools/warp_mock/  module-API mock with scenarios
 boards/         PlatformIO board definitions (Waveshare 7", Guition 4")
+partitions/     16 MB OTA partition table
+flash.sh        build + upload wrapper for both backlight variants
 include/        lv_conf.h used by both builds
 ```
 
@@ -191,11 +193,106 @@ include/        lv_conf.h used by both builds
 The firmware builds the same `src/warp` and `src/ui` sources as the emulator,
 plus the display, touch and backlight drivers for the Waveshare 7" board.
 
+### Board variants: the backlight trace
+
+Two images exist, one per electrical build. They are not a runtime setting, and
+the difference is a short, not a colour.
+
+| Environment | Command | Board | Backlight |
+| --- | --- | --- | --- |
+| `esp32-s3-touch-lcd-7` | `./flash.sh` | mod: EXIO2/DISP trace cut, GPIO 6 wired to the enable net | PWM dimming on GPIO 6 |
+| `esp32-s3-touch-lcd-7-factory` | `./flash.sh --factory` | factory: EXIO2 still drives DISP | on/off through EXIO2 |
+
+With the cut, EXIO2 drives nothing and GPIO 6 owns the light. Without the cut,
+EXIO2 is still on the enable net; a PWM from GPIO 6 would put two push-pull
+outputs on the same line while they disagree. The factory image therefore never
+touches GPIO 6, and the default image must never be flashed onto an unmodified
+board.
+
+If you do not know which board you have, flash the factory image first: it is
+electrically safe on both because it never touches GPIO 6. If the backlight then
+stays dark, the trace is cut and the default image is the right one.
+
+The choice is `BOARD_CH422G_LCD_DISP_CUT` in
+`src/board/waveshare_touch_lcd7/Pins.h`. It defaults to `1`; the factory
+environment passes `-DBOARD_CH422G_LCD_DISP_CUT=0`.
+
+### Build and flash
+
+`flash.sh` wraps the PlatformIO build and upload. It refuses to upload when no
+serial device is connected; use `--build-only` to build without a board.
+
 ```sh
-pio run                 # build
-pio run -t upload       # flash over USB
-pio device monitor      # serial log, 115200
+./flash.sh --build-only         # build only, no board needed
+./flash.sh                      # modified board: build + upload
+./flash.sh --factory            # factory board: build + upload
+./flash.sh --erase              # erase the whole 16 MB first
+./flash.sh --monitor            # open the serial log afterwards
+./flash.sh --port /dev/ttyACM0  # skip auto-detection
 ```
+
+The upload uses 460800 baud, the monitor 115200. The board profile is
+`boards/waveshare-esp32-s3-touch-lcd-7.json`, the partition table
+`partitions/16mb_app.csv`. A normal upload writes all four images:
+
+| Offset | Image |
+| --- | --- |
+| `0x000000` | `bootloader.bin` |
+| `0x008000` | `partitions.bin` |
+| `0x00e000` | `boot_app0.bin` |
+| `0x010000` | `firmware.bin` (app0, limit 7 MB) |
+
+The second OTA slot starts at `0x710000`; SPIFFS at `0xE10000`.
+
+### Merged image (single file)
+
+For flashing without PlatformIO, or for keeping one file per board variant:
+
+```sh
+./flash.sh --factory --merged                 # -> .pio/build/.../firmware-merged.bin
+./flash.sh --merged /tmp/warp-panel.bin       # choose the output path
+```
+
+The merged image contains bootloader, partition table, `boot_app0` and the app,
+ready for offset `0x0`. The script prints the exact `esptool.py write_flash`
+command, including the `dio` mode PlatformIO uses for this board.
+
+### USB ports and download mode
+
+- Flash through the **UART Type-C** port, labelled `UART` on the board. It is
+  the CH343 USB-to-UART bridge with the automatic download circuit. On Linux it
+  appears as `/dev/ttyACM*` or `/dev/ttyUSB*`.
+- The other **USB Type-C** port is the ESP32-S3 native USB on GPIO 19/20. EXIO5
+  switches those pins between USB (low) and CAN (high). After reset EXIO5 is
+  high, so this is not the port to flash through; the running firmware sets it
+  low, which is why the application log appears there.
+- Use a USB **data** cable. Charge-only cables give no port.
+- The user must be in the `dialout` group to open the port (on some
+  distributions `uucp`): `sudo usermod -aG dialout $USER`, then log in again.
+- If the automatic reset does not work, enter download mode by hand: hold
+  **BOOT**, press and release **RESET**, then release **BOOT**. Flash, then
+  press **RESET** to start the firmware.
+- If an upload fails at 460800 baud, add `upload_speed = 115200` to the
+  environment in `platformio.ini` and retry.
+
+### Serial log
+
+The application's `Serial` is the native USB CDC port
+(`ARDUINO_USB_MODE=1`, `ARDUINO_USB_CDC_ON_BOOT=1`), at 115200 baud. It appears
+after boot, once the firmware has switched EXIO5 to USB. With both cables
+connected, `./flash.sh --monitor` waits for that port and opens it. The UART
+port shows only the ROM bootloader output after the application starts.
+
+```sh
+pio device monitor -e esp32-s3-touch-lcd-7 --port /dev/ttyACM1 -b 115200
+```
+
+### Recovery and erase
+
+`./flash.sh --erase` erases the whole 16 MB flash before flashing. NVS, the
+WLAN credentials and the WARP endpoint are lost; the setup access point opens
+again on the next boot. Use it after a bad image, when the panel comes from a
+different project, or when the partition table has changed.
 
 ### First-time setup
 
@@ -245,6 +342,10 @@ the panel timings and the CH422G expander.
 - Firmware: compiles for the 7" board (2.0 MB flash, 53 kB static RAM). Nothing
   has run on the panel yet; display bring-up is the open item. The Wi-Fi setup
   screen and portal are implemented but still need hardware verification.
+- Flashing: prepared for the modified and the factory board, with
+  `flash.sh`, separate PlatformIO environments and a merged-image workflow.
+  No real board has been connected yet, so the upload itself, the backlight
+  level, display, touch, Wi-Fi and the native-USB log still need verification.
 
 ## License
 
