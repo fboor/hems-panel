@@ -249,6 +249,25 @@ FetchResult fetchWarp(WarpData &out) {
              : FetchResult::NoData;
 }
 
+// Applies a mode from the wallbox page. `charger` -1 means all chargers via
+// the power manager, otherwise the per-charger override. The next loop pass
+// polls immediately so the card reflects the new state without waiting 10 s.
+void setChargeMode(int charger, int mode) {
+  if (!g_reader) {
+    g_reader.reset(new warpapi::Reader(g_transport, g_url));
+  }
+  std::string error;
+  const bool ok =
+      charger < 0 ? g_reader->setGlobalChargeMode(mode, error)
+                  : g_reader->setChargerChargeMode(charger, mode, error);
+  Serial.printf("Lademodus %s: Ladepunkt %d -> %d\n", ok ? "ok" : "fehlgeschlagen",
+                charger, mode);
+  if (!ok && !error.empty()) {
+    Serial.printf("  %s\n", error.c_str());
+  }
+  g_lastPoll = millis() - POLL_MS;
+}
+
 void poll() {
   if (WiFi.status() != WL_CONNECTED) {
     warpui::setConnectionState(warpui::ConnectionState::NoNet);
@@ -340,6 +359,7 @@ void setup() {
 
   warpui::create(lv_screen_active());
   warpui::setConnectionState(warpui::ConnectionState::NoNet);
+  warpui::setChargeModeHandler(setChargeMode);
   backlightSetWakeable(touchInit());
   lv_indev_t *indev = lv_indev_create();
   lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);

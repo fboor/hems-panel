@@ -75,6 +75,11 @@ BASE = {
     "charge_supported_phases": 1,  # 1/3, bit 2 set when switchable
     "charge_name": "WARP Wallbox",
     "charge_meter_power": None,   # W when the wallbox has its own meter
+    # Global and per-charger charge modes (ConfigChargeMode).
+    "charge_mode": 2,             # PV, like the WARP default
+    "charge_modes": None,         # per-charger list; None = use charge_mode
+    "supported_charge_modes": [1, 2, 3, 0],  # Off, PV, Min+PV, Fast
+    "charger_specs": None,        # explicit multi-charger layout
 }
 
 
@@ -183,6 +188,42 @@ def scenario(name):
             charge_supported_phases=7,
             charge_meter_power=11100.0,
             forecast_today_wh=20500.0,
+            forecast_today_remaining_wh=9000.0,
+        )
+    elif name == "wallboxes":
+        # Three boxes in different states. The first has its own meter, the
+        # other two are idle and exercise the per-charger mode buttons.
+        d.update(
+            charger_specs=[
+                {
+                    "name": "Carport West",
+                    "state": 4,
+                    "current": 16000.0,
+                    "phases": 3,
+                    "supported": 7,
+                    "meter_power": 11100.0,
+                },
+                {
+                    "name": "Garage",
+                    "state": 0,
+                    "current": 0.0,
+                    "phases": 1,
+                    "supported": 1,
+                    "meter_power": None,
+                },
+                {
+                    "name": "Stellplatz",
+                    "state": 6,
+                    "current": 0.0,
+                    "phases": 1,
+                    "supported": 1,
+                    "meter_power": None,
+                },
+            ],
+            charge_mode=2,
+            charge_modes=[2, 1, 0],
+            forecast_today_wh=20500.0,
+            forecast_today_remaining_wh=9000.0,
         )
     return d
 
@@ -196,6 +237,7 @@ SCENARIOS = (
     "wallbox",
     "wallbox_3p",
     "wallbox_meter",
+    "wallboxes",
 )
 
 
@@ -228,11 +270,36 @@ def live_tick(d, t):
     return d
 
 
-def wallbox_phase_count(d):
-    phases = int(d.get("charge_phases") or 0)
+def chargers_for(d):
+    """Every wallbox in the scenario, as a list of per-charger dicts."""
+    specs = d.get("charger_specs")
+    if specs is not None:
+        return specs
+    return [{
+        "name": d.get("charge_name") or "WARP Wallbox",
+        "state": d.get("charge_state") or 0,
+        "current": d.get("charge_current") or 0.0,
+        "phases": d.get("charge_phases") or 0,
+        "supported": d.get("charge_supported_phases") or 1,
+        "meter_power": d.get("charge_meter_power"),
+    }]
+
+
+def charger_phase_count(spec):
+    phases = int(spec.get("phases") or 0)
     if phases < 1:
-        phases = int(d.get("charge_supported_phases") or 1) & 3
+        phases = int(spec.get("supported") or 1) & 3
     return 3 if phases >= 3 else 1
+
+
+def wallbox_phase_count(d):
+    for spec in chargers_for(d):
+        active = float(spec.get("current") or 0.0) > 0.0
+        if not active and spec.get("meter_power") is not None:
+            active = float(spec["meter_power"]) > 0.0
+        if active and charger_phase_count(spec) == 3:
+            return 3
+    return 1
 
 
 def wallbox_phase_voltages(d):
@@ -244,20 +311,29 @@ def wallbox_phase_voltages(d):
     return [v if v >= 50.0 else 230.0 for v in volts]
 
 
-def wallbox_power(d):
-    """Power from the wallbox meter, or the same estimate the panel uses."""
-    meter = d.get("charge_meter_power")
+def charger_power(spec, d):
+    """Power from a wallbox meter, or the same estimate the panel uses."""
+    meter = spec.get("meter_power")
     if meter is not None:
         return float(meter)
-    amps = float(d.get("charge_current") or 0.0) / 1000.0
+    amps = float(spec.get("current") or 0.0) / 1000.0
     volts = wallbox_phase_voltages(d)
-    return amps * (sum(volts) if wallbox_phase_count(d) == 3 else volts[0])
+    return amps * (sum(volts) if charger_phase_count(spec) == 3 else volts[0])
+
+
+def wallbox_power(d):
+    return sum(charger_power(spec, d) for spec in chargers_for(d))
+
+
+def wh_to_kwh(wh):
+    """WARP meter energy values are kWh; the scenario data is kept in Wh."""
+    return round(float(wh) / 1000.0, 3)
 
 
 def meter_payloads(d):
     """Return (config, value_ids, values) for the seven meter slots."""
     pv_total = d["pv_power_a"] + d["pv_power_b"]
-    pv_energy = d["pv_energy_a_wh"] + d["pv_energy_b_wh"]
+    pv_energy = wh_to_kwh(d["pv_energy_a_wh"] + d["pv_energy_b_wh"])
     pv_voltage_avg = 0.0
     if d["pv_voltage_a"] > 0 or d["pv_voltage_b"] > 0:
         pv_voltage_avg = (d["pv_voltage_a"] + d["pv_voltage_b"]) / 2.0
@@ -397,6 +473,9 @@ class Handler(BaseHTTPRequestHandler):
     scenario_name = "midsummer"
     live = False
     started = time.time()
+    # Command overrides persisted for the lifetime of the mock, per scenario.
+    global_mode_overrides = {}
+    charge_mode_overrides = {}
 
     def log_message(self, fmt, *args):
         pass
@@ -419,7 +498,32 @@ class Handler(BaseHTTPRequestHandler):
         data = scenario(name)
         if self.live or q.get("live") == "1":
             data = live_tick(data, time.time() - self.started)
+        return self._apply_modes(name, data)
+
+    def _apply_modes(self, name, data):
+        """Overlay the command state on the scenario's charge modes."""
+        if name in self.global_mode_overrides:
+            data["charge_mode"] = self.global_mode_overrides[name]
+
+        count = len(chargers_for(data))
+        modes = self.charge_mode_overrides.get(name)
+        if modes is None:
+            if name in self.global_mode_overrides:
+                # The global command applies to every box.
+                modes = [data.get("charge_mode", 2)] * count
+            else:
+                modes = data.get("charge_modes")
+        if modes is None:
+            modes = [data.get("charge_mode", 2)] * count
+        modes = list(modes)
+        default = data.get("charge_mode", 2)
+        modes = (modes + [default] * count)[:count]
+        data["charge_modes"] = modes
         return data
+
+    def _read_body(self):
+        length = int(self.headers.get("Content-Length", "0"))
+        return self.rfile.read(length) if length > 0 else b""
 
     def _send(self, body, status=200, content_type="application/json"):
         if isinstance(body, (dict, list)):
@@ -530,25 +634,42 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/charge_manager/state":
-            current = float(d.get("charge_current") or 0.0)
-            self._send({
-                "state": 1,
-                "chargers": [{
-                    "s": d.get("charge_state", 0),
+            chargers = []
+            for index, spec in enumerate(chargers_for(d)):
+                current = float(spec.get("current") or 0.0)
+                chargers.append({
+                    "s": spec.get("state", 0),
                     "e": 0,
                     "ac": current,
-                    "ap": d.get("charge_phases", 0),
+                    "ap": spec.get("phases", 0),
                     "sc": current,
-                    "sp": d.get("charge_supported_phases", 1),
-                    "lu": 1234,
-                    "n": d.get("charge_name", "WARP Wallbox"),
-                    "uid": 12345,
-                }],
-            })
+                    "sp": spec.get("supported", 1),
+                    "lu": 1234 + index,
+                    "n": spec.get("name", "WARP Wallbox"),
+                    "uid": 12345 + index,
+                })
+            self._send({"state": 1, "chargers": chargers})
+            return
+
+        if path == "/charge_manager/charge_modes":
+            self._send(d.get("charge_modes", []))
+            return
+
+        if path == "/charge_manager/supported_charge_modes":
+            self._send(d.get("supported_charge_modes", []))
+            return
+
+        if path == "/power_manager/charge_mode":
+            self._send({"mode": d.get("charge_mode", 2)})
             return
 
         if path == "/solar_forecast/state":
-            self._send({"wh_today": d.get("forecast_today_wh", 24100.0)})
+            self._send({
+                "wh_today": d.get("forecast_today_wh", 24100.0),
+                "wh_today_remaining": d.get(
+                    "forecast_today_remaining_wh", 12000.0
+                ),
+            })
             return
 
         if path == "/power_manager/state":
@@ -582,6 +703,63 @@ class Handler(BaseHTTPRequestHandler):
                 "energy_rel": None,
                 "energy_abs": None,
             })
+            return
+
+        self.send_error(404)
+
+    def _command(self, path):
+        """Handle a WARP command. Commands answer with an empty 200 body."""
+        q = self._query()
+        name = q.get("scenario", self.scenario_name)
+        if name not in SCENARIOS:
+            name = "midsummer"
+        raw = self._read_body()
+
+        if path == "/power_manager/charge_mode_update":
+            try:
+                request = json.loads(raw or b"{}")
+                mode = int(request.get("mode", -1))
+            except (json.JSONDecodeError, ValueError, TypeError):
+                self.send_error(400)
+                return
+            if mode < 0:
+                self.send_error(400)
+                return
+            # The global command applies to every box and clears any
+            # per-charger overrides.
+            self.global_mode_overrides[name] = mode
+            self.charge_mode_overrides.pop(name, None)
+            self._send("")
+            return
+
+        if path == "/charge_manager/charge_modes_update":
+            try:
+                modes = [int(v) for v in json.loads(raw or b"[]")]
+            except (json.JSONDecodeError, ValueError, TypeError):
+                self.send_error(400)
+                return
+            self.charge_mode_overrides[name] = modes
+            self._send("")
+            return
+
+        if path.startswith("/charge_manager/charge_modes/"):
+            index_text = path.rsplit("/", 1)[1]
+            try:
+                index = int(index_text)
+                mode = int(raw.decode().strip())
+            except (ValueError, UnicodeDecodeError):
+                self.send_error(400)
+                return
+            data = self._data()
+            if index < 0 or index >= len(chargers_for(data)):
+                self.send_error(404)
+                return
+            modes = list(data.get("charge_modes", []))
+            while len(modes) <= index:
+                modes.append(data.get("charge_mode", 2))
+            modes[index] = mode
+            self.charge_mode_overrides[name] = modes
+            self._send("")
             return
 
         self.send_error(404)

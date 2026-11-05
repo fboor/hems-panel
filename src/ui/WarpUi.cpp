@@ -106,14 +106,17 @@ struct Widgets {
   lv_obj_t *pageBtn2 = nullptr;
   lv_obj_t *pageBtn3 = nullptr;
   lv_obj_t *pageBtn4 = nullptr;
+  lv_obj_t *pageBtn5 = nullptr;
   lv_obj_t *caption1 = nullptr;
   lv_obj_t *caption2 = nullptr;
   lv_obj_t *caption3 = nullptr;
   lv_obj_t *caption4 = nullptr;
+  lv_obj_t *caption5 = nullptr;
   lv_obj_t *page1 = nullptr;
   lv_obj_t *page2 = nullptr;
   lv_obj_t *page3 = nullptr;
   lv_obj_t *page4 = nullptr;
+  lv_obj_t *page5 = nullptr;
   lv_obj_t *bgBtn = nullptr;
 
   // Energy flow page ----------------------------------------------------
@@ -152,6 +155,7 @@ struct Widgets {
   lv_obj_t *scaleMax = nullptr;
   lv_obj_t *scaleMid = nullptr;
   lv_obj_t *scaleMin = nullptr;
+  lv_obj_t *timeLabel[5] = {};
 
   lv_obj_t *gridTotal = nullptr;
   lv_obj_t *gridDir = nullptr;
@@ -200,6 +204,103 @@ struct Widgets {
 
 Widgets w;
 
+// One wallbox card on the configuration page. The buttons and their modes are
+// filled when the card is built; the labels are refreshed on every poll.
+struct ModeCard {
+  lv_obj_t *card = nullptr;
+  lv_obj_t *name = nullptr;
+  lv_obj_t *state = nullptr;
+  lv_obj_t *power = nullptr;
+  lv_obj_t *buttons[kWarpUiModes] = {};
+  int modes[kWarpUiModes] = {};
+  int modeCount = 0;
+};
+
+ModeCard g_globalCard;
+ModeCard g_chargerCards[kWarpMaxChargers];
+
+// Rebuild the cards only when the number of chargers or the offered modes
+// changes; the labels themselves are updated in place every poll.
+int g_renderedChargers = -1;
+int g_renderedModeCount = -1;
+int g_renderedModes[kWarpUiModes] = {};
+
+// A tap is shown immediately, before the next poll confirms it. The override
+// expires after kPendingModeMs so a rejected command does not stick forever.
+struct PendingMode {
+  int mode = 0;
+  uint32_t untilMs = 0;
+  bool active = false;
+};
+PendingMode g_pendingGlobal;
+PendingMode g_pendingCharger[kWarpMaxChargers];
+
+warpui::ChargeModeHandler g_chargeModeHandler = nullptr;
+
+// Text that sits directly on the page background follows the background
+// colour. Labels inside cards keep their own palette, so they are deliberately
+// not registered here. The base colour is remembered so switching back to the
+// dark background restores the original shade.
+struct BackgroundLabel {
+  lv_obj_t *obj;
+  uint32_t baseColor;
+};
+
+constexpr int kMaxBackgroundLabels = 32;
+BackgroundLabel g_backgroundLabels[kMaxBackgroundLabels];
+int g_backgroundLabelCount = 0;
+int g_backgroundMode = 0;
+
+bool liesOnBackground(lv_obj_t *obj) {
+  lv_obj_t *screen = lv_obj_get_screen(obj);
+  for (lv_obj_t *p = lv_obj_get_parent(obj);
+       p != nullptr && p != screen; p = lv_obj_get_parent(p)) {
+    if (lv_obj_get_style_bg_opa(p, LV_PART_MAIN) > LV_OPA_TRANSP) {
+      return false;
+    }
+  }
+  return true;
+}
+
+BackgroundLabel *backgroundLabelFor(lv_obj_t *obj) {
+  for (int i = 0; i < g_backgroundLabelCount; ++i) {
+    if (g_backgroundLabels[i].obj == obj) {
+      return &g_backgroundLabels[i];
+    }
+  }
+  return nullptr;
+}
+
+void registerBackgroundLabel(lv_obj_t *obj, uint32_t baseColor) {
+  if (g_backgroundLabelCount >= kMaxBackgroundLabels ||
+      backgroundLabelFor(obj) != nullptr) {
+    return;
+  }
+  g_backgroundLabels[g_backgroundLabelCount++] = {obj, baseColor};
+}
+
+// Muted text must stay visibly grey instead of turning plain black. On the
+// grey background it becomes a distinctly darker grey so it still contrasts.
+uint32_t backgroundTextColor(uint32_t baseColor, int mode) {
+  if (mode == 0) {
+    return baseColor;
+  }
+  if (baseColor == C_MUTED) {
+    return mode == 1 ? 0x333333 : 0x4A4A4A;
+  }
+  return mode == 1 ? 0x111111 : 0x000000;
+}
+
+void applyBackgroundTextColors() {
+  for (int i = 0; i < g_backgroundLabelCount; ++i) {
+    lv_obj_set_style_text_color(
+        g_backgroundLabels[i].obj,
+        lv_color_hex(backgroundTextColor(g_backgroundLabels[i].baseColor,
+                                         g_backgroundMode)),
+        0);
+  }
+}
+
 lv_obj_t *card(lv_obj_t *parent, int x, int y, int width, int height) {
   lv_obj_t *c = lv_obj_create(parent);
   lv_obj_remove_style_all(c);
@@ -216,7 +317,8 @@ lv_obj_t *card(lv_obj_t *parent, int x, int y, int width, int height) {
 
 lv_obj_t *label(lv_obj_t *parent, int x, int y, int width,
                 const lv_font_t *font, uint32_t color, const char *text,
-                lv_text_align_t align = LV_TEXT_ALIGN_LEFT) {
+                lv_text_align_t align = LV_TEXT_ALIGN_LEFT,
+                bool followBackground = true) {
   lv_obj_t *l = lv_label_create(parent);
   lv_label_set_text(l, text);
   lv_obj_set_pos(l, x, y);
@@ -226,6 +328,11 @@ lv_obj_t *label(lv_obj_t *parent, int x, int y, int width,
   }
   lv_obj_set_style_text_font(l, font, 0);
   lv_obj_set_style_text_color(l, lv_color_hex(color), 0);
+  if (followBackground && liesOnBackground(l)) {
+    registerBackgroundLabel(l, color);
+    lv_obj_set_style_text_color(
+        l, lv_color_hex(backgroundTextColor(color, g_backgroundMode)), 0);
+  }
   return l;
 }
 
@@ -315,9 +422,438 @@ void qrEscape(char *out, size_t n, const char *in) {
 }
 
 void setColor(lv_obj_t *l, uint32_t color) {
-  if (l != nullptr) {
-    lv_obj_set_style_text_color(l, lv_color_hex(color), 0);
+  if (l == nullptr) {
+    return;
   }
+  BackgroundLabel *bg = backgroundLabelFor(l);
+  if (bg != nullptr) {
+    bg->baseColor = color;
+    lv_obj_set_style_text_color(
+        l, lv_color_hex(backgroundTextColor(color, g_backgroundMode)), 0);
+    return;
+  }
+  lv_obj_set_style_text_color(l, lv_color_hex(color), 0);
+}
+
+// Wallbox configuration page -------------------------------------------
+
+// German labels used by the WARP web interface for ConfigChargeMode.
+const char *chargeModeName(int mode) {
+  switch (mode) {
+    case 0: return "Schnell";
+    case 1: return "Aus";
+    case 2: return "PV";
+    case 3: return "Min + PV";
+    case 4: return "Standard";
+    case 5: return "Min";
+    case 6: return "Eco";
+    case 7: return "Eco + PV";
+    case 8: return "Eco + Min";
+    case 9: return "Eco + Min + PV";
+    default: return "?";
+  }
+}
+
+// CASState as reported in /charge_manager/state (`s`).
+const char *chargerStateName(const WarpChargerData &c) {
+  switch (c.state) {
+    case 4: return "Laden";
+    case 5: return "Fehler";
+    case 6: return "Fertig";
+    case 1:
+    case 2:
+    case 3:
+    case 7: return "Blockiert";
+    case 0: return "Kein Fahrzeug";
+    default: return "Bereit";
+  }
+}
+
+// The modes the panel offers on the buttons. Older firmware has no
+// supported_charge_modes endpoint, so fall back to Fast and Off.
+int uiModes(const WarpData &d, int *out) {
+  int n = 0;
+  if (d.supported_mode_count > 0) {
+    for (int i = 0; i < d.supported_mode_count && n < kWarpUiModes; ++i) {
+      out[n++] = d.supported_modes[i];
+    }
+  } else {
+    out[n++] = 0;  // Schnell
+    out[n++] = 1;  // Aus
+  }
+  return n;
+}
+
+void styleModeButton(lv_obj_t *button, bool selected) {
+  if (button == nullptr) {
+    return;
+  }
+  lv_obj_set_style_bg_color(button,
+                            lv_color_hex(selected ? C_BLUE : C_CARD2), 0);
+  lv_obj_set_style_bg_opa(button, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_color(button,
+                                lv_color_hex(selected ? C_BLUE : C_LINE), 0);
+  lv_obj_t *lbl = lv_obj_get_child(button, 0);
+  if (lbl != nullptr) {
+    lv_obj_set_style_text_color(
+        lbl, lv_color_hex(selected ? 0xFFFFFF : C_MUTED), 0);
+  }
+}
+
+void applyModeSelection(ModeCard &mc, int selected) {
+  for (int i = 0; i < mc.modeCount; ++i) {
+    styleModeButton(mc.buttons[i], mc.modes[i] == selected);
+  }
+}
+
+void onGlobalModeClicked(lv_event_t *e) {
+  const int mode = static_cast<int>(
+      reinterpret_cast<intptr_t>(lv_event_get_user_data(e)));
+  g_pendingGlobal.mode = mode;
+  g_pendingGlobal.untilMs = lv_tick_get() + kPendingModeMs;
+  g_pendingGlobal.active = true;
+  applyModeSelection(g_globalCard, mode);
+  if (g_chargeModeHandler != nullptr) {
+    g_chargeModeHandler(-1, mode);
+  }
+}
+
+void onChargerModeClicked(lv_event_t *e) {
+  const intptr_t code =
+      reinterpret_cast<intptr_t>(lv_event_get_user_data(e));
+  const int index = static_cast<int>(code >> 8);
+  const int mode = static_cast<int>(code & 0xFF);
+  if (index < 0 || index >= kWarpMaxChargers) {
+    return;
+  }
+  g_pendingCharger[index].mode = mode;
+  g_pendingCharger[index].untilMs = lv_tick_get() + kPendingModeMs;
+  g_pendingCharger[index].active = true;
+  applyModeSelection(g_chargerCards[index], mode);
+  if (g_chargeModeHandler != nullptr) {
+    g_chargeModeHandler(index, mode);
+  }
+}
+
+ModeCard buildModeCard(lv_obj_t *parent, bool global, int index,
+                       const WarpData &d) {
+  ModeCard mc;
+  mc.card = lv_obj_create(parent);
+  lv_obj_remove_style_all(mc.card);
+  lv_obj_set_width(mc.card, LV_PCT(100));
+  lv_obj_set_height(mc.card, 96);
+  lv_obj_set_style_bg_color(mc.card, lv_color_hex(C_CARD), 0);
+  lv_obj_set_style_bg_opa(mc.card, LV_OPA_COVER, 0);
+  lv_obj_set_style_radius(mc.card, 10, 0);
+  lv_obj_set_style_border_width(mc.card, 1, 0);
+  lv_obj_set_style_border_color(mc.card,
+                                lv_color_hex(global ? C_EV_DIM : C_LINE), 0);
+  lv_obj_clear_flag(mc.card, LV_OBJ_FLAG_SCROLLABLE);
+
+  if (global) {
+    mc.name = label(mc.card, 16, 8, 520, F_TITLE, C_EV, "ALLE WALLBOXEN");
+    mc.state = label(mc.card, 16, 32, 520, F_SMALL, C_MUTED,
+                     "Modus für alle Ladepunkte");
+  } else {
+    const WarpChargerData &c = d.chargers[index];
+    char name[48];
+    if (c.name[0] != '\0') {
+      snprintf(name, sizeof(name), "%s", c.name);
+    } else {
+      snprintf(name, sizeof(name), "Wallbox %d", index + 1);
+    }
+    mc.name = label(mc.card, 16, 8, 430, F_TITLE, C_TEXT, name);
+    mc.state = label(mc.card, 16, 32, 430, F_SMALL, C_MUTED, "--");
+    mc.power = label(mc.card, 470, 8, 272, F_TITLE, C_MUTED, "--",
+                     LV_TEXT_ALIGN_RIGHT);
+  }
+
+  mc.modeCount = uiModes(d, mc.modes);
+  // Card content is 774 px wide (790 page minus 8 px padding per side); keep
+  // 16 px left and right inside the card.
+  constexpr int kAvailable = 774 - 32;
+  constexpr int kGap = 8;
+  int buttonWidth =
+      (kAvailable - (mc.modeCount - 1) * kGap) / (mc.modeCount > 0 ? mc.modeCount : 1);
+  if (buttonWidth > 170) {
+    buttonWidth = 170;
+  }
+  int x = 16;
+  for (int i = 0; i < mc.modeCount; ++i) {
+    lv_obj_t *b = lv_btn_create(mc.card);
+    lv_obj_set_pos(b, x, 54);
+    lv_obj_set_size(b, buttonWidth, 34);
+    lv_obj_set_style_radius(b, 8, 0);
+    lv_obj_set_style_bg_color(b, lv_color_hex(C_CARD2), 0);
+    lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
+    lv_obj_set_style_border_width(b, 1, 0);
+    lv_obj_set_style_border_color(b, lv_color_hex(C_LINE), 0);
+    lv_obj_set_style_shadow_width(b, 0, 0);
+    lv_obj_t *lbl = lv_label_create(b);
+    lv_label_set_text(lbl, chargeModeName(mc.modes[i]));
+    lv_obj_set_style_text_font(lbl, F_SMALL, 0);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(C_MUTED), 0);
+    lv_obj_center(lbl);
+    const intptr_t code =
+        global ? static_cast<intptr_t>(mc.modes[i])
+               : (static_cast<intptr_t>(index) << 8) | mc.modes[i];
+    lv_obj_add_event_cb(
+        b, global ? onGlobalModeClicked : onChargerModeClicked,
+        LV_EVENT_CLICKED, reinterpret_cast<void *>(code));
+    mc.buttons[i] = b;
+    x += buttonWidth + kGap;
+  }
+  return mc;
+}
+
+bool wallboxLayoutChanged(const WarpData &d) {
+  int count = d.charger_count;
+  if (count > kWarpMaxChargers) {
+    count = kWarpMaxChargers;
+  }
+  if (count != g_renderedChargers) {
+    return true;
+  }
+  int modes[kWarpUiModes] = {};
+  const int modeCount = uiModes(d, modes);
+  if (modeCount != g_renderedModeCount) {
+    return true;
+  }
+  for (int i = 0; i < modeCount; ++i) {
+    if (modes[i] != g_renderedModes[i]) {
+      return true;
+    }
+  }
+  return false;
+}
+
+void rebuildModeCards(const WarpData &d) {
+  if (w.page5 == nullptr) {
+    return;
+  }
+  lv_obj_clean(w.page5);
+  g_globalCard = ModeCard();
+  for (int i = 0; i < kWarpMaxChargers; ++i) {
+    g_chargerCards[i] = ModeCard();
+  }
+
+  int modes[kWarpUiModes] = {};
+  g_renderedModeCount = uiModes(d, modes);
+  for (int i = 0; i < g_renderedModeCount; ++i) {
+    g_renderedModes[i] = modes[i];
+  }
+  g_renderedChargers = d.charger_count;
+  if (g_renderedChargers > kWarpMaxChargers) {
+    g_renderedChargers = kWarpMaxChargers;
+  }
+
+  if (g_renderedChargers <= 0) {
+    lv_obj_t *empty = lv_obj_create(w.page5);
+    lv_obj_remove_style_all(empty);
+    lv_obj_set_width(empty, LV_PCT(100));
+    lv_obj_set_height(empty, 96);
+    lv_obj_set_style_bg_color(empty, lv_color_hex(C_CARD), 0);
+    lv_obj_set_style_bg_opa(empty, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(empty, 10, 0);
+    lv_obj_set_style_border_width(empty, 1, 0);
+    lv_obj_set_style_border_color(empty, lv_color_hex(C_LINE), 0);
+    lv_obj_clear_flag(empty, LV_OBJ_FLAG_SCROLLABLE);
+    label(empty, 16, 36, 0, F_BODY, C_MUTED,
+          "Keine Wallbox konfiguriert.");
+    return;
+  }
+
+  g_globalCard = buildModeCard(w.page5, true, -1, d);
+  for (int i = 0; i < g_renderedChargers; ++i) {
+    g_chargerCards[i] = buildModeCard(w.page5, false, i, d);
+  }
+}
+
+void updateModeCard(ModeCard &mc, const WarpData &d, int index, bool global) {
+  if (mc.card == nullptr) {
+    return;
+  }
+  const uint32_t now = lv_tick_get();
+  const int actualMode = global ? d.charge_mode : d.chargers[index].mode;
+  PendingMode &pending =
+      global ? g_pendingGlobal : g_pendingCharger[index];
+  int shownMode = actualMode;
+  if (pending.active) {
+    if (actualMode == pending.mode ||
+        static_cast<int32_t>(now - pending.untilMs) >= 0) {
+      pending.active = false;
+    } else {
+      shownMode = pending.mode;
+    }
+  }
+  applyModeSelection(mc, shownMode);
+
+  if (global) {
+    return;
+  }
+
+  const WarpChargerData &c = d.chargers[index];
+  char buf[48];
+  if (c.name[0] != '\0') {
+    snprintf(buf, sizeof(buf), "%s", c.name);
+  } else {
+    snprintf(buf, sizeof(buf), "Wallbox %d", index + 1);
+  }
+  setText(mc.name, buf);
+
+  const char *stateName = chargerStateName(c);
+  if (c.estimated && c.state == 4) {
+    snprintf(buf, sizeof(buf), "%s (geschätzt)", stateName);
+  } else {
+    snprintf(buf, sizeof(buf), "%s", stateName);
+  }
+  setText(mc.state, buf);
+  setColor(mc.state,
+           c.state == 5 ? C_RED : (c.state == 4 ? C_EV : C_MUTED));
+
+  if (c.power > 0.5f) {
+    fmtPower(buf, sizeof(buf), c.power);
+    setText(mc.power, buf);
+    setColor(mc.power, C_EV);
+  } else {
+    setText(mc.power, "--");
+    setColor(mc.power, C_MUTED);
+  }
+}
+
+// Power-history helpers -------------------------------------------------
+
+const PowerSample &sampleAt(int index) {
+  return g_samples[(g_sampleHead + index) % kMaxSamples];
+}
+
+// Keep the x labels in the same units the window uses: 45m for an hour,
+// 1h30 for the middle of a two-hour window, and so on.
+void formatAgeLabel(char *out, size_t n, uint32_t seconds) {
+  if (seconds == 0) {
+    snprintf(out, n, "0h");
+  } else if (seconds >= 3600) {
+    const uint32_t hours = seconds / 3600;
+    const uint32_t minutes = (seconds % 3600) / 60;
+    if (minutes == 0) {
+      snprintf(out, n, "%uh", hours);
+    } else {
+      snprintf(out, n, "%uh%02u", hours, minutes);
+    }
+  } else {
+    snprintf(out, n, "%um", (seconds + 30) / 60);
+  }
+}
+
+void updateTimeLabels(int windowSec) {
+  for (int i = 0; i < 5; ++i) {
+    const uint32_t remaining =
+        (uint32_t)((uint64_t)windowSec * (uint32_t)(4 - i) / 4u);
+    char buf[16];
+    formatAgeLabel(buf, sizeof(buf), remaining);
+    setText(w.timeLabel[i], buf);
+  }
+}
+
+// 1h, 2h, 4h, 6h, 12h, 24h. The shortest window is used until the history
+// actually spans longer than it.
+int selectWindow(uint32_t spanMs) {
+  const uint32_t spanSec = spanMs / 1000u;
+  if (spanSec <= 3600u) return 3600;
+  if (spanSec <= 7200u) return 7200;
+  if (spanSec <= 4u * 3600u) return 4 * 3600;
+  if (spanSec <= 6u * 3600u) return 6 * 3600;
+  if (spanSec <= 12u * 3600u) return 12 * 3600;
+  return 24 * 3600;
+}
+
+void recordPowerSample(uint32_t now, const WarpData &d) {
+  if (g_sampleCount == kMaxSamples) {
+    g_sampleHead = (g_sampleHead + 1) % kMaxSamples;
+    --g_sampleCount;
+  }
+  const int index = (g_sampleHead + g_sampleCount) % kMaxSamples;
+  g_samples[index] = {now, d.gridPower, d.pvPower, d.housePower,
+                      d.batteryPower};
+  ++g_sampleCount;
+
+  // Drop the oldest entries as soon as they fall out of the 24 h window.
+  while (g_sampleCount > 1 &&
+         (uint32_t)(now - sampleAt(0).timeMs) > kHistoryMs) {
+    g_sampleHead = (g_sampleHead + 1) % kMaxSamples;
+    --g_sampleCount;
+  }
+}
+
+// Resample the raw history into the fixed chart width. Samples are held until
+// the next one arrives, so the newest value sits at the right edge and the
+// left side stays empty until the window has actually been covered.
+void rebuildPowerChart() {
+  if (w.powerChart == nullptr || g_sampleCount == 0) {
+    return;
+  }
+
+  const uint32_t newest = sampleAt(g_sampleCount - 1).timeMs;
+  const uint32_t oldest = sampleAt(0).timeMs;
+  const int windowSec = selectWindow(newest - oldest);
+  const uint32_t windowMs = (uint32_t)windowSec * 1000u;
+  updateTimeLabels(windowSec);
+
+  int sampleIndex = 0;
+  bool haveValue = false;
+  float mn = 0.0f;
+  float mx = 0.0f;
+
+  for (int i = 0; i < kChartPoints; ++i) {
+    const uint32_t age = (uint32_t)(
+        (uint64_t)windowMs * (uint32_t)(kChartPoints - 1 - i) /
+        (uint32_t)(kChartPoints - 1));
+
+    // Move to the newest sample that is not newer than this point's time.
+    while (sampleIndex + 1 < g_sampleCount &&
+           (uint32_t)(newest - sampleAt(sampleIndex + 1).timeMs) >= age) {
+      ++sampleIndex;
+    }
+
+    if ((uint32_t)(newest - sampleAt(sampleIndex).timeMs) < age) {
+      g_chartGrid[i] = LV_CHART_POINT_NONE;
+      g_chartPv[i] = LV_CHART_POINT_NONE;
+      g_chartHouse[i] = LV_CHART_POINT_NONE;
+      g_chartBattery[i] = LV_CHART_POINT_NONE;
+      continue;
+    }
+
+    const PowerSample &s = sampleAt(sampleIndex);
+    const float values[4] = {s.grid, s.pv, s.house, s.battery};
+    int32_t *const out[4] = {g_chartGrid, g_chartPv, g_chartHouse,
+                             g_chartBattery};
+    for (int j = 0; j < 4; ++j) {
+      out[j][i] = (int32_t)lroundf(values[j]);
+      if (!haveValue) {
+        mn = mx = values[j];
+        haveValue = true;
+      }
+      if (values[j] < mn) mn = values[j];
+      if (values[j] > mx) mx = values[j];
+    }
+  }
+
+  // Round outwards to whole kW. A symmetric range keeps the zero line in the
+  // middle, which the static chart background and the three scale labels use.
+  const float absMax = std::fmax(std::fabs(mn), std::fabs(mx));
+  int steps = (int)std::ceil(absMax / 1000.0f);
+  if (steps < 1) steps = 1;
+  if (steps > 100) steps = 100;
+  const int range = steps * 1000;
+
+  lv_chart_set_range(w.powerChart, LV_CHART_AXIS_PRIMARY_Y, -range, range);
+  char buf[24];
+  snprintf(buf, sizeof(buf), "%d W", range);
+  setText(w.scaleMax, buf);
+  setText(w.scaleMid, "0 W");
+  snprintf(buf, sizeof(buf), "%d W", -range);
+  setText(w.scaleMin, buf);
+  lv_chart_refresh(w.powerChart);
 }
 
 struct FlowNode {
@@ -399,12 +935,14 @@ void flowDots(lv_obj_t *parent, int idx, uint32_t color) {
 
 void showPage(int page) {
   // Display order. The flow view was built as page4, but it is the first page
-  // users should see; the original energy/history/service pages follow it.
-  lv_obj_t *pages[4] = {w.page4, w.page1, w.page2, w.page3};
-  lv_obj_t *captions[4] = {w.caption4, w.caption1, w.caption2, w.caption3};
-  lv_obj_t *buttons[4] = {w.pageBtn1, w.pageBtn2, w.pageBtn3, w.pageBtn4};
+  // users should see; the energy, history, wallbox and service pages follow it.
+  lv_obj_t *pages[5] = {w.page4, w.page1, w.page2, w.page5, w.page3};
+  lv_obj_t *captions[5] = {w.caption4, w.caption1, w.caption2, w.caption5,
+                           w.caption3};
+  lv_obj_t *buttons[5] = {w.pageBtn1, w.pageBtn2, w.pageBtn3, w.pageBtn4,
+                          w.pageBtn5};
 
-  for (int i = 0; i < 4; ++i) {
+  for (int i = 0; i < 5; ++i) {
     const bool active = (i == page - 1);
     if (pages[i] != nullptr) {
       if (active) {
@@ -447,9 +985,11 @@ void create(lv_obj_t *parent) {
   w.caption2 = label(parent, 16, 40, 0, F_BODY, C_MUTED, "Verlauf");
   w.caption3 = label(parent, 16, 40, 0, F_BODY, C_MUTED, "Service");
   w.caption4 = label(parent, 16, 40, 0, F_BODY, C_MUTED, "Energiefluss");
+  w.caption5 = label(parent, 16, 40, 0, F_BODY, C_MUTED, "Wallboxen");
   lv_obj_add_flag(w.caption2, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(w.caption3, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(w.caption4, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(w.caption5, LV_OBJ_FLAG_HIDDEN);
 
   // One pill for the connection state. The WiFi glyph shows whether the
   // network is up; the text beside it shows whether data is arriving, so both
@@ -614,41 +1154,58 @@ void create(lv_obj_t *parent) {
   w.page4 = lv_obj_create(parent);
   lv_obj_remove_style_all(w.page4);
   lv_obj_set_pos(w.page4, 0, 68);
-  lv_obj_set_size(w.page4, 790, 372);
+  lv_obj_set_size(w.page4, 790, 356);
+  // Test: chart background image moved here from the history chart (page 3).
+  lv_obj_set_style_bg_image_src(w.page4, &chart_bg, 0);
+  lv_obj_set_style_bg_image_opa(w.page4, LV_OPA_60, 0);
   lv_obj_add_flag(w.page4, LV_OBJ_FLAG_HIDDEN);
+
+  // Fifth page (wallbox configuration) --------------------------------
+  // One card per charger. The page scrolls vertically when more boxes are
+  // configured than fit on the screen.
+  w.page5 = lv_obj_create(parent);
+  lv_obj_remove_style_all(w.page5);
+  lv_obj_set_pos(w.page5, 0, 68);
+  lv_obj_set_size(w.page5, 790, 372);
+  lv_obj_set_flex_flow(w.page5, LV_FLEX_FLOW_COLUMN);
+  lv_obj_set_style_pad_all(w.page5, 8, 0);
+  lv_obj_set_style_pad_row(w.page5, 8, 0);
+  lv_obj_set_scroll_dir(w.page5, LV_DIR_VER);
+  lv_obj_set_scrollbar_mode(w.page5, LV_SCROLLBAR_MODE_AUTO);
+  lv_obj_add_flag(w.page5, LV_OBJ_FLAG_HIDDEN);
 
   // Energy flow: four links around a central house hub. Links are drawn
   // first, particles next and cards last, so particles slide underneath the
   // nodes instead of crossing their text.
-  flowLink(w.page4, 0, 200, 108, 332, 161, C_SOLAR);  // PV <-> house
-  flowLink(w.page4, 1, 200, 264, 332, 211, C_BLUE);   // grid <-> house
-  flowLink(w.page4, 2, 590, 108, 458, 161, C_BAT);    // battery <-> house
-  flowLink(w.page4, 3, 458, 211, 590, 264, C_EV);     // house -> wallbox
+  flowLink(w.page4, 0, 200, 98, 332, 151, C_SOLAR);  // PV <-> house
+  flowLink(w.page4, 1, 200, 254, 332, 201, C_BLUE);   // grid <-> house
+  flowLink(w.page4, 2, 590, 98, 458, 151, C_BAT);    // battery <-> house
+  flowLink(w.page4, 3, 458, 201, 590, 254, C_EV);     // house -> wallbox
   flowDots(w.page4, 0, C_SOLAR_HI);
   flowDots(w.page4, 1, C_GRID_HI);
   flowDots(w.page4, 2, C_BAT_HI);
   flowDots(w.page4, 3, C_EV_HI);
 
-  FlowNode pvFlow = flowNode(w.page4, 24, 26, "SOLAR", LV_SYMBOL_CHARGE,
+  FlowNode pvFlow = flowNode(w.page4, 24, 16, "SOLAR", LV_SYMBOL_CHARGE,
                              C_SOLAR, C_SOLAR_DIM);
   w.pvNode = pvFlow.card;
   w.pvValue = pvFlow.value;
   w.pvState = pvFlow.state;
 
-  FlowNode gridFlow = flowNode(w.page4, 24, 252, "NETZ", kFlowGridIcon,
+  FlowNode gridFlow = flowNode(w.page4, 24, 242, "NETZ", kFlowGridIcon,
                                C_BLUE, C_GRID_DIM, &lv_font_mdi_icons_28);
   w.gridNode = gridFlow.card;
   w.gridValue = gridFlow.value;
   w.gridState = gridFlow.state;
 
-  FlowNode batFlow = flowNode(w.page4, 590, 26, "AKKU",
+  FlowNode batFlow = flowNode(w.page4, 590, 16, "AKKU",
                               LV_SYMBOL_BATTERY_FULL, C_BAT, C_BAT_DIM);
   w.batNode = batFlow.card;
   w.batValue = batFlow.value;
   w.batState = batFlow.state;
 
-  FlowNode wbFlow = flowNode(w.page4, 590, 252, "WALLBOX", LV_SYMBOL_CHARGE,
-                             C_EV, C_EV_DIM);
+  FlowNode wbFlow = flowNode(w.page4, 590, 242, "WALLBOX", kFlowCarIcon,
+                             C_EV, C_EV_DIM, &lv_font_mdi_icons_28);
   w.wbNode = wbFlow.card;
   w.wbValue = wbFlow.value;
   w.wbState = wbFlow.state;
@@ -732,16 +1289,17 @@ void create(lv_obj_t *parent) {
     lv_obj_set_style_shadow_width(b, 0, 0);
     lv_obj_t *lbl = lv_label_create(b);
     lv_label_set_text(lbl, text);
-    lv_obj_set_style_text_font(lbl, F_BODY, 0);
+    lv_obj_set_style_text_font(lbl, &lv_font_mdi_icons_28, 0);
     lv_obj_set_style_text_color(lbl, lv_color_hex(C_MUTED), 0);
     lv_obj_center(lbl);
     return b;
   };
 
-  w.pageBtn1 = makeNav(parent, 500, 440, "1");
-  w.pageBtn2 = makeNav(parent, 560, 440, "2");
-  w.pageBtn3 = makeNav(parent, 620, 440, "3");
-  w.pageBtn4 = makeNav(parent, 680, 440, "4");
+  w.pageBtn1 = makeNav(parent, 500, 434, kNavFlowIcon);
+  w.pageBtn2 = makeNav(parent, 560, 434, kNavEnergyIcon);
+  w.pageBtn3 = makeNav(parent, 620, 434, kNavChartIcon);
+  w.pageBtn4 = makeNav(parent, 680, 434, kFlowCarIcon);
+  w.pageBtn5 = makeNav(parent, 740, 434, kNavServiceIcon);
   lv_obj_add_event_cb(w.pageBtn1, [](lv_event_t *) { showPage(1); },
                       LV_EVENT_CLICKED, nullptr);
   lv_obj_add_event_cb(w.pageBtn2, [](lv_event_t *) { showPage(2); },
@@ -749,6 +1307,8 @@ void create(lv_obj_t *parent) {
   lv_obj_add_event_cb(w.pageBtn3, [](lv_event_t *) { showPage(3); },
                       LV_EVENT_CLICKED, nullptr);
   lv_obj_add_event_cb(w.pageBtn4, [](lv_event_t *) { showPage(4); },
+                      LV_EVENT_CLICKED, nullptr);
+  lv_obj_add_event_cb(w.pageBtn5, [](lv_event_t *) { showPage(5); },
                       LV_EVENT_CLICKED, nullptr);
   showPage(1);
 
@@ -809,10 +1369,14 @@ void setPage(int page) {
   if (page < 1) {
     page = 1;
   }
-  if (page > 4) {
-    page = 4;
+  if (page > 5) {
+    page = 5;
   }
   showPage(page);
+}
+
+void setChargeModeHandler(ChargeModeHandler handler) {
+  g_chargeModeHandler = handler;
 }
 
 void showSetup(const char *ssid, const char *password, const char *url) {
@@ -1097,11 +1661,10 @@ void update(const WarpData &d) {
     setText(w.wallboxValue, "--");
     setText(w.wallboxNote, "Getrennt");
   }
-  const char *modeStr = d.charge_mode == 0 ? "Schnell" :
-                        d.charge_mode == 1 ? "Aus" :
-                        d.charge_mode == 2 ? "SOLAR" :
-                        d.charge_mode == 3 ? "Min+PV" : "?";
-  snprintf(chargeBuf, sizeof(chargeBuf), "Modus: %s", modeStr);
+  const int overviewMode =
+      d.charger_count > 0 ? d.chargers[0].mode : d.charge_mode;
+  snprintf(chargeBuf, sizeof(chargeBuf), "Modus: %s",
+           chargeModeName(overviewMode));
   setText(w.wallboxMode, chargeBuf);
   if (d.hasCharger && d.charge_phases > 0) {
     snprintf(chargeBuf, sizeof(chargeBuf), "Phase: %s",
@@ -1401,6 +1964,17 @@ void update(const WarpData &d) {
     // Directions: grid/battery links run card -> hub by default.
     w.gridExporting = d.hasGrid && !d.island && d.gridPower < 0.0f;
     w.batCharging = d.hasBattery && d.batteryPower > 0.0f;
+  }
+
+  // Wallbox configuration page -----------------------------------------
+  if (w.page5 != nullptr) {
+    if (wallboxLayoutChanged(d)) {
+      rebuildModeCards(d);
+    }
+    updateModeCard(g_globalCard, d, -1, true);
+    for (int i = 0; i < g_renderedChargers; ++i) {
+      updateModeCard(g_chargerCards[i], d, i, false);
+    }
   }
 }
 

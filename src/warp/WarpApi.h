@@ -390,29 +390,84 @@ class Reader {
     }
 
     /* Charge manager / Wallbox. /charge_manager/state contains an array of
-     * chargers; the panel shows the first one. `s` is the CAS state, `ac` the
-     * allocated current in mA, `ap` the allocated phases. */
-    bool haveCharger = false;
-    int chargeState = 0;          // CASState
-    double chargeCurrent = 0.0;   // mA
-    double chargeAllocatedPhases = 0.0;
-    double chargeSupportedPhases = 0.0;
-    char chargeName[40] = "";
+     * chargers. `s` is the CAS state, `ac` the allocated current in mA, `ap`
+     * the allocated phases and `sp` the supported phases. The overview and
+     * flow pages use the first/combined box; the configuration page keeps all
+     * of them. */
     {
       std::string body;
       std::string error;
       if (get("/charge_manager/state", body, error)) {
-        int state = 0;
-        haveCharger = warpjson::integer(body.data(), body.size(), "s", state);
-        if (haveCharger) {
-          chargeState = state;
+        warpjson::forEachObject(
+            body.data(), body.size(), "chargers",
+            [&d](const char *obj, size_t len) {
+              if (d.charger_count >= kWarpMaxChargers) {
+                return true;  // keep scanning, ignore the rest
+              }
+              WarpChargerData c;
+              int state = 0;
+              if (warpjson::integer(obj, len, "s", state)) {
+                c.state = state;
+              }
+              double current = 0.0;
+              if (warpjson::number(obj, len, "ac", current)) {
+                c.current = current;
+              }
+              double allocated = 0.0;
+              double supported = 0.0;
+              warpjson::number(obj, len, "ap", allocated);
+              warpjson::number(obj, len, "sp", supported);
+              if (allocated >= 1.0) {
+                c.phases = static_cast<int>(allocated + 0.5);
+              } else if (supported >= 1.0) {
+                c.phases = static_cast<int>(supported) & 3;
+              }
+              warpjson::string(obj, len, "n", c.name, sizeof(c.name));
+              c.mode = d.charge_mode;  // fallback when charge_modes is absent
+              d.chargers[d.charger_count++] = c;
+              return true;
+            });
+      }
+    }
+
+    /* Per-charger modes and the modes the charge manager currently supports.
+     * Both are top-level arrays. */
+    {
+      std::string body;
+      std::string error;
+      if (get("/charge_manager/charge_modes", body, error)) {
+        double modes[kWarpMaxChargers];
+        size_t count = 0;
+        if (warpjson::topNumbers(body.data(), body.size(), modes,
+                                 kWarpMaxChargers, count)) {
+          const size_t n = count < static_cast<size_t>(d.charger_count)
+                               ? count
+                               : static_cast<size_t>(d.charger_count);
+          for (size_t i = 0; i < n; ++i) {
+            if (!std::isnan(modes[i])) {
+              d.chargers[i].mode = static_cast<int>(modes[i] + 0.5);
+            }
+          }
         }
-        haveCharger = warpjson::number(body.data(), body.size(), "ac",
-                                       chargeCurrent) || haveCharger;
-        warpjson::number(body.data(), body.size(), "ap", chargeAllocatedPhases);
-        warpjson::number(body.data(), body.size(), "sp", chargeSupportedPhases);
-        haveCharger = warpjson::string(body.data(), body.size(), "n", chargeName,
-                                       sizeof(chargeName)) || haveCharger;
+      }
+    }
+    {
+      std::string body;
+      std::string error;
+      if (get("/charge_manager/supported_charge_modes", body, error)) {
+        double modes[kWarpMaxModes];
+        size_t count = 0;
+        if (warpjson::topNumbers(body.data(), body.size(), modes,
+                                 kWarpMaxModes, count)) {
+          d.supported_mode_count = 0;
+          for (size_t i = 0;
+               i < count && d.supported_mode_count < kWarpMaxModes; ++i) {
+            if (!std::isnan(modes[i])) {
+              d.supported_modes[d.supported_mode_count++] =
+                  static_cast<int>(modes[i] + 0.5);
+            }
+          }
+        }
       }
     }
 
@@ -680,21 +735,18 @@ class Reader {
     /* Charge manager / Wallbox. A configured charger is enough to show the
      * card; the power comes from a wallbox meter when one exists, otherwise it
      * is estimated from the allocated current and the measured grid voltage. */
-    d.hasCharger = d.hasCharger || haveCharger;
-    d.charge_state = chargeState;
-    d.charge_current = chargeCurrent;
-    snprintf(d.charge_name, sizeof(d.charge_name), "%s", chargeName);
-
-    int chargePhases = 0;
-    if (chargeAllocatedPhases >= 1.0) {
-      chargePhases = static_cast<int>(chargeAllocatedPhases + 0.5);
-    } else if (chargeSupportedPhases >= 1.0) {
-      chargePhases = static_cast<int>(chargeSupportedPhases) & 3;
+    d.hasCharger = d.hasCharger || d.charger_count > 0;
+    if (d.charger_count > 0) {
+      const WarpChargerData &first = d.chargers[0];
+      d.charge_state = first.state;
+      d.charge_phases = first.phases;
+      snprintf(d.charge_name, sizeof(d.charge_name), "%s", first.name);
+      double totalCurrent = 0.0;
+      for (int i = 0; i < d.charger_count; ++i) {
+        totalCurrent += d.chargers[i].current;
+      }
+      d.charge_current = totalCurrent;
     }
-    if (chargePhases < 1 || chargePhases > 3) {
-      chargePhases = d.is_3phase ? 3 : 1;
-    }
-    d.charge_phases = chargePhases;
 
     // Totals that the device may omit are sums of the phases/strings.
     if (!gridPowerFound && (d.gridL1 != 0.0f || d.gridL2 != 0.0f ||
@@ -709,25 +761,61 @@ class Reader {
       d.pvPower = d.pvA + d.pvB;
     }
 
-    // Without a wallbox meter the charging power is the allocated current
-    // multiplied by the phase voltages. Missing voltage falls back to 230 V,
-    // which also covers island operation with the grid meter switched off.
-    if (!d.chargeMeter && d.hasCharger && chargeCurrent > 0.0) {
-      const double amps = chargeCurrent / 1000.0;
+    /* Per-charger power. Without a wallbox meter it is the allocated current
+     * multiplied by the phase voltages. Missing voltage falls back to 230 V,
+     * which also covers island operation with the grid meter switched off.
+     * With one charger the meter value is exact; with several boxes only the
+     * combined meter value exists, so it is split proportionally to the
+     * current estimates for the cards while the overview keeps the total. */
+    {
       double v1 = d.gridVoltageL1;
       double v2 = d.gridVoltageL2;
       double v3 = d.gridVoltageL3;
       if (v1 < 50.0) v1 = 230.0;
       if (v2 < 50.0) v2 = 230.0;
       if (v3 < 50.0) v3 = 230.0;
-      const double volts = (chargePhases >= 3) ? (v1 + v2 + v3) : v1;
-      d.charge_power = static_cast<float>(amps * volts);
-      d.chargeEstimated = true;
+
+      float totalEstimate = 0.0f;
+      for (int i = 0; i < d.charger_count; ++i) {
+        WarpChargerData &c = d.chargers[i];
+        const double amps = c.current / 1000.0;
+        const double volts = (c.phases >= 3) ? (v1 + v2 + v3) : v1;
+        const float estimate = static_cast<float>(amps * volts);
+        c.power = estimate;
+        c.estimated = estimate > 0.0f;
+        c.meter = false;
+        totalEstimate += estimate;
+      }
+
+      if (d.chargeMeter) {
+        // d.charge_power already holds the combined meter value.
+        if (d.charger_count == 1) {
+          d.chargers[0].power = d.charge_power;
+          d.chargers[0].meter = true;
+          d.chargers[0].estimated = false;
+        } else if (d.charger_count > 1) {
+          for (int i = 0; i < d.charger_count; ++i) {
+            WarpChargerData &c = d.chargers[i];
+            if (totalEstimate > 0.0f) {
+              c.power = d.charge_power * (c.power / totalEstimate);
+            } else {
+              c.power = d.charge_power / d.charger_count;
+            }
+            c.meter = true;
+            c.estimated = false;
+          }
+        }
+        d.chargeEstimated = false;
+      } else {
+        d.charge_power = totalEstimate;
+        d.chargeEstimated = totalEstimate > 0.0f;
+      }
     }
 
     // The load meter usually measures the whole house connection including the
     // wallbox. Subtract the charging power so the displayed consumption is the
     // household only.
+    const int chargePhases = d.charge_phases;
     if (d.hasHouse && d.charge_power > 0.0f) {
       d.housePower -= d.charge_power;
       if (d.housePower < 0.0f) {
@@ -815,7 +903,35 @@ class Reader {
     return true;
   }
 
+  /* Applies a charge mode to every charger through the power manager. This is
+   * the same command the WARP web interface's global mode selector sends. */
+  bool setGlobalChargeMode(int mode, std::string &error) {
+    const std::string body = "{\"mode\":" + std::to_string(mode) + "}";
+    return command("/power_manager/charge_mode_update", body, error);
+  }
+
+  /* Overrides the charge mode of one charger. The charge manager accepts the
+   * bare integer as the request body on the per-charger path; the setting lasts
+   * for the current session until the vehicle is unplugged or reset. */
+  bool setChargerChargeMode(int index, int mode, std::string &error) {
+    if (index < 0) {
+      error = "ungueltiger Ladepunkt";
+      return false;
+    }
+    const std::string path =
+        "/charge_manager/charge_modes/" + std::to_string(index);
+    return command(path, std::to_string(mode), error);
+  }
+
  private:
+  // POSTs a command and treats a 2xx response as success. The firmware answers
+  // commands with an empty body, so the response itself is not inspected.
+  bool command(const std::string &path, const std::string &body,
+               std::string &error) {
+    std::string response;
+    return transport_.post(base_ + path + query_, body, response, error);
+  }
+
   bool get(const std::string &path, std::string &body, std::string &error) {
     return transport_.get(base_ + path + query_, body, error);
   }

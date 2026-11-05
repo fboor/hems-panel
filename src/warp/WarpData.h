@@ -6,6 +6,26 @@
 
 #include <stdint.h>
 
+// The panel has room for the controls of three wallboxes on the
+// configuration page, so that is the supported maximum. Extra chargers
+// reported by the charge manager are ignored.
+constexpr int kWarpMaxChargers = 3;
+constexpr int kWarpMaxModes = 10;
+
+// One wallbox as reported by /charge_manager/state and
+// /charge_manager/charge_modes. The overview and flow pages use the aggregate
+// fields below; the configuration page shows one card per entry here.
+struct WarpChargerData {
+  char name[40] = "";
+  int state = 0;         // CASState from charge_manager/state
+  int mode = 0;          // ConfigChargeMode for this charger
+  float power = 0.0f;    // W, wallbox meter value or estimate
+  double current = 0.0;  // mA allocated current
+  int phases = 0;        // 1..3, 0 = unknown
+  bool meter = false;    // power came from a dedicated wallbox meter
+  bool estimated = false;
+};
+
 struct WarpData {
   bool valid = false;
   uint32_t lastUpdateMs = 0;
@@ -44,15 +64,27 @@ struct WarpData {
   float charge_power = 0.0f;    // W, wallbox meter value or estimate
   double charge_current = 0.0;  // mA allocated current
   char charge_name[40] = "";    // Charger name from API
-  int charge_mode = 0;          // 0=Fast,1=Off,2=PV,3=Min+PV from power_manager/charge_mode
+  int charge_mode = 0;          // global mode from power_manager/charge_mode
   int charge_phases = 0;        // phases used by the wallbox (0 = unknown)
+
+  // All wallboxes reported by the charge manager. The configuration page
+  // shows one card per charger; the aggregate fields above describe the first
+  // (or the combined) box for the overview and flow pages.
+  WarpChargerData chargers[kWarpMaxChargers];
+  int charger_count = 0;
+
+  // Modes the charge manager currently offers. Empty when the endpoint is not
+  // available (older firmware); the UI then falls back to Off/Fast.
+  int supported_modes[kWarpMaxModes] = {};
+  int supported_mode_count = 0;
 
   // Grid connection.
   bool island = false;
   bool is_3phase = false;
 
   // Energy counters since commissioning, Wh. Filled from the meter value IDs on
-  // a real WARP device; the day_* aliases are the fallback for flat JSON.
+  // a real WARP device (which reports kWh, converted on ingest); the day_*
+  // aliases are the fallback for flat JSON.
   float pvEnergyWh = 0.0f;
   float pvAEnergyWh = 0.0f;
   float pvBEnergyWh = 0.0f;

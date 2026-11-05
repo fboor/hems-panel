@@ -5,6 +5,7 @@ set -euo pipefail
 #   sim/run.sh                                  window, mock on :8082
 #   sim/run.sh --url http://wem2-abcd/json      real device
 #   sim/run.sh --shot out.png --after 3         one frame, then exit
+#   sim/run.sh --shot out.png --page 4          a specific page (1..5)
 #   sim/run.sh --probe                          raw JSON to stdout
 #
 # LVGL comes from the PlatformIO library directory. Set LVGL_DIR if it lives

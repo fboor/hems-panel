@@ -26,13 +26,19 @@ enum class ConnectionState {
 
 void setConnectionState(ConnectionState state);
 
-// Switch the visible page (1..4). Used by the emulator to render a specific
+// Switch the visible page (1..5). Used by the emulator to render a specific
 // page for screenshots; the on-screen navigation calls the same helper.
 void setPage(int page);
 
-// First-boot Wi-Fi setup overlay. The QR code contains the setup access point
-// credentials, so a phone can join without typing the password. The overlay is
-// created on first use and stays allocated (hidden) afterwards.
+// Called when the user picks a charge mode on the wallbox page. `charger` is
+// the index into WarpData::chargers, or -1 to apply the mode to every charger
+// through the power manager. `mode` is a WARP ConfigChargeMode value.
+using ChargeModeHandler = void (*)(int charger, int mode);
+void setChargeModeHandler(ChargeModeHandler handler);
+
+// First-boot Wi-Fi setup overlay. The setup access point is open, and the QR
+// code contains its SSID, so a phone can join without typing anything. The
+// overlay is created on first use and stays allocated (hidden) afterwards.
 void showSetup(const char *ssid, const char *password, const char *url);
 void hideSetup();
 

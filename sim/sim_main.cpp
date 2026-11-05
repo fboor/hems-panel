@@ -98,6 +98,8 @@ struct Shared {
 Shared g_shared;
 std::atomic<bool> g_stop{false};
 std::atomic<bool> g_quit{false};
+std::atomic<bool> g_pollNow{false};
+Options g_options;
 
 bool flatFallback(const Options &opt, WarpData &parsed) {
   if (opt.url.find("/json") == std::string::npos) {
@@ -150,6 +152,9 @@ void fetchLoop(const Options &opt) {
     }
 
     for (int waited = 0; waited < opt.intervalMs && !g_stop; waited += 100) {
+      if (g_pollNow.exchange(false)) {
+        break;
+      }
       SDL_Delay(100);
     }
     if (g_stop) {
@@ -355,7 +360,7 @@ void usage() {
       "  --timeout MS     HTTP timeout (default 5000)\n"
       "  --shot FILE      render one frame to PNG, then exit\n"
       "  --after S        seconds to wait before the shot (default 2)\n"
-      "  --page N         page to show, 1..4 (default 1)\n"
+      "  --page N         page to show, 1..5 (default 1)\n"
       "  --setup          show the first-boot Wi-Fi setup screen\n"
       "  --probe          read once, print the mapped values, exit\n"
       "  -v, --verbose    log every HTTP request\n"
@@ -399,6 +404,8 @@ int main(int argc, char **argv) {
       return 2;
     }
   }
+
+  g_options = opt;
 
   if (opt.probe) {
     PosixTransport transport(opt.timeoutMs, opt.verbose);
@@ -461,12 +468,12 @@ int main(int argc, char **argv) {
 
   warpui::create(lv_screen_active());
   warpui::setPage(opt.page);
+  warpui::setChargeModeHandler(setChargeMode);
   warpui::setConnectionState(warpui::ConnectionState::NoNet);
   warpui::setNetworkInfo("WLAN-Demo", "192.168.1.50", "http://192.168.1.222",
                          "http://warp-panel.local/");
   if (opt.setup) {
-    warpui::showSetup("WARP-Panel-A1B2", "K7M4P-QX2R9",
-                      "http://192.168.4.1");
+    warpui::showSetup("WARP-Panel-A1B2", nullptr, "http://192.168.4.1");
   }
 
   g_lastTick = SDL_GetTicks();
