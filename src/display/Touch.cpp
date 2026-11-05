@@ -21,7 +21,8 @@ static uint8_t s_addr = 0;
 static int16_t s_x = 0;
 static int16_t s_y = 0;
 static bool s_pressed = false;
-static bool s_logPress = true;
+// Debug: Touch-/Release-Meldungen auf der UART. Bei Bedarf wieder einkommentieren.
+// static bool s_logPress = true;
 // Set when no controller answered at startup. Polling a bus with nobody on it is
 // what produced a Wire error every 7 ms from that point on - hundreds of lines a
 // second, which is also what pushes the panel's own startup lines out of the log.
@@ -173,12 +174,12 @@ void touchReadCb(lv_indev_t *indev, lv_indev_data_t *data) {
         if (py >= BOARD_SCREEN_H) py = BOARD_SCREEN_H - 1;
         s_x = (int16_t)px;
         s_y = (int16_t)py;
-        if (s_logPress) { // log press transitions only (no serial flood)
-          Serial.printf("Touch: press x=%d y=%d (roh %d/%d) id=%u size=%u%s\n",
-                        s_x, s_y, rx, ry, pt[0], pt[5],
-                        imBereich ? "" : " OUT-OF-RANGE");
-          s_logPress = false;
-        }
+        // if (s_logPress) { // log press transitions only (no serial flood)
+        //   Serial.printf("Touch: press x=%d y=%d (roh %d/%d) id=%u size=%u%s\n",
+        //                 s_x, s_y, rx, ry, pt[0], pt[5],
+        //                 imBereich ? "" : " OUT-OF-RANGE");
+        //   s_logPress = false;
+        // }
         if (imBereich) {
           s_pressed = true;
           // A touch is the one thing that wakes the panel, and the only thing
@@ -188,11 +189,11 @@ void touchReadCb(lv_indev_t *indev, lv_indev_data_t *data) {
         }
       }
     } else {
-      if (s_pressed) {
-        Serial.printf("Touch: release (%d,%d)\n", s_x, s_y);
-      }
+      // if (s_pressed) {
+      //   Serial.printf("Touch: release (%d,%d)\n", s_x, s_y);
+      // }
       s_pressed = false;
-      s_logPress = true;
+      // s_logPress = true;
     }
   }
 

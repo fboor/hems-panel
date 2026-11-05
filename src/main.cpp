@@ -245,14 +245,6 @@ void poll() {
   g_haveData = true;
   warpui::update(g_data);
   warpui::setConnectionState(warpui::ConnectionState::Data);
-
-  Serial.printf(
-      "grid %.0f/%.0f/%.0f (%.0f) W  pv %.0f W  ext %.0f W  house %.0f W  "
-      "battery %.0f%% %.0f W %.1f V %.1f A  island %d\n",
-      g_data.gridL1, g_data.gridL2, g_data.gridL3, g_data.gridPower,
-      g_data.pvPower, g_data.externalPower, g_data.housePower, g_data.soc,
-      g_data.batteryPower, g_data.batteryVoltage, g_data.batteryCurrent,
-      g_data.island ? 1 : 0);
 }
 
 void setupNetwork() {
