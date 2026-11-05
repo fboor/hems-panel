@@ -2,7 +2,6 @@
 #include "WarpUi.h"
 #include "fonts/lv_font_mdi_icons_28.h"
 #include "fonts/lv_font_warp.h"
-#include <functional>
 
 LV_IMG_DECLARE(chart_bg);
 
@@ -1065,7 +1064,7 @@ void create(lv_obj_t *parent) {
   row(bat, 16, 152, 218, "Strom", &w.batCurrent);
 
   // PV -----------------------------------------------------------------
-  lv_obj_t *pv = card(page1, 12, 256, 250, 176);
+  lv_obj_t *pv = card(page1, 12, 256, 250, 166);
   title(pv, "SOLAR");
   w.pvTotal = label(pv, 16, 30, 0, F_BIG, C_GREEN, "--");
   label(pv, 16, 76, 0, F_SMALL, C_MUTED, "Erzeugung");
@@ -1073,7 +1072,7 @@ void create(lv_obj_t *parent) {
   row(pv, 16, 134, 218, "String B", &w.pvB);
 
   // Wallbox -----------------------------------------------------------
-  lv_obj_t *wallbox = card(page1, 274, 256, 250, 176);
+  lv_obj_t *wallbox = card(page1, 274, 256, 250, 166);
   title(wallbox, "WALLBOX");
   w.wallboxValue = label(wallbox, 16, 30, 0, F_BIG, C_GREEN, "--");
   w.wallboxNote = label(wallbox, 16, 76, 0, F_SMALL, C_MUTED, "--");
@@ -1081,15 +1080,13 @@ void create(lv_obj_t *parent) {
   w.wallboxPhase = label(wallbox, 16, 116, 0, F_SMALL, C_MUTED, "--");
 
   // Energy totals ------------------------------------------------------
-  lv_obj_t *energy = card(page1, 536, 256, 250, 176);
+  lv_obj_t *energy = card(page1, 536, 256, 250, 166);
   title(energy, "ENERGIE");
   row(energy, 16, 30, 218, "Erzeugung", &w.energyPv, F_SMALL);
   row(energy, 16, 52, 218, "Verbrauch", &w.energyHouse, F_SMALL);
   row(energy, 16, 74, 218, "Netzbezug", &w.energyImport, F_SMALL);
   row(energy, 16, 96, 218, "Einspeisung", &w.energyExport, F_SMALL);
   row(energy, 16, 118, 218, "Akku", &w.energyBattery, F_SMALL);
-  label(energy, 16, 144, 218, F_SMALL, C_MUTED, "seit Inbetriebnahme",
-        LV_TEXT_ALIGN_RIGHT);
 
   // Footer -------------------------------------------------------------
   // Second page (power graph) -----------------------------------------
@@ -1226,7 +1223,7 @@ void create(lv_obj_t *parent) {
   // House hub in the middle: the one place everything flows to or from.
   w.hubNode = lv_obj_create(w.page4);
   lv_obj_remove_style_all(w.hubNode);
-  lv_obj_set_pos(w.hubNode, 329, 120);
+  lv_obj_set_pos(w.hubNode, 329, 110);
   lv_obj_set_size(w.hubNode, 132, 132);
   lv_obj_set_style_radius(w.hubNode, LV_RADIUS_CIRCLE, 0);
   lv_obj_set_style_bg_color(w.hubNode, lv_color_hex(C_CARD2), 0);
@@ -1239,37 +1236,57 @@ void create(lv_obj_t *parent) {
   w.hubValue = label(w.hubNode, 0, 78, 132, F_MED, C_TEXT, "--",
                      LV_TEXT_ALIGN_CENTER);
 
-  // Background cycle button
-  w.bgBtn = lv_btn_create(w.page3);
-  lv_obj_set_pos(w.bgBtn, 16, 18);
+  // Background cycle button, styled like the network card below it: same
+  // card surface, muted small title, value on the right.
+  lv_obj_t *bg = card(w.page3, 16, 0, 758, 58);
+  title(bg, "HINTERGRUND");
+  w.bgBtn = lv_btn_create(bg);
+  lv_obj_set_pos(w.bgBtn, 542, 9);
   lv_obj_set_size(w.bgBtn, 200, 40);
-  lv_obj_t *bgLbl = lv_label_create(w.page3);
-  lv_label_set_text(bgLbl, "Hintergrund");
-  lv_obj_set_pos(bgLbl, 16, -4);
-  lv_obj_set_style_text_color(bgLbl, lv_color_hex(0xFFFFFF), 0);
+  lv_obj_set_style_radius(w.bgBtn, 9, 0);
+  lv_obj_set_style_bg_color(w.bgBtn, lv_color_hex(C_CARD2), 0);
+  lv_obj_set_style_bg_opa(w.bgBtn, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_width(w.bgBtn, 1, 0);
+  lv_obj_set_style_border_color(w.bgBtn, lv_color_hex(C_LINE), 0);
+  lv_obj_set_style_shadow_width(w.bgBtn, 0, 0);
   lv_obj_t *bgBtnLbl = lv_label_create(w.bgBtn);
   lv_label_set_text(bgBtnLbl, "Schwarz");
+  lv_obj_set_style_text_font(bgBtnLbl, F_BODY, 0);
+  lv_obj_set_style_text_color(bgBtnLbl, lv_color_hex(C_TEXT), 0);
   lv_obj_center(bgBtnLbl);
+  // Flow page background image on/off, same button style, left of the
+  // colour cycle button.
+  lv_obj_t *bgImgBtn = lv_btn_create(bg);
+  lv_obj_set_pos(bgImgBtn, 330, 9);
+  lv_obj_set_size(bgImgBtn, 200, 40);
+  lv_obj_set_style_radius(bgImgBtn, 9, 0);
+  lv_obj_set_style_bg_color(bgImgBtn, lv_color_hex(C_CARD2), 0);
+  lv_obj_set_style_bg_opa(bgImgBtn, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_width(bgImgBtn, 1, 0);
+  lv_obj_set_style_border_color(bgImgBtn, lv_color_hex(C_LINE), 0);
+  lv_obj_set_style_shadow_width(bgImgBtn, 0, 0);
+  lv_obj_t *bgImgBtnLbl = lv_label_create(bgImgBtn);
+  lv_label_set_text(bgImgBtnLbl, "Bild: An");
+  lv_obj_set_style_text_font(bgImgBtnLbl, F_BODY, 0);
+  lv_obj_set_style_text_color(bgImgBtnLbl, lv_color_hex(C_TEXT), 0);
+  lv_obj_center(bgImgBtnLbl);
+  lv_obj_add_event_cb(bgImgBtn, [](lv_event_t *e) {
+    static bool on = true;
+    on = !on;
+    lv_obj_set_style_bg_image_opa(w.page4, on ? LV_OPA_60 : LV_OPA_TRANSP, 0);
+    lv_label_set_text(
+        lv_obj_get_child(static_cast<lv_obj_t *>(lv_event_get_target(e)), 0),
+        on ? "Bild: An" : "Bild: Aus");
+  }, LV_EVENT_CLICKED, nullptr);
   lv_obj_add_event_cb(w.bgBtn, [](lv_event_t *e) {
-    static int mode = 0;
-    mode = (mode + 1) % 3;
+    g_backgroundMode = (g_backgroundMode + 1) % 3;
     lv_color_t colors[3] = {lv_color_hex(0x000000), lv_color_hex(0x808080), lv_color_hex(0xE6E6E6)};
     const char *names[3] = {"Schwarz", "Grau", "Weiss"};
-    lv_obj_set_style_bg_color(lv_scr_act(), colors[mode], 0);
-    lv_label_set_text(lv_obj_get_child(w.bgBtn, 0), names[mode]);
-    // Update text colors: white on dark, black on white
-    lv_color_t textColor = (mode == 2) ? lv_color_hex(0x000000) : lv_color_hex(0xFFFFFF);
-    // Recursive label color update
-    std::function<void(lv_obj_t*)> updateLabels = [&](lv_obj_t *obj) {
-      if (lv_obj_check_type(obj, &lv_label_class)) {
-        lv_obj_set_style_text_color(obj, textColor, 0);
-      }
-      uint32_t cnt = lv_obj_get_child_cnt(obj);
-      for (uint32_t i = 0; i < cnt; i++) {
-        updateLabels(lv_obj_get_child(obj, i));
-      }
-    };
-    updateLabels(lv_scr_act());
+    lv_obj_set_style_bg_color(lv_scr_act(), colors[g_backgroundMode], 0);
+    lv_label_set_text(lv_obj_get_child(w.bgBtn, 0), names[g_backgroundMode]);
+    // Only the labels that sit directly on the page background follow the
+    // background colour. Text inside cards keeps its palette.
+    applyBackgroundTextColors();
   }, LV_EVENT_CLICKED, nullptr);
 
   // Network state. The setup portal stays reachable on the local network, so
