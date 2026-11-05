@@ -106,6 +106,8 @@ inline bool parse(const char *json, size_t len, WarpData &d) {
   WARP_KEYS(kAutarky, "autarky", "autarkie", "self_sufficiency");
   WARP_KEYS(kForecast, "forecast_today_wh", "solar_forecast_today_wh",
             "wh_today", "forecast_wh");
+  WARP_KEYS(kForecastRemaining, "forecast_today_remaining_wh",
+            "solar_forecast_today_remaining_wh", "wh_today_remaining");
   WARP_KEYS(kName, "device_name", "name", "hostname");
   WARP_KEYS(kFirmware, "firmware_version", "firmware", "version");
 
@@ -154,6 +156,11 @@ inline bool parse(const char *json, size_t len, WarpData &d) {
 
   if (numAny(json, len, kForecast, kForecastCount, d.forecastTodayWh)) {
     d.hasForecast = d.forecastTodayWh >= 0.0f;
+    found = true;
+  }
+  if (numAny(json, len, kForecastRemaining, kForecastRemainingCount,
+             d.forecastTodayRemainingWh)) {
+    d.hasForecastRemaining = d.forecastTodayRemainingWh >= 0.0f;
     found = true;
   }
   found |= strAny(json, len, kName, kNameCount, d.deviceName,

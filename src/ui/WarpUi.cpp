@@ -267,6 +267,15 @@ void fmtEnergy(char *out, size_t n, double wh) {
   }
 }
 
+// Forecast values in kWh: below 10 one decimal (2.6), from 10 integer (15).
+void fmtForecastKwh(char *out, size_t n, double kwh) {
+  if (kwh < 10.0) {
+    snprintf(out, n, "%.1f", kwh);
+  } else {
+    snprintf(out, n, "%.0f", kwh);
+  }
+}
+
 void setText(lv_obj_t *l, const char *text) {
   if (l != nullptr) {
     lv_label_set_text(l, text);
@@ -967,7 +976,17 @@ void update(const WarpData &d) {
   }
   if (w.forecastValue != nullptr) {
     if (d.hasForecast) {
-      fmtEnergy(buf, sizeof(buf), d.forecastTodayWh);
+      // Remaining forecast first, then the whole-day forecast.
+      char remaining[16];
+      char total[16];
+      fmtForecastKwh(total, sizeof(total), d.forecastTodayWh / 1000.0f);
+      if (d.hasForecastRemaining) {
+        fmtForecastKwh(remaining, sizeof(remaining),
+                       d.forecastTodayRemainingWh / 1000.0f);
+        snprintf(buf, sizeof(buf), "%s / %s kWh", remaining, total);
+      } else {
+        snprintf(buf, sizeof(buf), "-- / %s kWh", total);
+      }
       setText(w.forecastValue, buf);
       setColor(w.forecastValue, C_TEXT);
     } else {

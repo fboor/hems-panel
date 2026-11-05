@@ -260,28 +260,90 @@ bool writePng(const char *path, int width, int height) {
   return true;
 }
 
+void fmtEnergy(char *out, size_t n, float wh) {
+  if (std::fabs(wh) >= 1000000.0f) {
+    snprintf(out, n, "%.2f MWh", wh / 1000000.0f);
+  } else {
+    snprintf(out, n, "%.1f kWh", wh / 1000.0f);
+  }
+}
+
 void printData(const WarpData &d) {
+  char importEnergy[24];
+  char exportEnergy[24];
+  char houseEnergy[24];
+  char pvEnergy[24];
+  char batteryCharge[24];
+  char batteryDischarge[24];
+  fmtEnergy(importEnergy, sizeof(importEnergy), d.gridImportWh);
+  fmtEnergy(exportEnergy, sizeof(exportEnergy), d.gridExportWh);
+  fmtEnergy(houseEnergy, sizeof(houseEnergy), d.houseEnergyWh);
+  fmtEnergy(pvEnergy, sizeof(pvEnergy), d.pvEnergyWh);
+  fmtEnergy(batteryCharge, sizeof(batteryCharge), d.batteryChargeWh);
+  fmtEnergy(batteryDischarge, sizeof(batteryDischarge), d.batteryDischargeWh);
+
   printf(
       "device: %s  firmware: %s\n"
-      "grid:   %.1f / %.1f / %.1f W  total %.1f W  import %.1f kWh  "
-      "export %.1f kWh  voltage %.0f/%.0f/%.0f V\n"
-      "house:  %.1f / %.1f / %.1f W  total %.1f W  energy %.1f kWh\n"
-      "pv:     %.1f + %.1f W  total %.1f W  energy %.1f kWh\n"
-      "battery: %.1f %%  %.1f W  %.1f V  %.1f A  charge %.1f kWh  "
-      "discharge %.1f kWh\n"
-      "external: %.1f W  island: %s  autarky: %.0f %%  forecast: %.1f kWh\n",
+      "grid:   %.1f / %.1f / %.1f W  total %.1f W  import %s  "
+      "export %s  voltage %.0f/%.0f/%.0f V\n"
+      "house:  %.1f / %.1f / %.1f W  total %.1f W  energy %s\n"
+      "pv:     %.1f + %.1f W  total %.1f W  energy %s\n"
+      "battery: %.1f %%  %.1f W  %.1f V  %.1f A  charge %s  "
+      "discharge %s\n"
+      "external: %.1f W  island: %s  autarky: %.0f %%  forecast: %.1f / %.1f kWh\n",
       d.deviceName, d.firmware, d.gridL1, d.gridL2, d.gridL3, d.gridPower,
-      d.gridImportWh / 1000.0f, d.gridExportWh / 1000.0f, d.gridVoltageL1,
+      importEnergy, exportEnergy, d.gridVoltageL1,
       d.gridVoltageL2, d.gridVoltageL3, d.houseL1, d.houseL2, d.houseL3,
-      d.housePower, d.houseEnergyWh / 1000.0f, d.pvA, d.pvB, d.pvPower,
-      d.pvEnergyWh / 1000.0f, d.soc, d.batteryPower, d.batteryVoltage,
-      d.batteryCurrent, d.batteryChargeWh / 1000.0f,
-      d.batteryDischargeWh / 1000.0f, d.externalPower,
-      d.island ? "yes" : "no", d.autarky, d.forecastTodayWh / 1000.0f);
+      d.housePower, houseEnergy, d.pvA, d.pvB, d.pvPower,
+      pvEnergy, d.soc, d.batteryPower, d.batteryVoltage,
+      d.batteryCurrent, batteryCharge,
+      batteryDischarge, d.externalPower,
+      d.island ? "yes" : "no", d.autarky,
+      d.forecastTodayRemainingWh / 1000.0f, d.forecastTodayWh / 1000.0f);
+  if (d.hasAutarkyToday) {
+    printf("autarky today: %.0f %%\n", d.autarkyToday);
+  } else {
+    printf("autarky today: -- (no daily history for load and grid)\n");
+  }
   printf("wallbox: %.1f W  %.1f A  %d ph  state %d  power %s%s\n",
          d.charge_power, d.charge_current / 1000.0, d.charge_phases,
          d.charge_state, d.chargeMeter ? "meter" : "calculated",
          d.chargeEstimated ? " (estimated)" : "");
+  printf("global charge mode: %d\n", d.charge_mode);
+  for (int i = 0; i < d.charger_count; ++i) {
+    const WarpChargerData &c = d.chargers[i];
+    printf("  charger %d: %s  state %d  mode %d  %.1f W  %.1f A  %d ph%s%s\n",
+           i, c.name[0] != '\0' ? c.name : "(unnamed)", c.state, c.mode,
+           c.power, c.current / 1000.0, c.phases,
+           c.meter ? "  meter" : "",
+           c.estimated ? "  estimated" : "");
+  }
+  printf("supported modes:");
+  if (d.supported_mode_count == 0) {
+    printf(" --");
+  } else {
+    for (int i = 0; i < d.supported_mode_count; ++i) {
+      printf(" %d", d.supported_modes[i]);
+    }
+  }
+  printf("\n");
+}
+
+// Applies a mode from the wallbox page. The emulator opens a short-lived
+// reader for the command so it does not share state with the fetch thread.
+void setChargeMode(int charger, int mode) {
+  PosixTransport transport(g_options.timeoutMs, g_options.verbose);
+  warpapi::Reader reader(transport, g_options.url);
+  std::string error;
+  const bool ok =
+      charger < 0 ? reader.setGlobalChargeMode(mode, error)
+                  : reader.setChargerChargeMode(charger, mode, error);
+  fprintf(stderr, "charge mode %s: charger %d -> %d\n",
+          ok ? "ok" : "failed", charger, mode);
+  if (!ok && !error.empty()) {
+    fprintf(stderr, "  %s\n", error.c_str());
+  }
+  g_pollNow = true;
 }
 
 void usage() {

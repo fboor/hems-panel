@@ -757,7 +757,8 @@ class Reader {
     }
 
     // Solar forecast for today. The module returns -1 while it has no data,
-    // which must not be shown as "0 kWh".
+    // which must not be shown as "0 kWh". wh_today_remaining is the part of
+    // the forecast still ahead, as opposed to the whole-day wh_today.
     {
       std::string body;
       std::string error;
@@ -767,6 +768,13 @@ class Reader {
             wh >= 0.0) {
           d.forecastTodayWh = static_cast<float>(wh);
           d.hasForecast = true;
+        }
+        double whRemaining = -1.0;
+        if (warpjson::number(body.data(), body.size(), "wh_today_remaining",
+                             whRemaining) &&
+            whRemaining >= 0.0) {
+          d.forecastTodayRemainingWh = static_cast<float>(whRemaining);
+          d.hasForecastRemaining = true;
         }
       }
     }

@@ -67,6 +67,7 @@ BASE = {
     "day_feed_in_wh": 3100.0,
     "day_grid_draw_wh": 5700.0,
     "forecast_today_wh": 24100.0,
+    "forecast_today_remaining_wh": 12000.0,
     # Charge manager. BASE has no vehicle; the wallbox scenarios set these.
     "charge_state": 0,            # CASState: 0 NoVehicle, 4 Charging, ...
     "charge_current": 0.0,        # allocated current, mA
@@ -99,6 +100,7 @@ def scenario(name):
             battery_discharge_wh=4700.0,
             island_flag=0,
             forecast_today_wh=22000.0,
+            forecast_today_remaining_wh=800.0,
         )
     elif name == "island":
         d.update(
@@ -119,6 +121,7 @@ def scenario(name):
             island_flag=1,
             external_power=0.0,
             forecast_today_wh=18000.0,
+            forecast_today_remaining_wh=7000.0,
         )
     elif name == "low_solar":
         d.update(
@@ -133,6 +136,7 @@ def scenario(name):
             battery_current=-1.6,
             island_flag=0,
             forecast_today_wh=6500.0,
+            forecast_today_remaining_wh=2500.0,
         )
     elif name == "grid_failure":
         d.update(
@@ -151,6 +155,7 @@ def scenario(name):
             island_flag=1,
             external_power=0.0,
             forecast_today_wh=15000.0,
+            forecast_today_remaining_wh=6000.0,
         )
     elif name == "wallbox":
         d.update(
@@ -159,6 +164,7 @@ def scenario(name):
             charge_phases=1,
             charge_supported_phases=1,
             forecast_today_wh=20500.0,
+            forecast_today_remaining_wh=9000.0,
         )
     elif name == "wallbox_3p":
         d.update(
@@ -167,6 +173,7 @@ def scenario(name):
             charge_phases=3,
             charge_supported_phases=7,
             forecast_today_wh=20500.0,
+            forecast_today_remaining_wh=9000.0,
         )
     elif name == "wallbox_meter":
         d.update(
