@@ -1434,7 +1434,8 @@ void showSetup(const char *ssid, const char *password, const char *url) {
           "QR-Code scannen oder dem Netzwerk beitreten. Im Browser "
           "WLAN-Zugang und die Adresse des WARP Energy Managers eintragen.");
     label(overlay, 40, 432, 720, F_SMALL, C_MUTED,
-          "Das Einrichtungsnetz bleibt 3 Minuten ohne Aktivität aktiv.");
+          "Das Einrichtungsnetz ist offen und bleibt aktiv, bis die "
+          "Einrichtung abgeschlossen ist.");
   }
 
   lv_label_set_text(w.setupSsid, ssid != nullptr ? ssid : "--");
@@ -1477,8 +1478,18 @@ void setNetworkInfo(const char *ssid, const char *ip, const char *warpUrl,
   snprintf(buf, sizeof(buf), "IP: %s",
            (ip != nullptr && ip[0] != '\0') ? ip : "--");
   setTextIfChanged(w.netIp, buf);
+  // The service page shows the WARP address without the transport scheme,
+  // even though the panel always talks to it over HTTP.
+  const char *warpDisplay = warpUrl;
+  if (warpDisplay != nullptr && strncmp(warpDisplay, "http://", 7) == 0) {
+    warpDisplay += 7;
+  } else if (warpDisplay != nullptr &&
+             strncmp(warpDisplay, "https://", 8) == 0) {
+    warpDisplay += 8;
+  }
   snprintf(buf, sizeof(buf), "WARP: %s",
-           (warpUrl != nullptr && warpUrl[0] != '\0') ? warpUrl : "--");
+           (warpDisplay != nullptr && warpDisplay[0] != '\0') ? warpDisplay
+                                                              : "--");
   setTextIfChanged(w.netWarp, buf);
   snprintf(buf, sizeof(buf), "Web: %s",
            (webUrl != nullptr && webUrl[0] != '\0') ? webUrl : "--");

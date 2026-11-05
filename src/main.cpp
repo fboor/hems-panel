@@ -38,14 +38,16 @@ constexpr char DEFAULT_URL[] = "http://192.168.1.222";
 
 char g_url[96] = "http://192.168.1.222";
 
-// The setup portal is used twice: blocking on first boot (AP + captive
-// portal), and non-blocking afterwards on the local network so the WARP
-// address can be changed without wiping the Wi-Fi credentials.
+// The setup portal is used twice: blocking on first boot (open AP + captive
+// portal, no timeout), and non-blocking afterwards on the local network so the
+// WARP address can be changed without wiping the Wi-Fi credentials.
 WiFiManager *g_wm = nullptr;
 WiFiManagerParameter *g_urlParam = nullptr;
 bool g_mdnsOk = false;
 char g_apSsid[32] = "WARP-Panel";
-char g_apPassword[16] = "";
+// The setup network is intentionally open. The QR code and the setup screen
+// carry the SSID, so joining it needs no password on any device.
+constexpr char g_apPassword[] = "";
 
 WarpData g_data;
 bool g_haveData = false;
@@ -188,22 +190,10 @@ void setupMdns() {
   }
 }
 
-void generateApCredentials() {
+void generateApSsid() {
   const uint64_t chip = ESP.getEfuseMac();
   snprintf(g_apSsid, sizeof(g_apSsid), "WARP-Panel-%04X",
            static_cast<unsigned>(chip & 0xFFFFu));
-
-  // Random per boot, shown on the panel and carried by the QR code. 10
-  // characters from a 32-symbol alphabet: enough for a three-minute setup AP.
-  static const char alphabet[] = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  for (int i = 0; i < 5; ++i) {
-    g_apPassword[i] = alphabet[esp_random() % (sizeof(alphabet) - 1)];
-  }
-  g_apPassword[5] = '-';
-  for (int i = 0; i < 5; ++i) {
-    g_apPassword[6 + i] = alphabet[esp_random() % (sizeof(alphabet) - 1)];
-  }
-  g_apPassword[11] = '\0';
 }
 
 enum class FetchResult { Ok, Disconnected, NoData };
@@ -298,7 +288,7 @@ void setupNetwork() {
     saveUrl();
   }
 
-  generateApCredentials();
+  generateApSsid();
 
   g_wm = new WiFiManager();
   g_urlParam = new WiFiManagerParameter(
@@ -307,14 +297,16 @@ void setupNetwork() {
   g_wm->addParameter(g_urlParam);
 
   g_wm->setDebugOutput(false);
-  g_wm->setConfigPortalTimeout(180);
+  // No timeout on the first-boot portal: the setup screen with the QR code
+  // stays visible until the user has configured a WLAN and the panel joined it.
+  g_wm->setConfigPortalTimeout(0);
   g_wm->setConnectTimeout(20);
   g_wm->setHostname("warp-panel");
   g_wm->setTitle("WARP-Panel Setup");
   g_wm->setDarkMode(true);
   g_wm->setAPCallback([](WiFiManager *mgr) {
     const String ssid = mgr->getConfigPortalSSID();
-    Serial.printf("Setup AP: %s / %s\n", ssid.c_str(), g_apPassword);
+    Serial.printf("Setup AP: %s (offen)\n", ssid.c_str());
     warpui::showSetup(ssid.c_str(), g_apPassword, "http://192.168.4.1");
     lv_refr_now(nullptr);
   });
@@ -323,7 +315,7 @@ void setupNetwork() {
   warpui::setConnectionState(warpui::ConnectionState::NoNet);
   const bool connected = g_wm->autoConnect(g_apSsid, g_apPassword);
   if (!connected) {
-    Serial.println(F("Wi-Fi configuration timed out, restarting"));
+    Serial.println(F("Wi-Fi configuration did not complete, restarting"));
     delay(500);
     ESP.restart();
   }
