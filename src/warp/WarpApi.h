@@ -107,6 +107,10 @@ struct Slot {
   std::vector<double> values;
 };
 
+// WARP reports the meter energy value IDs in kWh (meter_value_id.csv, unit
+// "kWh"), while WarpData and the UI work in Wh.
+inline float kwhToWh(double kwh) { return static_cast<float>(kwh * 1000.0); }
+
 inline std::string normalizeBase(const std::string &url) {
   std::string s = url;
   const size_t fragment = s.find_first_of("?#");
@@ -436,11 +440,11 @@ class Reader {
             roleFound = true;
           }
           if (value(slot, VID_GRID_IMPORT, v)) {
-            d.gridImportWh = static_cast<float>(v);
+            d.gridImportWh = kwhToWh(v);
             roleFound = true;
           }
           if (value(slot, VID_GRID_EXPORT, v)) {
-            d.gridExportWh = static_cast<float>(v);
+            d.gridExportWh = kwhToWh(v);
             roleFound = true;
           }
           if (value(slot, VID_VOLTAGE_L1, v)) {
@@ -489,14 +493,14 @@ class Reader {
             roleFound = true;
           }
           if (value(slot, VID_HOUSE_ENERGY, v)) {
-            d.houseEnergyWh = static_cast<float>(v);
+            d.houseEnergyWh = kwhToWh(v);
             roleFound = true;
           } else {
             double imported = 0.0;
             double exported = 0.0;
             if (value(slot, VID_GRID_IMPORT, imported) &&
                 value(slot, VID_GRID_EXPORT, exported)) {
-              d.houseEnergyWh = static_cast<float>(imported - exported);
+              d.houseEnergyWh = kwhToWh(imported - exported);
               roleFound = true;
             }
           }
@@ -525,15 +529,15 @@ class Reader {
             roleFound = true;
           }
           if (value(slot, VID_PV_ENERGY, v)) {
-            d.pvEnergyWh = static_cast<float>(v);
+            d.pvEnergyWh = kwhToWh(v);
             roleFound = true;
           }
           if (value(slot, VID_PV1_ENERGY, v)) {
-            d.pvAEnergyWh = static_cast<float>(v);
+            d.pvAEnergyWh = kwhToWh(v);
             roleFound = true;
           }
           if (value(slot, VID_PV2_ENERGY, v)) {
-            d.pvBEnergyWh = static_cast<float>(v);
+            d.pvBEnergyWh = kwhToWh(v);
             roleFound = true;
           }
           break;
@@ -566,11 +570,11 @@ class Reader {
             roleFound = true;
           }
           if (value(slot, VID_BATTERY_CHARGE, v)) {
-            d.batteryChargeWh = static_cast<float>(v);
+            d.batteryChargeWh = kwhToWh(v);
             roleFound = true;
           }
           if (value(slot, VID_BATTERY_DISCHARGE, v)) {
-            d.batteryDischargeWh = static_cast<float>(v);
+            d.batteryDischargeWh = kwhToWh(v);
             roleFound = true;
           }
           break;

@@ -286,7 +286,7 @@ def meter_payloads(d):
                 house_l[0],
                 house_l[1],
                 house_l[2],
-                d["household_energy_wh"],
+                wh_to_kwh(d["household_energy_wh"]),
                 house_total,
             ],
         ),
@@ -303,10 +303,10 @@ def meter_payloads(d):
             [
                 d["pv_voltage_a"],
                 d["pv_power_a"],
-                d["pv_energy_a_wh"],
+                wh_to_kwh(d["pv_energy_a_wh"]),
                 d["pv_voltage_b"],
                 d["pv_power_b"],
-                d["pv_energy_b_wh"],
+                wh_to_kwh(d["pv_energy_b_wh"]),
                 pv_voltage_avg,
                 pv_total,
                 -pv_total,
@@ -331,8 +331,8 @@ def meter_payloads(d):
                 d["grid_power_l2"],
                 d["grid_power_l3"],
                 d["grid_exchange"],
-                d["grid_export_wh"],
-                d["grid_import_wh"],
+                wh_to_kwh(d["grid_export_wh"]),
+                wh_to_kwh(d["grid_import_wh"]),
                 d["grid_frequency"],
                 d["grid_frequency"],
                 d["grid_frequency"],
@@ -352,15 +352,18 @@ def meter_payloads(d):
                 d["battery_voltage"],
                 d["battery_current"],
                 d["battery_power"],
-                d["battery_charge_wh"],
-                d["battery_discharge_wh"],
+                wh_to_kwh(d["battery_charge_wh"]),
+                wh_to_kwh(d["battery_discharge_wh"]),
                 d["battery_soc"],
                 d["battery_temperature"],
             ],
         ),
     ]
-    if d.get("charge_meter_power") is not None:
-        wallbox_w = float(d["charge_meter_power"])
+    metered = [
+        spec for spec in chargers_for(d) if spec.get("meter_power") is not None
+    ]
+    if metered:
+        wallbox_w = sum(float(spec["meter_power"]) for spec in metered)
         if wallbox_phase_count(d) == 3:
             phases = [wallbox_w / 3.0] * 3
         else:

@@ -80,10 +80,20 @@ struct WarpData {
   bool hasAutarky = false;
   float autarky = 0.0f;
 
+  // Today's autarky from the device's daily energy history. Only available
+  // when the WARP provides cumulative day counters for load and grid.
+  bool hasAutarkyToday = false;
+  float autarkyToday = 0.0f;
+
   // Solar forecast for today, Wh. WARP reports -1 when the forecast module has
   // no usable data, so hasForecast distinguishes "0 Wh" from "not available".
   bool hasForecast = false;
   float forecastTodayWh = 0.0f;
+
+  // Remaining part of today's forecast, Wh. Both values come from the same
+  // solar_forecast/state response.
+  bool hasForecastRemaining = false;
+  float forecastTodayRemainingWh = 0.0f;
 
   // Which parts of the page have a usable source. The UI uses these to show a
   // dash instead of a misleading zero when a meter is not configured.
