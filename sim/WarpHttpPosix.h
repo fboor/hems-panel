@@ -115,7 +115,8 @@ inline int connectWithTimeout(const std::string &host, int port, int timeoutMs,
   return fd;
 }
 
-inline Response get(const std::string &url, int timeoutMs = 5000) {
+inline Response request(const std::string &method, const std::string &url,
+                        const std::string &body, int timeoutMs = 5000) {
   Response r;
   std::string host;
   std::string path;
@@ -136,14 +137,20 @@ inline Response get(const std::string &url, int timeoutMs = 5000) {
   setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &tv, sizeof(tv));
   setsockopt(fd, SOL_SOCKET, SO_SNDTIMEO, &tv, sizeof(tv));
 
-  std::string request = "GET " + path + " HTTP/1.0\r\n";
-  request += "Host: " + host + "\r\n";
-  request += "Connection: close\r\n";
-  request += "Accept: application/json\r\n\r\n";
+  std::string message = method + " " + path + " HTTP/1.0\r\n";
+  message += "Host: " + host + "\r\n";
+  message += "Connection: close\r\n";
+  message += "Accept: application/json\r\n";
+  if (!body.empty()) {
+    message += "Content-Type: application/json\r\n";
+    message += "Content-Length: " + std::to_string(body.size()) + "\r\n";
+  }
+  message += "\r\n";
+  message += body;
 
   size_t sent = 0;
-  while (sent < request.size()) {
-    const ssize_t n = send(fd, request.data() + sent, request.size() - sent, 0);
+  while (sent < message.size()) {
+    const ssize_t n = send(fd, message.data() + sent, message.size() - sent, 0);
     if (n <= 0) {
       r.error = std::string("send: ") + strerror(errno);
       close(fd);
@@ -253,9 +260,19 @@ inline Response get(const std::string &url, int timeoutMs = 5000) {
   if (sp != std::string::npos) {
     r.status = atoi(header.c_str() + sp + 1);
   }
-  if (r.status != 200) {
+  if (r.status < 200 || r.status >= 300) {
     r.error = "HTTP status " + std::to_string(r.status);
   }
   return r;
-}  // namespace warphttp
 }
+
+inline Response get(const std::string &url, int timeoutMs = 5000) {
+  return request("GET", url, "", timeoutMs);
+}
+
+inline Response post(const std::string &url, const std::string &body,
+                     int timeoutMs = 5000) {
+  return request("POST", url, body, timeoutMs);
+}
+
+}  // namespace warphttp

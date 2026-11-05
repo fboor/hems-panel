@@ -463,6 +463,19 @@ class Handler(BaseHTTPRequestHandler):
             })
             return
 
+        if path == "/rtc/time":
+            now = datetime.datetime.now()
+            self._send({
+                "year": now.year,
+                "month": now.month,
+                "day": now.day,
+                "hour": now.hour,
+                "minute": now.minute,
+                "second": now.second,
+                "weekday": now.weekday(),
+            })
+            return
+
         slots = meter_payloads(d)
         if path.startswith("/meters/"):
             rest = path[len("/meters/"):]
@@ -582,17 +595,52 @@ class Handler(BaseHTTPRequestHandler):
             data = [None] * (days * 17)
             d = self._data()
             if year == now.year and month == now.month:
+                pv_energy = (d["pv_energy_a_wh"] + d["pv_energy_b_wh"]) / 1000.0
                 today = now.day - 1
                 base = today * 17
+                # Per day: import counters for meter slots 0..6, export
+                # counters for slots 0..6, then three price values. Slots:
+                # 0 load, 1 PV, 2 grid, 3 battery.
                 data[base + 0] = round(d["household_energy_wh"] / 1000.0, 3)
-                data[base + 1] = round((d["pv_energy_a_wh"] + d["pv_energy_b_wh"]) / 1000.0, 3)
-                data[base + 2] = round(d["grid_export_wh"] / 1000.0, 3)
+                data[base + 1] = 0.0
+                data[base + 2] = round(d["grid_import_wh"] / 1000.0, 3)
                 data[base + 3] = round(d["battery_charge_wh"] / 1000.0, 3)
-                data[base + 7] = round(d["grid_import_wh"] / 1000.0, 3)
-                data[base + 8] = round((d["pv_energy_a_wh"] + d["pv_energy_b_wh"]) / 1000.0, 3)
-                data[base + 9] = round(d["grid_import_wh"] / 1000.0, 3)
+                data[base + 7] = 0.0
+                data[base + 8] = round(pv_energy, 3)
+                data[base + 9] = round(d["grid_export_wh"] / 1000.0, 3)
                 data[base + 10] = round(d["battery_discharge_wh"] / 1000.0, 3)
+
+                if today > 0:
+                    # Yesterday's cumulative counters, so the panel can
+                    # difference them into today's energy.
+                    yesterday = (today - 1) * 17
+                    data[yesterday + 0] = round(
+                        (d["household_energy_wh"] - d["day_load_wh"]) / 1000.0, 3)
+                    data[yesterday + 1] = 0.0
+                    data[yesterday + 2] = round(
+                        (d["grid_import_wh"] - d["day_grid_draw_wh"]) / 1000.0, 3)
+                    data[yesterday + 3] = round(
+                        d["battery_charge_wh"] / 1000.0, 3)
+                    data[yesterday + 7] = 0.0
+                    data[yesterday + 8] = round(
+                        pv_energy - d["day_generation_wh"] / 1000.0, 3)
+                    data[yesterday + 9] = round(
+                        (d["grid_export_wh"] - d["day_feed_in_wh"]) / 1000.0, 3)
+                    data[yesterday + 10] = round(
+                        d["battery_discharge_wh"] / 1000.0, 3)
             self._send(data)
+            return
+        if (path.startswith("/power_manager/charge_mode_update") or
+                path.startswith("/charge_manager/charge_modes")):
+            self._command(path)
+            return
+        self.send_error(404)
+
+    def do_PUT(self):
+        path = self.path.split("?", 1)[0]
+        if (path.startswith("/power_manager/charge_mode_update") or
+                path.startswith("/charge_manager/charge_modes")):
+            self._command(path)
             return
         self.send_error(404)
 

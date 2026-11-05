@@ -53,6 +53,24 @@ class PosixTransport : public warpapi::Transport {
     return r.ok();
   }
 
+  bool post(const std::string &url, const std::string &body,
+            std::string &response, std::string &error) override {
+    if (verbose_) {
+      fprintf(stderr, "transport: POST %s\n", url.c_str());
+      fflush(stderr);
+    }
+    const warphttp::Response r = warphttp::post(url, body, timeoutMs_);
+    if (verbose_) {
+      fprintf(stderr, "transport: done status=%d err=%s\n", r.status,
+              r.error.c_str());
+      fflush(stderr);
+    }
+    response = r.body;
+    error = r.error;
+    // Commands answer with an empty 2xx body, so status alone decides success.
+    return r.status >= 200 && r.status < 300;
+  }
+
  private:
   int timeoutMs_;
   bool verbose_;

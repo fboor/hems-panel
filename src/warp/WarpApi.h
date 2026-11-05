@@ -95,6 +95,18 @@ class Transport {
   // failure and may be empty if the transport has no detail.
   virtual bool get(const std::string &url, std::string &body,
                    std::string &error) = 0;
+
+  // POSTs body to url and returns true for a complete 2xx response. The
+  // default keeps transports that only implement GET working; those devices
+  // simply have no daily history.
+  virtual bool post(const std::string &url, const std::string &body,
+                    std::string &response, std::string &error) {
+    (void)url;
+    (void)body;
+    (void)response;
+    error = "POST nicht unterstuetzt";
+    return false;
+  }
 };
 
 struct Slot {
@@ -772,6 +784,19 @@ class Reader {
         d.hasAutarky = true;
     }
 
+    // Today's autarky needs two daily-history rows: today's cumulative
+    // counters and yesterday's as the baseline. The SD-card history updates
+    // every five minutes, so six polls (about a minute) are enough.
+    if (dailyTtl_ <= 0) {
+      dailyHasAutarky_ = readDailyAutarky(d);
+      dailyAutarky_ = dailyHasAutarky_ ? d.autarkyToday : 0.0f;
+      dailyTtl_ = 6;
+    } else {
+      --dailyTtl_;
+    }
+    d.hasAutarkyToday = dailyHasAutarky_;
+    d.autarkyToday = dailyAutarky_;
+
     d.valid = d.hasGrid || d.hasHouse || d.hasPv || d.hasBattery ||
               d.hasExternal || !std::isnan(powerAtMeter);
 
@@ -801,12 +826,179 @@ class Reader {
     return false;
   }
 
+  // Fetches one month of the daily history. The device stores 17 values per
+  // day: import counters for meter slots 0..6, export counters for 0..6, then
+  // three price values. Counters are cumulative kWh, so a day's energy is the
+  // difference to the previous day's row.
+  bool fetchDaily(int year, int month, std::vector<double> &values,
+                  size_t &count) {
+    char request[48];
+    snprintf(request, sizeof(request), "{\"year\":%d,\"month\":%d}", year,
+             month);
+    std::string response;
+    std::string error;
+    if (!transport_.post(base_ + "/energy_manager/history_energy_manager_daily" +
+                             query_,
+                         request, response, error)) {
+      return false;
+    }
+    values.assign(17 * 31, NAN);
+    return warpjson::topNumbers(response.data(), response.size(), values.data(),
+                                values.size(), count) &&
+           count >= 17;
+  }
+
+  static bool dailyDayValid(const std::vector<double> &values, size_t count,
+                            int day, int loadSlot, int gridSlot) {
+    if (day < 0) {
+      return false;
+    }
+    const size_t base = static_cast<size_t>(day) * 17;
+    if (base + 17 > count) {
+      return false;
+    }
+    return !std::isnan(values[base + loadSlot]) &&
+           !std::isnan(values[base + gridSlot]);
+  }
+
+  static int dailyLastValid(const std::vector<double> &values, size_t count,
+                            int loadSlot, int gridSlot, int before) {
+    for (int day = before - 1; day >= 0; --day) {
+      if (dailyDayValid(values, count, day, loadSlot, gridSlot)) {
+        return day;
+      }
+    }
+    return -1;
+  }
+
+  static double dailyLoadNet(const std::vector<double> &values, size_t count,
+                             int day, int slot) {
+    const size_t base = static_cast<size_t>(day) * 17;
+    if (base + 17 > count || std::isnan(values[base + slot])) {
+      return NAN;
+    }
+    const double exported = values[base + 7 + slot];
+    return values[base + slot] - (std::isnan(exported) ? 0.0 : exported);
+  }
+
+  static double dailyGridImport(const std::vector<double> &values,
+                                size_t count, int day, int slot) {
+    const size_t base = static_cast<size_t>(day) * 17;
+    if (base + 17 > count) {
+      return NAN;
+    }
+    return values[base + slot];
+  }
+
+  bool readDailyAutarky(WarpData &d) {
+    int loadSlot = -1;
+    int gridSlot = -1;
+    for (const Slot &slot : slots_) {
+      if (slot.role == ROLE_LOAD && loadSlot < 0) {
+        loadSlot = slot.slot;
+      }
+      if (slot.role == ROLE_GRID && gridSlot < 0) {
+        gridSlot = slot.slot;
+      }
+    }
+    if (loadSlot < 0 || gridSlot < 0) {
+      return false;  // no consumption or no grid import to compare
+    }
+
+    int year = 0;
+    int month = 0;
+    {
+      std::string body;
+      std::string error;
+      if (!get("/rtc/time", body, error) ||
+          !warpjson::integer(body.data(), body.size(), "year", year) ||
+          !warpjson::integer(body.data(), body.size(), "month", month)) {
+        return false;
+      }
+    }
+    if (year < 2000 || month < 1 || month > 12) {
+      return false;
+    }
+
+    std::vector<double> values;
+    size_t count = 0;
+    if (!fetchDaily(year, month, values, count)) {
+      return false;
+    }
+
+    const int today =
+        dailyLastValid(values, count, loadSlot, gridSlot,
+                       static_cast<int>(count / 17));
+    if (today < 0) {
+      return false;
+    }
+
+    double previousLoad = NAN;
+    double previousGrid = NAN;
+    if (today > 0) {
+      const int previous =
+          dailyLastValid(values, count, loadSlot, gridSlot, today);
+      if (previous < 0) {
+        return false;
+      }
+      previousLoad = dailyLoadNet(values, count, previous, loadSlot);
+      previousGrid = dailyGridImport(values, count, previous, gridSlot);
+    } else {
+      // The first of the month: yesterday lives in the previous month.
+      int previousYear = year;
+      int previousMonth = month - 1;
+      if (previousMonth < 1) {
+        previousMonth = 12;
+        --previousYear;
+      }
+      std::vector<double> previousValues;
+      size_t previousCount = 0;
+      if (!fetchDaily(previousYear, previousMonth, previousValues,
+                      previousCount)) {
+        return false;
+      }
+      const int previous = dailyLastValid(
+          previousValues, previousCount, loadSlot, gridSlot,
+          static_cast<int>(previousCount / 17));
+      if (previous < 0) {
+        return false;
+      }
+      previousLoad =
+          dailyLoadNet(previousValues, previousCount, previous, loadSlot);
+      previousGrid =
+          dailyGridImport(previousValues, previousCount, previous, gridSlot);
+    }
+
+    const double todayLoad = dailyLoadNet(values, count, today, loadSlot);
+    const double todayGrid = dailyGridImport(values, count, today, gridSlot);
+    const double loadDelta = todayLoad - previousLoad;
+    const double gridDelta = todayGrid - previousGrid;
+    if (!(loadDelta > 0.01) || std::isnan(gridDelta)) {
+      return false;
+    }
+
+    float autarky =
+        static_cast<float>((loadDelta - gridDelta) / loadDelta * 100.0);
+    if (autarky < 0.0f) {
+      autarky = 0.0f;
+    }
+    if (autarky > 100.0f) {
+      autarky = 100.0f;
+    }
+    d.autarkyToday = autarky;
+    d.hasAutarkyToday = true;
+    return true;
+  }
+
   Transport &transport_;
   std::string base_;
   std::string query_;
   std::vector<Slot> slots_;
   char deviceName_[40] = "";
   char firmware_[24] = "";
+  int dailyTtl_ = 0;
+  bool dailyHasAutarky_ = false;
+  float dailyAutarky_ = 0.0f;
 };
 
 }  // namespace warpapi

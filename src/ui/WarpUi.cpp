@@ -442,13 +442,6 @@ void create(lv_obj_t *parent) {
   lv_obj_add_flag(w.caption3, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(w.caption4, LV_OBJ_FLAG_HIDDEN);
 
-  // Autarkie and today's solar forecast. Values align with the title row,
-  // captions sit below them.
-  w.autarkyValue = label(parent, 330, 8, 100, F_TITLE, C_TEXT, "--");
-  label(parent, 330, 36, 100, F_SMALL, C_MUTED, "Autarkie");
-  w.forecastValue = label(parent, 424, 8, 120, F_TITLE, C_TEXT, "--");
-  label(parent, 424, 36, 120, F_SMALL, C_MUTED, "Prognose");
-
   // One pill for the connection state. The WiFi glyph shows whether the
   // network is up; the text beside it shows whether data is arriving, so both
   // are visible together instead of replacing each other.
@@ -711,10 +704,17 @@ void create(lv_obj_t *parent) {
   label(net, 16, 142, 720, F_SMALL, C_MUTED,
         "Zum Ändern die Web-Adresse im Browser öffnen.");
 
+  // Bottom bar, left of the page buttons: today's and overall autarky, plus
+  // today's solar forecast as remaining / total kWh.
+  label(parent, 16, 443, 0, F_SMALL, C_MUTED, "Autarkie");
+  w.autarkyValue = label(parent, 84, 439, 160, F_TITLE, C_TEXT, "--");
+  label(parent, 234, 443, 0, F_SMALL, C_MUTED, "Prognose");
+  w.forecastValue = label(parent, 318, 439, 160, F_TITLE, C_TEXT, "--");
+
   auto makeNav = [](lv_obj_t *p, int x, int y, const char *text) {
     lv_obj_t *b = lv_btn_create(p);
     lv_obj_set_pos(b, x, y);
-    lv_obj_set_size(b, 50, 30);
+    lv_obj_set_size(b, 50, 38);
     lv_obj_set_style_radius(b, 9, 0);
     lv_obj_set_style_bg_color(b, lv_color_hex(C_CARD2), 0);
     lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
@@ -949,9 +949,14 @@ void update(const WarpData &d) {
   char buf2[64];
   char chargeBuf[32];
 
-  // Header statistics ------------------------------------------------
+  // Bottom-bar statistics --------------------------------------------
   if (w.autarkyValue != nullptr) {
-    if (d.hasAutarky) {
+    if (d.hasAutarky && d.hasAutarkyToday) {
+      snprintf(buf, sizeof(buf), "%.0f %% / %.0f %%", d.autarkyToday,
+               d.autarky);
+      setText(w.autarkyValue, buf);
+      setColor(w.autarkyValue, C_TEXT);
+    } else if (d.hasAutarky) {
       snprintf(buf, sizeof(buf), "%.0f %%", d.autarky);
       setText(w.autarkyValue, buf);
       setColor(w.autarkyValue, C_TEXT);

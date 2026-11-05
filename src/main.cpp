@@ -73,6 +73,29 @@ class HttpTransport : public warpapi::Transport {
     http.end();
     return true;
   }
+
+  bool post(const std::string &url, const std::string &body,
+            std::string &response, std::string &error) override {
+    HTTPClient http;
+    http.setConnectTimeout(HTTP_TIMEOUT_MS);
+    http.setTimeout(HTTP_TIMEOUT_MS);
+    http.setReuse(false);
+    if (!http.begin(url.c_str())) {
+      error = "begin";
+      return false;
+    }
+    http.addHeader("Content-Type", "application/json");
+    const int code = http.POST(String(body.c_str()));
+    if (code != HTTP_CODE_OK) {
+      error = "HTTP " + std::to_string(code);
+      http.end();
+      return false;
+    }
+    const String payload = http.getString();
+    response.assign(payload.c_str(), payload.length());
+    http.end();
+    return true;
+  }
 };
 
 HttpTransport g_transport;

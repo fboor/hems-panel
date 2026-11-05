@@ -234,6 +234,81 @@ inline bool numberArray(const char *p, const char *e, double *out, size_t cap,
   }
 }
 
+// Calls fn(begin, length) for every object in the array stored under `key`.
+// The span includes the braces. Stops early when fn returns false. This is used
+// for /charge_manager/state, whose `chargers` array holds one object per box.
+template <typename Fn>
+inline bool forEachObject(const char *json, size_t len, const char *key,
+                          Fn fn) {
+  const char *v = nullptr;
+  if (json == nullptr || key == nullptr || !find(json, len, key, &v)) {
+    return false;
+  }
+  const char *e = json + len;
+  v = skipWs(v, e);
+  if (v >= e || *v != '[') {
+    return false;
+  }
+  ++v;
+
+  for (;;) {
+    v = skipWs(v, e);
+    if (v >= e) {
+      return false;
+    }
+    if (*v == ']') {
+      return true;
+    }
+    if (*v != '{') {
+      return false;
+    }
+
+    const char *start = v;
+    int depth = 0;
+    bool inString = false;
+    bool escaped = false;
+    while (v < e) {
+      const char c = *v;
+      if (inString) {
+        if (escaped) {
+          escaped = false;
+        } else if (c == '\\') {
+          escaped = true;
+        } else if (c == '"') {
+          inString = false;
+        }
+      } else if (c == '"') {
+        inString = true;
+      } else if (c == '{') {
+        ++depth;
+      } else if (c == '}') {
+        --depth;
+        if (depth == 0) {
+          ++v;
+          break;
+        }
+      }
+      ++v;
+    }
+    if (depth != 0) {
+      return false;
+    }
+    if (!fn(start, static_cast<size_t>(v - start))) {
+      return false;
+    }
+
+    v = skipWs(v, e);
+    if (v < e && *v == ',') {
+      ++v;
+      continue;
+    }
+    if (v < e && *v == ']') {
+      return true;
+    }
+    return false;
+  }
+}
+
 // Array at the top level, e.g. the response of /meters/X/values.
 inline bool topNumbers(const char *json, size_t len, double *out, size_t cap,
                        size_t &count) {
