@@ -1103,44 +1103,57 @@ void create(lv_obj_t *parent) {
   lv_obj_set_pos(w.powerChart, 12, 0);
   lv_obj_set_size(w.powerChart, 766, 320);
   lv_chart_set_type(w.powerChart, LV_CHART_TYPE_LINE);
-  lv_chart_set_point_count(w.powerChart, 48);
+  lv_chart_set_point_count(w.powerChart, kChartPoints);
   lv_chart_set_range(w.powerChart, LV_CHART_AXIS_PRIMARY_Y, -5000, 5000);
   lv_obj_set_style_bg_color(w.powerChart, lv_color_hex(C_CARD), 0);
-  lv_obj_set_style_width(w.powerChart, 6, LV_PART_INDICATOR);
-  lv_obj_set_style_height(w.powerChart, 6, LV_PART_INDICATOR);
-  lv_obj_set_style_bg_image_src(w.powerChart, &chart_bg, 0);
-  lv_obj_set_style_bg_image_opa(w.powerChart, LV_OPA_60, 0);
+  lv_obj_set_style_line_width(w.powerChart, kChartLineWidth, LV_PART_ITEMS);
+  lv_obj_set_style_width(w.powerChart, kChartLineWidth, LV_PART_INDICATOR);
+  lv_obj_set_style_height(w.powerChart, kChartLineWidth, LV_PART_INDICATOR);
   lv_obj_set_style_border_width(w.powerChart, 1, 0);
   lv_obj_set_style_border_color(w.powerChart, lv_color_hex(C_LINE), 0);
   lv_obj_set_style_line_color(w.powerChart, lv_color_hex(C_MUTED), 0);
   lv_obj_set_style_pad_all(w.powerChart, 0, 0);
-  w.scaleMax = label(w.page2, 20, 5, 60, F_SMALL, C_MUTED, "--", LV_TEXT_ALIGN_LEFT);
-  w.scaleMid = label(w.page2, 20, 162, 60, F_SMALL, C_MUTED, "--", LV_TEXT_ALIGN_LEFT);
-  w.scaleMin = label(w.page2, 20, 302, 60, F_SMALL, C_MUTED, "--", LV_TEXT_ALIGN_LEFT);
+  w.scaleMax = label(w.page2, 20, 5, 60, F_SMALL, C_MUTED, "--", LV_TEXT_ALIGN_LEFT, false);
+  w.scaleMid = label(w.page2, 20, 162, 60, F_SMALL, C_MUTED, "--", LV_TEXT_ALIGN_LEFT, false);
+  w.scaleMin = label(w.page2, 20, 302, 60, F_SMALL, C_MUTED, "--", LV_TEXT_ALIGN_LEFT, false);
+  w.seriesGrid = lv_chart_add_series(w.powerChart, lv_color_hex(0xFFA726), LV_CHART_AXIS_PRIMARY_Y);
   w.seriesPv = lv_chart_add_series(w.powerChart, lv_color_hex(0x4A90D9), LV_CHART_AXIS_PRIMARY_Y);
   w.seriesHouse = lv_chart_add_series(w.powerChart, lv_color_hex(0xFF5D5D), LV_CHART_AXIS_PRIMARY_Y);
   w.seriesBat = lv_chart_add_series(w.powerChart, lv_color_hex(0x66BB6A), LV_CHART_AXIS_PRIMARY_Y);
+  for (int i = 0; i < kChartPoints; ++i) {
+    g_chartGrid[i] = LV_CHART_POINT_NONE;
+    g_chartPv[i] = LV_CHART_POINT_NONE;
+    g_chartHouse[i] = LV_CHART_POINT_NONE;
+    g_chartBattery[i] = LV_CHART_POINT_NONE;
+  }
+  lv_chart_set_series_ext_y_array(w.powerChart, w.seriesGrid, g_chartGrid);
+  lv_chart_set_series_ext_y_array(w.powerChart, w.seriesPv, g_chartPv);
+  lv_chart_set_series_ext_y_array(w.powerChart, w.seriesHouse, g_chartHouse);
+  lv_chart_set_series_ext_y_array(w.powerChart, w.seriesBat, g_chartBattery);
 
   // Time labels at bottom (reversed: new values on right)
-  const char *times[5] = {"24h", "18h", "12h", "6h", "0h"};
-  int xpos[5] = {8, 185, 375, 565, 755};
+  const int xpos[5] = {8, 185, 375, 565, 755};
   for (int i = 0; i < 5; ++i) {
-    label(w.page2, xpos[i], 322, 40, F_SMALL, C_MUTED, times[i], LV_TEXT_ALIGN_CENTER);
+    w.timeLabel[i] = label(w.page2, xpos[i], 322, 40, F_SMALL, C_MUTED,
+                           "--", LV_TEXT_ALIGN_CENTER);
   }
+  updateTimeLabels(3600);
 
   // Legend (centered)
   const char *names[4] = {"Netz", "Erzeugung", "Verbrauch", "Akku"};
   lv_color_t colors[4] = {lv_color_hex(0xFFA726), lv_color_hex(0x4A90D9), lv_color_hex(0xFF5D5D), lv_color_hex(0x66BB6A)};
+  const int legendOffset[4] = {0, -27, 0, 0};
   for (int i = 0; i < 4; ++i) {
     lv_obj_t *dot = lv_obj_create(w.page2);
     lv_obj_remove_style_all(dot);
     int xoff = (i < 2) ? 20 : 0;
-    lv_obj_set_pos(dot, 180 + i * 120 + xoff, 345);
+    lv_obj_set_pos(dot, 180 + i * 120 + xoff + legendOffset[i], 345);
     lv_obj_set_size(dot, 10, 10);
     lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(dot, colors[i], 0);
     lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
-    label(w.page2, 194 + i * 120 + xoff, 341, 0, F_SMALL, C_MUTED, names[i]);
+    label(w.page2, 194 + i * 120 + xoff + legendOffset[i], 341, 0, F_SMALL,
+          C_MUTED, names[i]);
   }
 
   // Third page (settings) ---------------------------------------------
@@ -1761,55 +1774,17 @@ void update(const WarpData &d) {
 
   // Power chart --------------------------------------------------------
   if (w.powerChart != nullptr) {
-    static float histGrid[48] = {0};
-    static float histPv[48] = {0};
-    static float histHouse[48] = {0};
-    static float histBat[48] = {0};
-    static int histCount = 0;
-    static int histIdx = 0;
-
-    // Store current values in history
-    histGrid[histIdx] = d.gridPower;
-    histPv[histIdx] = d.pvPower;
-    histHouse[histIdx] = d.housePower;
-    histBat[histIdx] = d.batteryPower;
-    histIdx = (histIdx + 1) % 48;
-    if (histCount < 48) histCount++;
-
-    // Compute min/max from all stored values
-    float mn = histGrid[0], mx = histGrid[0];
-    for (int i = 0; i < histCount; i++) {
-      float vals[4] = {histGrid[i], histPv[i], histHouse[i], histBat[i]};
-      for (int j = 0; j < 4; j++) {
-        if (vals[j] < mn) mn = vals[j];
-        if (vals[j] > mx) mx = vals[j];
-      }
-    }
-    float absMax = fmax(std::fabs(mn), std::fabs(mx));
-    int steps = (int)(absMax / 1000.0f) + 1;
-    if (steps < 1) steps = 1;
-    if (steps > 100) steps = 100;
-    float range = steps * 1000.0f;
-    lv_chart_set_range(w.powerChart, LV_CHART_AXIS_PRIMARY_Y,
-                       (lv_coord_t)(-range), (lv_coord_t)(range));
-    char sbuf[16];
-    snprintf(sbuf, sizeof(sbuf), "%.0f W", range);
-    setText(w.scaleMax, sbuf);
-    snprintf(sbuf, sizeof(sbuf), "0 W");
-    setText(w.scaleMid, sbuf);
-    snprintf(sbuf, sizeof(sbuf), "%.0f W", -range);
-    setText(w.scaleMin, sbuf);
-
-    // Add data point periodically
-    static int pollCount = 0;
-    pollCount++;
-    if (pollCount >= 3) {
-      pollCount = 0;
-      if (w.seriesGrid != nullptr) lv_chart_set_next_value(w.powerChart, w.seriesGrid, (lv_coord_t)d.gridPower);
-      if (w.seriesPv != nullptr) lv_chart_set_next_value(w.powerChart, w.seriesPv, (lv_coord_t)d.pvPower);
-      if (w.seriesHouse != nullptr) lv_chart_set_next_value(w.powerChart, w.seriesHouse, (lv_coord_t)d.housePower);
-      if (w.seriesBat != nullptr) lv_chart_set_next_value(w.powerChart, w.seriesBat, (lv_coord_t)d.batteryPower);
-      lv_chart_refresh(w.powerChart);
+    const uint32_t now = lv_tick_get();
+    const bool fresh = !g_haveSample || d.lastUpdateMs == 0 ||
+                       d.lastUpdateMs != g_lastDataUpdateMs;
+    const bool due = !g_haveSample ||
+                     (uint32_t)(now - g_lastSampleMs) >= kSampleIntervalMs;
+    if (fresh && due) {
+      recordPowerSample(now, d);
+      g_lastDataUpdateMs = d.lastUpdateMs;
+      g_lastSampleMs = now;
+      g_haveSample = true;
+      rebuildPowerChart();
     }
   }
   // Energy flow page ---------------------------------------------------
