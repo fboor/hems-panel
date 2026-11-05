@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: MIT
-#include <functional>
 #include "WarpUi.h"
 #include "fonts/lv_font_mdi_icons_28.h"
+#include "fonts/lv_font_warp.h"
+#include <functional>
 
 LV_IMG_DECLARE(chart_bg);
 
@@ -40,16 +41,59 @@ constexpr uint32_t C_GRID_HI = 0xCFE8FF;
 constexpr uint32_t C_BAT_HI = 0xCFFFE4;
 constexpr uint32_t C_EV_HI = 0xE9DBFF;
 
-// MDI "transmission-tower" (U+F0D3E) from the bundled 28 px icon font. Written
-// as UTF-8 bytes, not \uXXXX, so the compiler keeps the whole code point.
-constexpr const char kFlowGridIcon[] = "\xF3\xB0\xB4\xBE";
+// MDI glyphs from the bundled 28 px icon font. Written as UTF-8 bytes, not
+// \uXXXX, so the compiler keeps the whole code point.
+constexpr const char kFlowGridIcon[] = "\xF3\xB0\xB4\xBE";  // transmission-tower
+constexpr const char kFlowCarIcon[] = "\xF3\xB0\x84\x8B";   // car
+// Navigation icons, same MDI font. UTF-8 bytes, not \uXXXX, see above.
+constexpr const char kNavFlowIcon[] = "\xF3\xB0\x8B\x9C";    // home
+constexpr const char kNavEnergyIcon[] = "\xF3\xB1\x90\x8B";  // lightning-bolt
+constexpr const char kNavChartIcon[] = "\xF3\xB0\x84\xAA";   // chart-line
+constexpr const char kNavServiceIcon[] = "\xF3\xB0\x96\xB7"; // wrench
 
-constexpr const lv_font_t *F_SMALL = &lv_font_montserrat_14;
-constexpr const lv_font_t *F_BODY = &lv_font_montserrat_16;
-constexpr const lv_font_t *F_TITLE = &lv_font_montserrat_20;
-constexpr const lv_font_t *F_BIG = &lv_font_montserrat_36;
-constexpr const lv_font_t *F_MED = &lv_font_montserrat_20;
-constexpr const lv_font_t *F_ICON = &lv_font_montserrat_48;
+constexpr const lv_font_t *F_SMALL = &lv_font_warp_14;
+constexpr const lv_font_t *F_BODY = &lv_font_warp_16;
+constexpr const lv_font_t *F_TITLE = &lv_font_warp_20;
+constexpr const lv_font_t *F_BIG = &lv_font_warp_36;
+constexpr const lv_font_t *F_MED = &lv_font_warp_20;
+constexpr const lv_font_t *F_ICON = &lv_font_warp_48;
+
+// Power history. One sample per minute is enough for a 24 h graph and keeps
+// the raw ring buffer small (1440 entries). The chart itself always uses the
+// same number of points; the samples are resampled into the visible window.
+constexpr int kChartPoints = 240;
+constexpr int kChartLineWidth = 2;
+constexpr uint32_t kSampleIntervalMs = 60u * 1000u;
+constexpr uint32_t kHistoryMs = 24u * 60u * 60u * 1000u;
+constexpr int kMaxSamples = 24 * 60 + 2;
+
+// The wallbox configuration page shows one mode button per supported mode.
+// WARP currently offers at most four (Off + two configurable + Fast); the
+// extra slots keep the renderer safe if a future firmware adds more.
+constexpr int kWarpUiModes = 6;
+constexpr uint32_t kPendingModeMs = 15000;
+
+struct PowerSample {
+  uint32_t timeMs;
+  float grid;
+  float pv;
+  float house;
+  float battery;
+};
+
+PowerSample g_samples[kMaxSamples];
+int g_sampleHead = 0;
+int g_sampleCount = 0;
+bool g_haveSample = false;
+uint32_t g_lastSampleMs = 0;
+uint32_t g_lastDataUpdateMs = 0;
+
+// The chart draws these arrays directly (external buffers), so rebuilding a
+// frame only means overwriting the values and refreshing the chart once.
+int32_t g_chartGrid[kChartPoints];
+int32_t g_chartPv[kChartPoints];
+int32_t g_chartHouse[kChartPoints];
+int32_t g_chartBattery[kChartPoints];
 
 struct Widgets {
   lv_obj_t *statusChip = nullptr;

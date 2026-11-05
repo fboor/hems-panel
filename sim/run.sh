@@ -41,15 +41,24 @@ done <<EOF
 $(find "$lvgl/src" -name '*.c')
 EOF
 wait
-[ $neu -gt 0 ] && echo "LVGL: $neu Dateien gebaut"
-# The generated icon font is C (designated initializers), not C++.
-cc $cflags -c "$repo/src/ui/fonts/lv_font_mdi_icons_28.c" -o "$build/mdi_icons_28.o"
+# Compile chart_bg.c as C
+cc $cflags -c "$repo/src/chart_bg.c" -o "$build/chart_bg.o" 2>/dev/null && echo "chart_bg compiled"
+
+# The generated fonts are C (designated initializers), not C++.
+mkdir -p "$build/fonts"
+font_objs=()
+for f in "$repo"/src/ui/fonts/*.c; do
+  o="$build/fonts/$(basename "${f%.c}").o"
+  cc $cflags -c "$f" -o "$o"
+  font_objs+=("$o")
+done
 
 c++ $cflags -std=c++17 \
   "$here/sim_main.cpp" \
   "$repo/src/ui/WarpUi.cpp" \
   "$build"/lvgl/*.o \
-  "$build"/mdi_icons_28.o \
+  "$build"/chart_bg.o \
+  "${font_objs[@]}" \
   -o "$out" -lSDL2 -lz -lm -lpthread
 
 echo "gebaut: $out"
