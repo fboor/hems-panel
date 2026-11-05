@@ -2,9 +2,10 @@
 
 An ESP32-S3 panel (7" Waveshare, 800x480) that shows the live state of a WARP
 Energy Manager V2: grid per phase and exchange, PV, external/S0, household,
-battery SOC/power/voltage/current, island mode and energy totals. The header
-shows autarky and today's solar forecast next to one compact connection-state
-chip.
+battery SOC/power/voltage/current, island mode and energy totals. The bottom
+bar shows today's and overall autarky plus today's remaining/planned solar
+forecast, next to the page buttons; the header holds one compact
+connection-state chip.
 
 The desktop emulator is the primary development target. It runs the same LVGL UI
 source as the firmware and talks to the same WARP HTTP API.
@@ -15,15 +16,20 @@ The first page is a live energy-flow view: PV, grid, battery and wallbox
 around the house hub, with link width and particle speed following the actual
 power. The grid node uses the same MDI transmission-tower icon as `rct-panel`. Flow
 particles only redraw small areas, and the animation timer stops when the page
-is hidden. The energy overview, history and service pages follow in their
-previous order.
+is hidden. The energy overview, history, wallbox configuration and service
+pages follow.
 
 The header keeps one connection chip: a WiFi glyph (green when the network is
 up) plus `Kein WLAN`, `Getrennt`, `Daten` or `Keine Daten`. It sits at the far
-right, where the old `Netz` badge used to be. The freed space shows autarky and
-today's solar forecast, both with their captions below the values. Autarky comes
-from the WARP energy counters when available; without them the panel falls back
-to the live house/grid ratio.
+right, where the old `Netz` badge used to be. The bottom bar, left of the page
+buttons, shows autarky and today's solar forecast. Overall autarky comes from
+the WARP energy counters when available; without them the panel falls back to
+the live house/grid ratio. Today's value is calculated from the daily-history
+counters for the load and grid meter (`today / overall`, e.g. `82 % / 77 %`).
+It requires a load meter, a grid meter, the RTC time and two consecutive daily
+rows; if any of these is missing, the panel falls back to overall autarky only.
+The forecast is `remaining / planned` for today in kWh
+(`wh_today_remaining / wh_today`, e.g. `12 / 24 kWh`).
 
 ![energy flow](screenshots/flow.png)
 
@@ -64,7 +70,7 @@ Override with `LVGL_DIR=/path/to/lvgl`.
 ```sh
 ./run.sh                     # starts the module-API mock on :8082, opens the window
 ./run.sh --shot out.png      # render one frame and exit
-./run.sh --shot flow.png --page 1   # render a specific page (1..4)
+./run.sh --shot flow.png --page 1   # render a specific page (1..5)
 ./run.sh --shot setup.png --setup   # render the Wi-Fi setup screen
 ./run.sh --probe             # print the mapped values, no window
 ./run.sh --verbose           # log every HTTP request (off by default)
@@ -82,10 +88,22 @@ Scenarios:
 ```
 
 Available: `midsummer`, `evening`, `island`, `low_solar`, `grid_failure`,
-`wallbox`, `wallbox_3p`, `wallbox_meter`. The query string is carried through to
-every module request, so the emulator sees the selected scenario without
-restarting the mock. `wallbox` and `wallbox_3p` exercise the calculated power
-(1 and 3 phases), `wallbox_meter` adds a meter with location `Charger`.
+`wallbox`, `wallbox_3p`, `wallbox_meter`, `wallboxes`. The query string is
+carried through to every module request, so the emulator sees the selected
+scenario without restarting the mock. `wallbox` and `wallbox_3p` exercise the
+calculated power (1 and 3 phases), `wallbox_meter` adds a meter with location
+`Charger`, and `wallboxes` configures three boxes with different states and
+modes for the configuration page.
+
+The mock also accepts the charge-mode commands and remembers the result, so the
+mode buttons can be exercised without a real device:
+
+```sh
+curl -X POST -d '{"mode":2}' http://localhost:8082/power_manager/charge_mode_update
+curl -X POST -d '2' 'http://localhost:8082/charge_manager/charge_modes/0?scenario=wallboxes'
+```
+
+Commands answer with an empty `200`, like the WARP firmware.
 
 ## Real device
 
@@ -114,6 +132,10 @@ the UI needs:
 | household | 6 | power L1/L2/L3 `39/48/57`, total `74`, energy `215` |
 | PV | 7 | string power `442/443`, total `452`, string energy `454/456`, total `472` |
 | wallbox | 2 or 8 | power L1/L2/L3 `39/48/57`, total `74` |
+
+The energy value IDs (`209/211/215/413/415/454/456/472`) are reported in **kWh**
+by WARP (see `meter_value_id.csv` in the firmware source). The panel converts
+them to Wh internally; the `ENERGIE` card prints kWh below 1 MWh and MWh above.
 
 A meter is also matched by its `virtual_meter` value and, as a last resort, by
 keywords in `display_name` ("Netz", "Akku", "PV", "Verbrauch", ...). If no grid
@@ -148,6 +170,39 @@ The wallbox card marks calculated values as `geschätzt`.
 
 ![wallbox](screenshots/wallbox.png)
 
+### Wallbox configuration page
+
+Page 4 (`Wallboxen`) shows one card per charger reported by
+`/charge_manager/state`, with its name, live power, state and a row of charge
+mode buttons. The first card applies a mode to all boxes through
+`/power_manager/charge_mode_update`; the per-box cards override a single charger
+through `/charge_manager/charge_modes/<index>`. Both commands use the same
+`ConfigChargeMode` values as the WARP web interface:
+
+| Mode | Value | Button |
+|---|---|---|
+| `Fast` | 0 | Schnell |
+| `Off` | 1 | Aus |
+| `PV` | 2 | PV |
+| `MinPV` | 3 | Min + PV |
+| `Default` | 4 | Standard |
+| `Min` | 5 | Min |
+| `Eco` | 6 | Eco |
+| `EcoPV` | 7 | Eco + PV |
+| `EcoMin` | 8 | Eco + Min |
+| `EcoMinPV` | 9 | Eco + Min + PV |
+
+The buttons come from `/charge_manager/supported_charge_modes`, so only the
+modes the device currently offers are shown (WARP reports at most four:
+`Off`, up to two PV/Eco modes and `Fast`). The power manager command payload is
+`{"mode": <int>}`; the per-charger command sends the bare integer. A tap is
+shown immediately and is replaced by the polled value on the next refresh; if
+the device rejects the command the selection falls back after about 15 s.
+The page scrolls when more wallboxes are configured than fit on the screen,
+and the old service page is now page 5.
+
+![wallbox configuration](screenshots/wallboxes.png)
+
 ### Flat fallback field names
 
 `src/warp/WarpParse.h` maps a flat JSON object to `WarpData`. Each field accepts
@@ -166,14 +221,14 @@ a few aliases; the first match wins.
 | island | `island_flag`, `island`, `island_mode` |
 | energy totals | `pv_energy_wh`, `house_energy_wh`, `grid_import_wh`, `grid_export_wh`, `battery_charge_wh`, `battery_discharge_wh` |
 | today (legacy) | `day_generation_wh`, `day_load_wh`, `day_feed_in_wh`, `day_grid_draw_wh` |
-| autarky | `autarky`, `autarkie`, `self_sufficiency` (otherwise calculated from energy totals or live power) |
-| forecast | `wh_today`, `forecast_today_wh`, `solar_forecast_today_wh` |
+| autarky | `autarky`, `autarkie`, `self_sufficiency` (otherwise calculated from energy totals or live power); today's value from `/energy_manager/history_energy_manager_daily` |
+| forecast | `wh_today`, `forecast_today_wh`, `solar_forecast_today_wh`; remaining from `wh_today_remaining`, `forecast_today_remaining_wh` |
 | identity | `device_name`, `firmware_version` |
 
-The energy card shows the cumulative meter totals since commissioning. The
-period counters (day/month/year) are not in the UI yet; the WARP daily-history
-endpoint is available if they should come from the device rather than from a
-panel-side baseline.
+The energy card shows the cumulative meter totals since commissioning. Today's
+autarky uses the WARP daily-history endpoint: the load and grid counters of
+today and the previous day are differenced, so no panel-side baseline is needed.
+The other period counters (day/month/year) are not in the UI yet.
 
 ## Layout
 
@@ -300,14 +355,14 @@ On first boot, or when the saved WLAN cannot be reached, the panel opens a
 setup access point:
 
 - SSID: `WARP-Panel-XXXX` (the last four hex digits of the chip MAC).
-- Password: random per boot, ten characters plus a hyphen, shown on the panel.
+- Password: none, the setup access point is open.
 - Portal: <http://192.168.4.1/> (the captive portal usually opens by itself).
 
-The panel shows a QR code that contains the WLAN join data
-(`WIFI:T:WPA;S:...;P:...;;`), so a phone can join the access point without
-typing the password. The same screen shows the SSID, password and portal URL.
-The setup AP stays active for three minutes without web activity; after that
-the panel restarts if no WLAN was configured.
+The panel shows a QR code that contains the open WLAN join data
+(`WIFI:T:nopass;S:...;;`), so a phone can join the access point by scanning it.
+The same screen shows the SSID, `offen` instead of a password, and the portal
+URL. The setup AP has no timeout and stays active until the WLAN is configured;
+the panel only leaves the setup screen after it has joined the user's WLAN.
 
 ![Wi-Fi setup screen](screenshots/setup.png)
 
@@ -322,9 +377,10 @@ The portal has two fields:
 After a successful connection the same configuration page remains available on
 the local network, normally at <http://warp-panel.local/> (mDNS) or at the
 panel's IP address. It can be used to change the WARP address without wiping
-the WLAN credentials. The service page (page 4) shows the current WLAN, panel
-IP, WARP endpoint and web setup URL. The panel uses DHCP; only the WARP address
-is configured manually.
+the WLAN credentials. The service page (page 5) shows the current WLAN, panel
+IP, WARP endpoint and web setup URL. The WARP endpoint is displayed without the
+`http://` scheme, even though the panel accesses it over HTTP. The panel uses
+DHCP; only the WARP address is configured manually.
 
 If a WLAN change made through the local web page cannot be reached, power-cycle
 the panel. The AP fallback opens again because the saved connection failed.
