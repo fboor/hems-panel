@@ -893,6 +893,18 @@ class Reader {
     d.hasAutarkyToday = dailyHasAutarky_;
     d.autarkyToday = dailyAutarky_;
 
+    // Slow-changing state (heating, temperatures, IO): fetch every 6th poll
+    // (~60 s) and serve the cache in between. Fewer HTTP round trips means
+    // less network and PSRAM traffic competing with the display scan.
+    if (slowTtl_ <= 0) {
+      fetchSlow(d);
+      slowCache_ = d;
+      slowTtl_ = 6;
+    } else {
+      --slowTtl_;
+      copySlow(d);
+    }
+
     d.valid = d.hasGrid || d.hasHouse || d.hasPv || d.hasBattery ||
               d.hasExternal || !std::isnan(powerAtMeter);
 
