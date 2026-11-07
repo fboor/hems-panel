@@ -289,7 +289,8 @@ static volatile uint32_t s_scanFrameEndUs = 0; // esp_timer at the last frame en
 static volatile uint32_t s_scanFrames = 0;      // frames the driver has reported
 static uint32_t s_lineUs = 0;       // pixel clocks per line, in microseconds
 static uint32_t s_frameLines = 0;   // lines per frame, porch included
-static uint32_t s_drawMaxUs = 0;    // longest draw_bitmap() so far
+static uint32_t s_drawMaxUs = 20000; // longest draw_bitmap() so far; starts
+                                     // conservative until measured
 static uint32_t s_drawTotalUs = 0;  // all of them, since the last report
 static uint32_t s_flushes = 0;
 static uint32_t s_flushesAtLastReport = 0;
@@ -389,7 +390,24 @@ static void lcdFlushCb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_ma
   // instead - which is what this did at first - costs on average half a frame per
   // strip, and a page switch is twenty strips: that alone was most of its time.
   // The beam is on this strip for 24 of 516 lines, so the wait is about 1.3 ms.
-  const int von = (int)y1 - BEAM_MARGIN_LINES;
+  // Starting the copy only 8 lines ahead of the strip is not enough: the copy
+  // itself takes milliseconds (whole-framebuffer cache write-back), so the
+  // scan reaches the strip while it is still being written and the user sees
+  // one frame with a torn stripe. The margin therefore covers the measured
+  // copy time plus slack: only start early when the scan is far enough ahead
+  // that the copy finishes before the scan arrives, otherwise wait until the
+  // scan is past the strip.
+  int margin = BEAM_MARGIN_LINES;
+  if (s_lineUs > 0) {
+    margin = (int)((s_drawMaxUs + s_lineUs - 1) / s_lineUs) + 32;
+    if (margin < BEAM_MARGIN_LINES) {
+      margin = BEAM_MARGIN_LINES;
+    }
+    if (s_frameLines > 0 && margin > (int)s_frameLines) {
+      margin = (int)s_frameLines;
+    }
+  }
+  const int von = (int)y1 - margin;
   const int bis = (int)(y1 + rows) + BEAM_MARGIN_LINES;
   for (uint32_t waited = 0; waited < BEAM_MAX_WAIT_US; waited += 200) {
     int line = scanLine();

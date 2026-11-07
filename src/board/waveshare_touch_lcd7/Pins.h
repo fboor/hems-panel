@@ -121,7 +121,7 @@
 // so LVGL rendering into SRAM saves one of the three passes a page switch makes
 // over the memory the scan reads 29 MB/s out of. 24 and not more because the
 // internal heap has to keep room for the network stack - 40 lines left 11 kB.
-#define BOARD_LCD_BUF_ROWS 24
+#define BOARD_LCD_BUF_ROWS 48
 // No bounce buffer. The vendor's demo asks for one (ten lines of the panel, in
 // PSRAM) and the field it goes into does not exist in the esp_lcd this project
 // builds against: bounce_buffer_size_px came with a later esp_lcd than the
