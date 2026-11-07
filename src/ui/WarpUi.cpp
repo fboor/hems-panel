@@ -3,6 +3,16 @@
 #include "fonts/lv_font_mdi_icons_28.h"
 #include "fonts/lv_font_warp.h"
 
+// UI language, fixed at compile time. The panel ships in German by default;
+// define WARP_LANG_EN=1 (see platformio.ini, esp32-s3-touch-lcd-7-en) for
+// the English build. Both languages use the same warp fonts (umlauts are
+// subsetted glyphs, plain ASCII in English).
+#ifdef WARP_LANG_EN
+#define TR(de, en) (en)
+#else
+#define TR(de, en) (de)
+#endif
+
 LV_IMG_DECLARE(chart_bg);
 
 #include <lvgl.h>
@@ -525,15 +535,15 @@ const char *chargeModeName(int mode) {
 // CASState as reported in /charge_manager/state (`s`).
 const char *chargerStateName(const WarpChargerData &c) {
   switch (c.state) {
-    case 4: return "Laden";
-    case 5: return "Fehler";
-    case 6: return "Fertig";
+    case 4: return TR("Laden", "Charging");
+    case 5: return TR("Fehler", "Fault");
+    case 6: return TR("Fertig", "Finished");
     case 1:
     case 2:
     case 3:
-    case 7: return "Blockiert";
-    case 0: return "Kein Fahrzeug";
-    default: return "Bereit";
+    case 7: return TR("Blockiert", "Blocked");
+    case 0: return TR("Kein Fahrzeug", "No vehicle");
+    default: return TR("Bereit", "Ready");
   }
 }
 
@@ -619,16 +629,16 @@ ModeCard buildModeCard(lv_obj_t *parent, bool global, int index,
   lv_obj_clear_flag(mc.card, LV_OBJ_FLAG_SCROLLABLE);
 
   if (global) {
-    mc.name = label(mc.card, 16, 8, 520, F_TITLE, C_TEXT, "ALLE WALLBOXEN");
+    mc.name = label(mc.card, 16, 8, 520, F_TITLE, C_TEXT, TR("ALLE WALLBOXEN", "ALL WALLBOXES"));
     mc.state = label(mc.card, 16, 32, 520, F_SMALL, C_MUTED,
-                     "Modus für alle Ladepunkte");
+                     TR("Modus für alle Ladepunkte", "Mode for all charging points"));
   } else {
     const WarpChargerData &c = d.chargers[index];
     char name[48];
     if (c.name[0] != '\0') {
       snprintf(name, sizeof(name), "%s", c.name);
     } else {
-      snprintf(name, sizeof(name), "Wallbox %d", index + 1);
+      snprintf(name, sizeof(name), TR("Wallbox %d", "Wallbox %d"), index + 1);
     }
     mc.name = label(mc.card, 16, 8, 430, F_TITLE, C_TEXT, name);
     mc.state = label(mc.card, 16, 32, 430, F_SMALL, C_MUTED, "--");
@@ -727,7 +737,7 @@ void rebuildModeCards(const WarpData &d) {
     lv_obj_set_style_border_color(empty, lv_color_hex(C_LINE), 0);
     lv_obj_clear_flag(empty, LV_OBJ_FLAG_SCROLLABLE);
     label(empty, 16, 36, 0, F_BODY, C_MUTED,
-          "Keine Wallbox konfiguriert.");
+          TR("Keine Wallbox konfiguriert.", "No wallbox configured."));
     return;
   }
 
@@ -1051,14 +1061,14 @@ void create(lv_obj_t *parent) {
   lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
 
   // Header ---------------------------------------------------------------
-  label(parent, 16, 8, 0, F_TITLE, C_TEXT, "WARP Energy Manager");
+  label(parent, 16, 8, 0, F_TITLE, C_TEXT, TR("WARP Energy Manager", "WARP Energy Manager"));
   // Page captions
-  w.caption1 = label(parent, 16, 40, 0, F_BODY, C_MUTED, "Energie");
-  w.caption2 = label(parent, 16, 40, 0, F_BODY, C_MUTED, "Energiebilanz");
-  w.caption3 = label(parent, 16, 40, 0, F_BODY, C_MUTED, "Service");
-  w.caption4 = label(parent, 16, 40, 0, F_BODY, C_MUTED, "Energiefluss");
-  w.caption5 = label(parent, 16, 40, 0, F_BODY, C_MUTED, "Wallboxen");
-  w.caption6 = label(parent, 16, 40, 0, F_BODY, C_MUTED, "Heizung");
+  w.caption1 = label(parent, 16, 40, 0, F_BODY, C_MUTED, TR("Energie", "Energy"));
+  w.caption2 = label(parent, 16, 40, 0, F_BODY, C_MUTED, TR("Energiebilanz", "Energy balance"));
+  w.caption3 = label(parent, 16, 40, 0, F_BODY, C_MUTED, TR("Service", "Service"));
+  w.caption4 = label(parent, 16, 40, 0, F_BODY, C_MUTED, TR("Energiefluss", "Energy flow"));
+  w.caption5 = label(parent, 16, 40, 0, F_BODY, C_MUTED, TR("Wallboxen", "Wallboxes"));
+  w.caption6 = label(parent, 16, 40, 0, F_BODY, C_MUTED, TR("Heizung", "Heating"));
   lv_obj_add_flag(w.caption2, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(w.caption3, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(w.caption4, LV_OBJ_FLAG_HIDDEN);
@@ -1080,7 +1090,7 @@ void create(lv_obj_t *parent) {
   lv_obj_clear_flag(w.statusChip, LV_OBJ_FLAG_SCROLLABLE);
 
   w.statusWifi = label(w.statusChip, 10, 5, 24, F_BODY, C_MUTED, LV_SYMBOL_WIFI);
-  w.statusText = label(w.statusChip, 40, 7, 92, F_SMALL, C_MUTED, "WLAN?");
+  w.statusText = label(w.statusChip, 40, 7, 92, F_SMALL, C_MUTED, TR("WLAN?", "WLAN?"));
 
   lv_obj_t *page1 = lv_obj_create(parent);
   lv_obj_remove_style_all(page1);
@@ -1090,9 +1100,9 @@ void create(lv_obj_t *parent) {
 
   // Grid ---------------------------------------------------------------
   lv_obj_t *grid = card(page1, 12, 68, 250, 176);
-  title(grid, "NETZ");
+  title(grid, TR("NETZ", "GRID"));
   w.gridTotal = label(grid, 16, 30, 0, F_BIG, C_TEXT, "--");
-  w.gridDir = label(grid, 16, 76, 0, F_SMALL, C_MUTED, "Bezug");
+  w.gridDir = label(grid, 16, 76, 0, F_SMALL, C_MUTED, TR("Bezug", "Import"));
   {
     static const char *names[3] = {"L1", "L2", "L3"};
     for (int i = 0; i < 3; ++i) {
@@ -1104,9 +1114,9 @@ void create(lv_obj_t *parent) {
 
   // Household ----------------------------------------------------------
   lv_obj_t *house = card(page1, 274, 68, 250, 176);
-  title(house, "HAUS");
+  title(house, TR("HAUS", "HOUSE"));
   w.houseTotal = label(house, 16, 30, 0, F_BIG, C_TEXT, "--");
-  label(house, 16, 76, 0, F_SMALL, C_MUTED, "Verbrauch");
+  label(house, 16, 76, 0, F_SMALL, C_MUTED, TR("Verbrauch", "Consumption"));
   {
     static const char *names[3] = {"L1", "L2", "L3"};
     for (int i = 0; i < 3; ++i) {
@@ -1116,7 +1126,7 @@ void create(lv_obj_t *parent) {
 
   // Battery ------------------------------------------------------------
   lv_obj_t *bat = card(page1, 536, 68, 250, 176);
-  title(bat, "BATTERIE");
+  title(bat, TR("BATTERIE", "BATTERY"));
   w.batSoc = label(bat, 16, 28, 120, F_BIG, C_TEXT, "-- %");
   w.batDir = label(bat, 130, 42, 104, F_SMALL, C_MUTED, "--",
                    LV_TEXT_ALIGN_RIGHT);
@@ -1134,21 +1144,21 @@ void create(lv_obj_t *parent) {
   lv_bar_set_range(w.batBar, 0, 100);
   lv_bar_set_value(w.batBar, 0, LV_ANIM_OFF);
 
-  row(bat, 16, 104, 218, "Leistung", &w.batPower);
-  row(bat, 16, 128, 218, "Spannung", &w.batVoltage);
-  row(bat, 16, 152, 218, "Strom", &w.batCurrent);
+  row(bat, 16, 104, 218, TR("Leistung", "Power"), &w.batPower);
+  row(bat, 16, 128, 218, TR("Spannung", "Voltage"), &w.batVoltage);
+  row(bat, 16, 152, 218, TR("Strom", "Current"), &w.batCurrent);
 
   // PV -----------------------------------------------------------------
   lv_obj_t *pv = card(page1, 12, 256, 250, 166);
-  title(pv, "SOLAR");
+  title(pv, TR("SOLAR", "SOLAR"));
   w.pvTotal = label(pv, 16, 30, 0, F_BIG, C_GREEN, "--");
-  label(pv, 16, 76, 0, F_SMALL, C_MUTED, "Erzeugung");
+  label(pv, 16, 76, 0, F_SMALL, C_MUTED, TR("Erzeugung", "Generation"));
   row(pv, 16, 108, 218, "String A", &w.pvA);
   row(pv, 16, 134, 218, "String B", &w.pvB);
 
   // Wallbox -----------------------------------------------------------
   lv_obj_t *wallbox = card(page1, 274, 256, 250, 166);
-  title(wallbox, "WALLBOX");
+  title(wallbox, TR("WALLBOX", "WALLBOX"));
   w.wallboxValue = label(wallbox, 16, 30, 0, F_BIG, C_GREEN, "--");
   w.wallboxNote = label(wallbox, 16, 76, 0, F_SMALL, C_MUTED, "--");
   w.wallboxMode = label(wallbox, 16, 96, 0, F_SMALL, C_MUTED, "--");
@@ -1156,12 +1166,12 @@ void create(lv_obj_t *parent) {
 
   // Energy totals ------------------------------------------------------
   lv_obj_t *energy = card(page1, 536, 256, 250, 166);
-  title(energy, "ENERGIE");
-  row(energy, 16, 30, 218, "Erzeugung", &w.energyPv, F_SMALL);
-  row(energy, 16, 52, 218, "Verbrauch", &w.energyHouse, F_SMALL);
-  row(energy, 16, 74, 218, "Netzbezug", &w.energyImport, F_SMALL);
-  row(energy, 16, 96, 218, "Einspeisung", &w.energyExport, F_SMALL);
-  row(energy, 16, 118, 218, "Akku", &w.energyBattery, F_SMALL);
+  title(energy, TR("ENERGIE", "ENERGY"));
+  row(energy, 16, 30, 218, TR("Erzeugung", "Generation"), &w.energyPv, F_SMALL);
+  row(energy, 16, 52, 218, TR("Verbrauch", "Consumption"), &w.energyHouse, F_SMALL);
+  row(energy, 16, 74, 218, TR("Netzbezug", "Grid import"), &w.energyImport, F_SMALL);
+  row(energy, 16, 96, 218, TR("Einspeisung", "Feed-in"), &w.energyExport, F_SMALL);
+  row(energy, 16, 118, 218, TR("Akku", "Battery"), &w.energyBattery, F_SMALL);
 
   // Footer -------------------------------------------------------------
   // Second page (power graph) -----------------------------------------
@@ -1221,7 +1231,7 @@ void create(lv_obj_t *parent) {
 
   // Legend: the four meter series plus up to two wallboxes by name, in the
   // same colours as the chart lines.
-  const char *names[4] = {"Netz", "PV", "Verbrauch", "Akku"};
+  const char *names[4] = {TR("Netz", "Grid"), TR("PV", "PV"), TR("Verbrauch", "Consumption"), TR("Akku", "Battery")};
   lv_color_t colors[6] = {lv_color_hex(0x2CA02C), lv_color_hex(0xFF7F0E),
                           lv_color_hex(0x007BFF), lv_color_hex(0xD62728),
                           lv_color_hex(0x9467BD), lv_color_hex(0x8C564B)};
@@ -1245,9 +1255,9 @@ void create(lv_obj_t *parent) {
   // Current IO states as indicator dots: 4 inputs, 2 relays, 2 SG-Ready
   // outputs. The web interface draws these as history bars over the chart;
   // here only the current state fits, so each gets a dot below its label.
-  const char *ioNames[8] = {"Eingang 1", "Eingang 2", "Eingang 3",
-                            "Eingang 4", "Relais 1", "Relais 2", "SG 1",
-                            "SG 2"};
+  const char *ioNames[8] = {TR("Eingang 1", "Input 1"), TR("Eingang 2", "Input 2"), TR("Eingang 3", "Input 3"),
+                            TR("Eingang 4", "Input 4"), TR("Relais 1", "Relay 1"), TR("Relais 2", "Relay 2"), TR("SG 1", "SG 1"),
+                            TR("SG 2", "SG 2")};
   for (int i = 0; i < 8; ++i) {
     label(w.page2, 5 + i * 95, 292, 90, F_SMALL, C_MUTED, ioNames[i],
           LV_TEXT_ALIGN_CENTER);
@@ -1302,16 +1312,16 @@ void create(lv_obj_t *parent) {
   lv_obj_add_flag(w.page6, LV_OBJ_FLAG_HIDDEN);
 
   lv_obj_t *sg = card(w.page6, 16, 0, 758, 160);
-  title(sg, "SG-READY");
-  row(sg, 16, 34, 720, "Blockiert", &w.heatBlocking);
-  row(sg, 16, 58, 720, "Erweitert", &w.heatExtended);
+  title(sg, TR("SG-READY", "SG-READY"));
+  row(sg, 16, 34, 720, TR("Blockiert", "Blocked"), &w.heatBlocking);
+  row(sg, 16, 58, 720, TR("Erweitert", "Extended"), &w.heatExtended);
   row(sg, 16, 82, 720, "Status", &w.heatStatus);
   row(sg, 16, 106, 720, "14a EnWG", &w.heatP14);
-  row(sg, 16, 130, 720, "Automatik-Override", &w.heatOverride);
+  row(sg, 16, 130, 720, TR("Automatik-Override", "Automation override"), &w.heatOverride);
 
   lv_obj_t *party = card(w.page6, 16, 172, 758, 58);
-  title(party, "PARTYMODUS");
-  label(party, 16, 34, 400, F_BODY, C_MUTED, "2 Std. Override");
+  title(party, TR("PARTYMODUS", "PARTY MODE"));
+  label(party, 16, 34, 400, F_BODY, C_MUTED, TR("2 Std. Override", "2 h override"));
   w.heatPartyBtn = lv_btn_create(party);
   lv_obj_set_pos(w.heatPartyBtn, 542, 9);
   lv_obj_set_size(w.heatPartyBtn, 200, 40);
@@ -1322,7 +1332,7 @@ void create(lv_obj_t *parent) {
   lv_obj_set_style_border_color(w.heatPartyBtn, lv_color_hex(C_LINE), 0);
   lv_obj_set_style_shadow_width(w.heatPartyBtn, 0, 0);
   lv_obj_t *partyLbl = lv_label_create(w.heatPartyBtn);
-  lv_label_set_text(partyLbl, "Einschalten");
+  lv_label_set_text(partyLbl, TR("Einschalten", "Turn on"));
   lv_obj_set_style_text_font(partyLbl, F_SMALL, 0);
   lv_obj_set_style_text_color(partyLbl, lv_color_hex(C_TEXT), 0);
   lv_obj_center(partyLbl);
@@ -1338,42 +1348,42 @@ void create(lv_obj_t *parent) {
   }, LV_EVENT_CLICKED, nullptr);
 
   lv_obj_t *temps = card(w.page6, 16, 242, 758, 110);
-  title(temps, "TEMPERATUR");
-  row(temps, 16, 34, 720, "Jetzt", &w.tempNow);
-  row(temps, 16, 58, 720, "Heute Min/Max", &w.tempToday);
-  row(temps, 16, 82, 720, "Morgen Min/Max", &w.tempTomorrow);
+  title(temps, TR("TEMPERATUR", "TEMPERATURE"));
+  row(temps, 16, 34, 720, TR("Jetzt", "Now"), &w.tempNow);
+  row(temps, 16, 58, 720, TR("Heute Min/Max", "Today min/max"), &w.tempToday);
+  row(temps, 16, 82, 720, TR("Morgen Min/Max", "Tomorrow min/max"), &w.tempTomorrow);
 
   // Energy flow: four links around a central house hub. Links are drawn
   // first, particles next and cards last, so particles slide underneath the
   // nodes instead of crossing their text.
-  flowLink(w.page4, 0, 200, 98, 332, 151, C_SOLAR);  // PV <-> house
-  flowLink(w.page4, 1, 200, 254, 332, 201, C_BLUE);   // grid <-> house
-  flowLink(w.page4, 2, 590, 98, 458, 151, C_BAT);    // battery <-> house
-  flowLink(w.page4, 3, 458, 201, 590, 254, C_EV);     // house -> wallbox
+  flowLink(w.page4, 0, 200, 98, 334, 151, C_SOLAR);  // PV <-> house
+  flowLink(w.page4, 1, 200, 254, 334, 201, C_BLUE);   // grid <-> house
+  flowLink(w.page4, 2, 600, 98, 466, 151, C_BAT);    // battery <-> house
+  flowLink(w.page4, 3, 466, 201, 600, 254, C_EV);     // house -> wallbox
   flowDots(w.page4, 0, C_SOLAR_HI);
   flowDots(w.page4, 1, C_GRID_HI);
   flowDots(w.page4, 2, C_BAT_HI);
   flowDots(w.page4, 3, C_EV_HI);
 
-  FlowNode pvFlow = flowNode(w.page4, 24, 16, "SOLAR", LV_SYMBOL_CHARGE,
+  FlowNode pvFlow = flowNode(w.page4, 24, 16, TR("SOLAR", "SOLAR"), LV_SYMBOL_CHARGE,
                              C_SOLAR, C_SOLAR_DIM);
   w.pvNode = pvFlow.card;
   w.pvValue = pvFlow.value;
   w.pvState = pvFlow.state;
 
-  FlowNode gridFlow = flowNode(w.page4, 24, 242, "NETZ", kFlowGridIcon,
+  FlowNode gridFlow = flowNode(w.page4, 24, 242, TR("NETZ", "GRID"), kFlowGridIcon,
                                C_BLUE, C_GRID_DIM, &lv_font_mdi_icons_28);
   w.gridNode = gridFlow.card;
   w.gridValue = gridFlow.value;
   w.gridState = gridFlow.state;
 
-  FlowNode batFlow = flowNode(w.page4, 590, 16, "AKKU",
+  FlowNode batFlow = flowNode(w.page4, 600, 16, "AKKU",
                               LV_SYMBOL_BATTERY_FULL, C_BAT, C_BAT_DIM);
   w.batNode = batFlow.card;
   w.batValue = batFlow.value;
   w.batState = batFlow.state;
 
-  FlowNode wbFlow = flowNode(w.page4, 590, 242, "WALLBOX", kFlowCarIcon,
+  FlowNode wbFlow = flowNode(w.page4, 600, 242, TR("WALLBOX", "WALLBOX"), kFlowCarIcon,
                              C_EV, C_EV_DIM, &lv_font_mdi_icons_28);
   w.wbNode = wbFlow.card;
   w.wbValue = wbFlow.value;
@@ -1398,7 +1408,7 @@ void create(lv_obj_t *parent) {
   // Background cycle button, styled like the network card below it: same
   // card surface, muted small title, value on the right.
   lv_obj_t *bg = card(w.page3, 16, 0, 758, 58);
-  title(bg, "HINTERGRUND");
+  title(bg, TR("HINTERGRUND", "BACKGROUND"));
   w.bgBtn = lv_btn_create(bg);
   lv_obj_set_pos(w.bgBtn, 542, 9);
   lv_obj_set_size(w.bgBtn, 200, 40);
@@ -1409,7 +1419,7 @@ void create(lv_obj_t *parent) {
   lv_obj_set_style_border_color(w.bgBtn, lv_color_hex(C_LINE), 0);
   lv_obj_set_style_shadow_width(w.bgBtn, 0, 0);
   lv_obj_t *bgBtnLbl = lv_label_create(w.bgBtn);
-  lv_label_set_text(bgBtnLbl, "Schwarz");
+  lv_label_set_text(bgBtnLbl, TR("Schwarz", "Black"));
   lv_obj_set_style_text_font(bgBtnLbl, F_BODY, 0);
   lv_obj_set_style_text_color(bgBtnLbl, lv_color_hex(C_TEXT), 0);
   lv_obj_center(bgBtnLbl);
@@ -1425,7 +1435,7 @@ void create(lv_obj_t *parent) {
   lv_obj_set_style_border_color(bgImgBtn, lv_color_hex(C_LINE), 0);
   lv_obj_set_style_shadow_width(bgImgBtn, 0, 0);
   lv_obj_t *bgImgBtnLbl = lv_label_create(bgImgBtn);
-  lv_label_set_text(bgImgBtnLbl, "Bild: An");
+  lv_label_set_text(bgImgBtnLbl, TR("Bild: An", "Image: on"));
   lv_obj_set_style_text_font(bgImgBtnLbl, F_BODY, 0);
   lv_obj_set_style_text_color(bgImgBtnLbl, lv_color_hex(C_TEXT), 0);
   lv_obj_center(bgImgBtnLbl);
@@ -1435,12 +1445,12 @@ void create(lv_obj_t *parent) {
     lv_obj_set_style_bg_image_opa(w.page4, on ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
     lv_label_set_text(
         lv_obj_get_child(static_cast<lv_obj_t *>(lv_event_get_target(e)), 0),
-        on ? "Bild: An" : "Bild: Aus");
+        on ? TR("Bild: An", "Image: on") : TR("Bild: Aus", "Image: off"));
   }, LV_EVENT_CLICKED, nullptr);
   lv_obj_add_event_cb(w.bgBtn, [](lv_event_t *e) {
     g_backgroundMode = (g_backgroundMode + 1) % 3;
     lv_color_t colors[3] = {lv_color_hex(0x000000), lv_color_hex(0x808080), lv_color_hex(0xE6E6E6)};
-    const char *names[3] = {"Schwarz", "Grau", "Weiss"};
+    const char *names[3] = {TR("Schwarz", "Black"), TR("Grau", "Grey"), TR("Weiss", "White")};
     lv_obj_set_style_bg_color(lv_scr_act(), colors[g_backgroundMode], 0);
     lv_label_set_text(lv_obj_get_child(w.bgBtn, 0), names[g_backgroundMode]);
     // Only the labels that sit directly on the page background follow the
@@ -1451,20 +1461,26 @@ void create(lv_obj_t *parent) {
   // Network state. The setup portal stays reachable on the local network, so
   // this card is also the pointer to it when the WARP address has to change.
   lv_obj_t *net = card(w.page3, 16, 70, 758, 190);
-  title(net, "NETZWERK");
+  title(net, TR("NETZWERK", "NETWORK"));
   w.netSsid = label(net, 16, 34, 720, F_BODY, C_TEXT, "WLAN: --");
   w.netIp = label(net, 16, 58, 720, F_BODY, C_TEXT, "IP: --");
   w.netWarp = label(net, 16, 82, 720, F_BODY, C_TEXT, "WARP: --");
   w.netWeb = label(net, 16, 106, 720, F_BODY, C_BLUE, "Web: --");
   label(net, 16, 142, 720, F_SMALL, C_MUTED,
-        "Zum Ändern die Web-Adresse im Browser öffnen.");
+        TR("Zum Ändern die Web-Adresse im Browser öffnen.", "Open the web address in your browser to change it."));
 
   // Bottom bar, left of the page buttons: today's and overall autarky, plus
   // today's solar forecast as remaining / total kWh.
-  label(parent, 16, 443, 0, F_SMALL, C_MUTED, "Autarkie");
+  label(parent, 16, 443, 0, F_SMALL, C_MUTED, TR("Autarkie", "Self-sufficiency"));
+#ifdef WARP_LANG_EN
+  w.autarkyValue = label(parent, 150, 439, 160, F_TITLE, C_TEXT, "--");
+  label(parent, 320, 443, 0, F_SMALL, C_MUTED, TR("Prognose", "Forecast"));
+  w.forecastValue = label(parent, 404, 439, 160, F_TITLE, C_TEXT, "--");
+#else
   w.autarkyValue = label(parent, 84, 439, 160, F_TITLE, C_TEXT, "--");
-  label(parent, 234, 443, 0, F_SMALL, C_MUTED, "Prognose");
+  label(parent, 234, 443, 0, F_SMALL, C_MUTED, TR("Prognose", "Forecast"));
   w.forecastValue = label(parent, 318, 439, 160, F_TITLE, C_TEXT, "--");
+#endif
 
   auto makeNav = [](lv_obj_t *p, int x, int y, const char *text) {
     lv_obj_t *b = lv_btn_create(p);
@@ -1586,9 +1602,9 @@ void showSetup(const char *ssid, const char *password, const char *url) {
     lv_obj_clear_flag(overlay, LV_OBJ_FLAG_SCROLLABLE);
     w.setupOverlay = overlay;
 
-    label(overlay, 40, 22, 0, F_BIG, C_TEXT, "WLAN einrichten");
+    label(overlay, 40, 22, 0, F_BIG, C_TEXT, TR("WLAN einrichten", "Set up WLAN"));
     label(overlay, 40, 66, 0, F_BODY, C_MUTED,
-          "Mit dem WARP-Panel verbinden");
+          TR("Mit dem WARP-Panel verbinden", "Connect to the WARP panel"));
 
     // White quiet zone around the QR code; the code itself is 260 px so the
     // camera can lock on from a normal arm's length.
@@ -1607,25 +1623,23 @@ void showSetup(const char *ssid, const char *password, const char *url) {
     lv_qrcode_set_light_color(w.setupQr, lv_color_hex(0xFFFFFF));
     lv_obj_set_pos(w.setupQr, 20, 20);
 
-    label(overlay, 380, 112, 0, F_SMALL, C_MUTED, "NETZWERK");
+    label(overlay, 380, 112, 0, F_SMALL, C_MUTED, TR("NETZWERK", "NETWORK"));
     w.setupSsid = label(overlay, 380, 134, 380, F_TITLE, C_TEXT, "--");
-    label(overlay, 380, 174, 0, F_SMALL, C_MUTED, "PASSWORT");
+    label(overlay, 380, 174, 0, F_SMALL, C_MUTED, TR("PASSWORT", "PASSWORD"));
     w.setupPassword = label(overlay, 380, 196, 380, F_TITLE, C_TEXT, "--");
-    label(overlay, 380, 240, 0, F_SMALL, C_MUTED, "DANACH ÖFFNEN");
+    label(overlay, 380, 240, 0, F_SMALL, C_MUTED, TR("DANACH ÖFFNEN", "OPEN AFTERWARDS"));
     w.setupUrl = label(overlay, 380, 262, 380, F_TITLE, C_BLUE, "--");
     label(overlay, 380, 308, 380, F_SMALL, C_MUTED,
-          "QR-Code scannen oder dem Netzwerk beitreten. Im Browser "
-          "WLAN-Zugang und die Adresse des WARP Energy Managers eintragen.");
+          TR("QR-Code scannen oder dem Netzwerk beitreten. Im Browser WLAN-Zugang und die Adresse des WARP Energy Managers eintragen.", "Scan the QR code or join the network. In the browser enter the WLAN credentials and the WARP Energy Manager address."));
     label(overlay, 40, 432, 720, F_SMALL, C_MUTED,
-          "Das Einrichtungsnetz ist offen und bleibt aktiv, bis die "
-          "Einrichtung abgeschlossen ist.");
+          TR("Das Einrichtungsnetz ist offen und bleibt aktiv, bis die Einrichtung abgeschlossen ist.", "The setup network is open and stays active until the setup is complete."));
   }
 
   lv_label_set_text(w.setupSsid, ssid != nullptr ? ssid : "--");
   if (password != nullptr && password[0] != '\0') {
     lv_label_set_text(w.setupPassword, password);
   } else {
-    lv_label_set_text(w.setupPassword, "offen");
+    lv_label_set_text(w.setupPassword, TR("offen", "open"));
   }
   lv_label_set_text(w.setupUrl, url != nullptr ? url : "--");
 
@@ -1680,34 +1694,34 @@ void setNetworkInfo(const char *ssid, const char *ip, const char *warpUrl,
 }
 
 void setConnectionState(ConnectionState state) {
-  const char *text = "WLAN?";
+  const char *text = TR("WLAN?", "WLAN?");
   uint32_t textColor = C_MUTED;
   uint32_t wifiColor = C_MUTED;
   uint32_t background = C_CARD2;
 
   switch (state) {
     case ConnectionState::NoNet:
-      text = "WLAN?";
+      text = TR("WLAN?", "WLAN?");
       textColor = C_MUTED;
       wifiColor = C_MUTED;
       background = C_CARD2;
       break;
     case ConnectionState::Disconnected:
       // WLAN is up (green glyph) but the WARP does not answer (red text).
-      text = "Getrennt";
+      text = TR("Getrennt", "Disconnected");
       textColor = C_RED;
       wifiColor = C_GREEN;
       background = 0x2A1D22;
       break;
     case ConnectionState::Data:
-      text = "Daten";
+      text = TR("Daten", "Data");
       textColor = C_GREEN;
       wifiColor = C_GREEN;
       background = 0x173026;
       break;
     case ConnectionState::NoData:
       // WLAN is up and the WARP answers, but it returns no measurements.
-      text = "Daten";
+      text = TR("Daten", "Data");
       textColor = C_RED;
       wifiColor = C_GREEN;
       background = 0x33280F;
@@ -2173,7 +2187,7 @@ void update(const WarpData &d) {
 
   // Heating page ---------------------------------------------------------
   {
-    auto onOff = [](bool v) { return v ? "Aktiv" : "Inaktiv"; };
+    auto onOff = [](bool v) { return v ? TR("Aktiv", "Active") : TR("Inaktiv", "Inactive"); };
     g_lastHeatingOverride = d.hasSgrOverride;
     if (d.hasHeating) {
       setTextIfChanged(w.heatBlocking, onOff(d.sgrBlocking));
@@ -2212,13 +2226,13 @@ void update(const WarpData &d) {
             g_partyPending && !d.hasSgrOverride
                 ? 120
                 : d.sgrOverrideRemainingMin;
-        snprintf(buf, sizeof(buf), "Aus (%lu min)", (unsigned long)remaining);
+        snprintf(buf, sizeof(buf), TR("Aus (%lu min)", "Off (%lu min)"), (unsigned long)remaining);
         setTextIfChanged(lbl, buf);
         if (!partyWasShown) {
           lv_obj_set_style_bg_color(w.heatPartyBtn, lv_color_hex(C_EV), 0);
         }
       } else {
-        setTextIfChanged(lbl, "Einschalten");
+        setTextIfChanged(lbl, TR("Einschalten", "Turn on"));
         if (partyWasShown) {
           lv_obj_set_style_bg_color(w.heatPartyBtn, lv_color_hex(C_CARD2), 0);
         }

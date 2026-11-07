@@ -27,6 +27,7 @@ fi
 mkdir -p "$build/lvgl"
 
 cflags="-O2 -DLV_CONF_INCLUDE_SIMPLE -I$here/lvconf -I$repo/include -I$repo/src -I$lvgl"
+[ -n "${WARP_LANG_EN:-}" ] && cflags="$cflags -DWARP_LANG_EN=1"
 
 # LVGL once, keyed by source path.
 neu=0
