@@ -470,6 +470,39 @@ void setColor(lv_obj_t *l, uint32_t color) {
   lv_obj_set_style_text_color(l, lv_color_hex(color), 0);
 }
 
+// Like setColor, but only touches the object when the colour actually
+// changes. Static pages (heating) otherwise invalidate and redraw every
+// second for values that did not move - visible as flicker.
+void setColorIfChanged(lv_obj_t *l, uint32_t color) {
+  if (l == nullptr) {
+    return;
+  }
+  struct Entry {
+    lv_obj_t *obj = nullptr;
+    uint32_t color = 0;
+  };
+  static Entry cache[32];
+  for (Entry &e : cache) {
+    if (e.obj == l) {
+      if (e.color == color) {
+        return;
+      }
+      e.color = color;
+      setColor(l, color);
+      return;
+    }
+  }
+  for (Entry &e : cache) {
+    if (e.obj == nullptr) {
+      e.obj = l;
+      e.color = color;
+      setColor(l, color);
+      return;
+    }
+  }
+  setColor(l, color);
+}
+
 // Wallbox configuration page -------------------------------------------
 
 // German labels used by the WARP web interface for ConfigChargeMode.
@@ -2143,22 +2176,22 @@ void update(const WarpData &d) {
     auto onOff = [](bool v) { return v ? "Aktiv" : "Inaktiv"; };
     g_lastHeatingOverride = d.hasSgrOverride;
     if (d.hasHeating) {
-      setText(w.heatBlocking, onOff(d.sgrBlocking));
-      setColor(w.heatBlocking, d.sgrBlocking ? C_EV : C_MUTED);
-      setText(w.heatExtended, onOff(d.sgrExtended));
-      setColor(w.heatExtended, d.sgrExtended ? C_EV : C_MUTED);
-      setText(w.heatStatus, onOff(d.heatingEnabled));
-      setColor(w.heatStatus, d.heatingEnabled ? C_TEXT : C_MUTED);
-      setText(w.heatP14, onOff(d.p14Enwg));
-      setColor(w.heatP14, d.p14Enwg ? C_RED : C_MUTED);
-      setText(w.heatOverride, onOff(d.automationOverride));
-      setColor(w.heatOverride, d.automationOverride ? C_EV : C_MUTED);
+      setTextIfChanged(w.heatBlocking, onOff(d.sgrBlocking));
+      setColorIfChanged(w.heatBlocking, d.sgrBlocking ? C_EV : C_MUTED);
+      setTextIfChanged(w.heatExtended, onOff(d.sgrExtended));
+      setColorIfChanged(w.heatExtended, d.sgrExtended ? C_EV : C_MUTED);
+      setTextIfChanged(w.heatStatus, onOff(d.heatingEnabled));
+      setColorIfChanged(w.heatStatus, d.heatingEnabled ? C_TEXT : C_MUTED);
+      setTextIfChanged(w.heatP14, onOff(d.p14Enwg));
+      setColorIfChanged(w.heatP14, d.p14Enwg ? C_RED : C_MUTED);
+      setTextIfChanged(w.heatOverride, onOff(d.automationOverride));
+      setColorIfChanged(w.heatOverride, d.automationOverride ? C_EV : C_MUTED);
     } else {
-      setText(w.heatBlocking, "--");
-      setText(w.heatExtended, "--");
-      setText(w.heatStatus, "--");
-      setText(w.heatP14, "--");
-      setText(w.heatOverride, "--");
+      setTextIfChanged(w.heatBlocking, "--");
+      setTextIfChanged(w.heatExtended, "--");
+      setTextIfChanged(w.heatStatus, "--");
+      setTextIfChanged(w.heatP14, "--");
+      setTextIfChanged(w.heatOverride, "--");
     }
     if (w.heatPartyBtn != nullptr) {
       lv_obj_t *lbl = lv_obj_get_child(w.heatPartyBtn, 0);
@@ -2170,6 +2203,9 @@ void update(const WarpData &d) {
       }
       const bool overrideShown =
           g_partyPending ? g_partyPendingOn : d.hasSgrOverride;
+      static bool partyShown = false;
+      const bool partyWasShown = partyShown;
+      partyShown = overrideShown;
       if (overrideShown) {
         char buf[40];
         const uint32_t remaining =
@@ -2177,33 +2213,42 @@ void update(const WarpData &d) {
                 ? 120
                 : d.sgrOverrideRemainingMin;
         snprintf(buf, sizeof(buf), "Aus (%lu min)", (unsigned long)remaining);
-        setText(lbl, buf);
-        lv_obj_set_style_bg_color(w.heatPartyBtn, lv_color_hex(C_EV), 0);
+        setTextIfChanged(lbl, buf);
+        if (!partyWasShown) {
+          lv_obj_set_style_bg_color(w.heatPartyBtn, lv_color_hex(C_EV), 0);
+        }
       } else {
-        setText(lbl, "Einschalten");
-        lv_obj_set_style_bg_color(w.heatPartyBtn, lv_color_hex(C_CARD2), 0);
+        setTextIfChanged(lbl, "Einschalten");
+        if (partyWasShown) {
+          lv_obj_set_style_bg_color(w.heatPartyBtn, lv_color_hex(C_CARD2), 0);
+        }
       }
       // Always clickable: the party mode must also work when the SG-Ready
-      // output is not currently blocking anything.
-      lv_obj_clear_state(w.heatPartyBtn, LV_STATE_DISABLED);
+      // output is not currently blocking anything. Clear only once, a state
+      // change every second would invalidate the button every second.
+      static bool partyEnabled = false;
+      if (!partyEnabled) {
+        lv_obj_clear_state(w.heatPartyBtn, LV_STATE_DISABLED);
+        partyEnabled = true;
+      }
     }
     char buf[64];
     if (d.hasTemps) {
       fmtTemp(buf, sizeof(buf), d.tempCurrent);
-      setText(w.tempNow, buf);
+      setTextIfChanged(w.tempNow, buf);
       char lo[16], hi[16];
       fmtTemp(lo, sizeof(lo), d.tempTodayMin);
       fmtTemp(hi, sizeof(hi), d.tempTodayMax);
       snprintf(buf, sizeof(buf), "%s / %s", lo, hi);
-      setText(w.tempToday, buf);
+      setTextIfChanged(w.tempToday, buf);
       fmtTemp(lo, sizeof(lo), d.tempTomorrowMin);
       fmtTemp(hi, sizeof(hi), d.tempTomorrowMax);
       snprintf(buf, sizeof(buf), "%s / %s", lo, hi);
-      setText(w.tempTomorrow, buf);
+      setTextIfChanged(w.tempTomorrow, buf);
     } else {
-      setText(w.tempNow, "--");
-      setText(w.tempToday, "--");
-      setText(w.tempTomorrow, "--");
+      setTextIfChanged(w.tempNow, "--");
+      setTextIfChanged(w.tempToday, "--");
+      setTextIfChanged(w.tempTomorrow, "--");
     }
   }
 
