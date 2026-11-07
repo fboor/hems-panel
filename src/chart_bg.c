@@ -1,3 +1,7 @@
+// Background photograph (solar panel with a leaf), (c) 2026 Florian Boor,
+// Creative Commons CC BY 3.0 or later. Converted to LVGL RGB565 with
+// LVGLImage.py from the source photograph; this header is not regenerated,
+// re-add it after regenerating.
 
 #ifdef __has_include
     #if __has_include("lvgl.h")

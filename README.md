@@ -405,4 +405,12 @@ the panel timings and the CH422G expander.
 
 ## License
 
-MIT.
+MIT, Copyright (c) 2026 warp-panel contributors.
+
+Third-party components keep their own licenses: LVGL and WiFiManager
+(MIT), the Arduino-ESP32 core (Apache-2.0, with LGPL parts in the
+underlying libraries), Montserrat (SIL OFL 1.1), Font Awesome Free
+(CC BY 4.0), Material Design Icons (Apache-2.0) and DejaVu Sans
+(Bitstream Vera). The background photograph in `src/chart_bg.c`
+(solar panel with a leaf) is (c) 2026 Florian Boor, Creative Commons
+CC BY 3.0 or later.
