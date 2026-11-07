@@ -726,9 +726,9 @@ class Handler(BaseHTTPRequestHandler):
                 "error_flags": 0,
                 "config_error_flags": 0,
                 "em_version": 2,
-                "inputs": [False, False, False, False],
-                "sg_ready_outputs": [False, False],
-                "relays": [False, False],
+                "inputs": [True, False, True, False],
+                "sg_ready_outputs": [True, False],
+                "relays": [False, True],
             })
             return
 

@@ -79,6 +79,8 @@ struct PowerSample {
   float pv;
   float house;
   float battery;
+  float wb1;
+  float wb2;
 };
 
 PowerSample g_samples[kMaxSamples];
@@ -94,6 +96,8 @@ int32_t g_chartGrid[kChartPoints];
 int32_t g_chartPv[kChartPoints];
 int32_t g_chartHouse[kChartPoints];
 int32_t g_chartBattery[kChartPoints];
+int32_t g_chartWb1[kChartPoints];
+int32_t g_chartWb2[kChartPoints];
 
 struct Widgets {
   lv_obj_t *statusChip = nullptr;
@@ -164,6 +168,11 @@ struct Widgets {
   lv_chart_series_t *seriesPv = nullptr;
   lv_chart_series_t *seriesHouse = nullptr;
   lv_chart_series_t *seriesBat = nullptr;
+  lv_chart_series_t *seriesWb1 = nullptr;
+  lv_chart_series_t *seriesWb2 = nullptr;
+  lv_obj_t *ioDot[8] = {};
+  lv_obj_t *wbLegendDot[2] = {};
+  lv_obj_t *wbLegendLabel[2] = {};
   lv_obj_t *scaleMax = nullptr;
   lv_obj_t *scaleMid = nullptr;
   lv_obj_t *scaleMin = nullptr;
@@ -799,8 +808,10 @@ void recordPowerSample(uint32_t now, const WarpData &d) {
     --g_sampleCount;
   }
   const int index = (g_sampleHead + g_sampleCount) % kMaxSamples;
+  const float wb1 = d.charger_count > 0 ? d.chargers[0].power : 0.0f;
+  const float wb2 = d.charger_count > 1 ? d.chargers[1].power : 0.0f;
   g_samples[index] = {now, d.gridPower, d.pvPower, d.housePower,
-                      d.batteryPower};
+                      d.batteryPower, wb1, wb2};
   ++g_sampleCount;
 
   // Drop the oldest entries as soon as they fall out of the 24 h window.
@@ -846,14 +857,16 @@ void rebuildPowerChart() {
       g_chartPv[i] = LV_CHART_POINT_NONE;
       g_chartHouse[i] = LV_CHART_POINT_NONE;
       g_chartBattery[i] = LV_CHART_POINT_NONE;
+      g_chartWb1[i] = LV_CHART_POINT_NONE;
+      g_chartWb2[i] = LV_CHART_POINT_NONE;
       continue;
     }
 
     const PowerSample &s = sampleAt(sampleIndex);
-    const float values[4] = {s.grid, s.pv, s.house, s.battery};
-    int32_t *const out[4] = {g_chartGrid, g_chartPv, g_chartHouse,
-                             g_chartBattery};
-    for (int j = 0; j < 4; ++j) {
+    const float values[6] = {s.grid, s.pv, s.house, s.battery, s.wb1, s.wb2};
+    int32_t *const out[6] = {g_chartGrid, g_chartPv, g_chartHouse,
+                             g_chartBattery, g_chartWb1, g_chartWb2};
+    for (int j = 0; j < 6; ++j) {
       out[j][i] = (int32_t)lroundf(values[j]);
       if (!haveValue) {
         mn = mx = values[j];
@@ -1125,9 +1138,11 @@ void create(lv_obj_t *parent) {
   lv_obj_set_size(w.page2, 790, 372);
   lv_obj_add_flag(w.page2, LV_OBJ_FLAG_HIDDEN);
 
+  // Chart colours as on the panel's Energiebilanz page: load blue, PV
+  // orange, grid green, battery red, wallboxes purple and brown.
   w.powerChart = lv_chart_create(w.page2);
   lv_obj_set_pos(w.powerChart, 12, 0);
-  lv_obj_set_size(w.powerChart, 766, 320);
+  lv_obj_set_size(w.powerChart, 766, 240);
   lv_chart_set_type(w.powerChart, LV_CHART_TYPE_LINE);
   lv_chart_set_point_count(w.powerChart, kChartPoints);
   lv_chart_set_range(w.powerChart, LV_CHART_AXIS_PRIMARY_Y, -5000, 5000);
@@ -1140,46 +1155,77 @@ void create(lv_obj_t *parent) {
   lv_obj_set_style_line_color(w.powerChart, lv_color_hex(C_MUTED), 0);
   lv_obj_set_style_pad_all(w.powerChart, 0, 0);
   w.scaleMax = label(w.page2, 20, 5, 60, F_SMALL, C_MUTED, "--", LV_TEXT_ALIGN_LEFT, false);
-  w.scaleMid = label(w.page2, 20, 162, 60, F_SMALL, C_MUTED, "--", LV_TEXT_ALIGN_LEFT, false);
-  w.scaleMin = label(w.page2, 20, 302, 60, F_SMALL, C_MUTED, "--", LV_TEXT_ALIGN_LEFT, false);
-  w.seriesGrid = lv_chart_add_series(w.powerChart, lv_color_hex(0xFFA726), LV_CHART_AXIS_PRIMARY_Y);
-  w.seriesPv = lv_chart_add_series(w.powerChart, lv_color_hex(0x4A90D9), LV_CHART_AXIS_PRIMARY_Y);
-  w.seriesHouse = lv_chart_add_series(w.powerChart, lv_color_hex(0xFF5D5D), LV_CHART_AXIS_PRIMARY_Y);
-  w.seriesBat = lv_chart_add_series(w.powerChart, lv_color_hex(0x66BB6A), LV_CHART_AXIS_PRIMARY_Y);
+  w.scaleMid = label(w.page2, 20, 122, 60, F_SMALL, C_MUTED, "--", LV_TEXT_ALIGN_LEFT, false);
+  w.scaleMin = label(w.page2, 20, 222, 60, F_SMALL, C_MUTED, "--", LV_TEXT_ALIGN_LEFT, false);
+  w.seriesGrid = lv_chart_add_series(w.powerChart, lv_color_hex(0x2CA02C), LV_CHART_AXIS_PRIMARY_Y);
+  w.seriesPv = lv_chart_add_series(w.powerChart, lv_color_hex(0xFF7F0E), LV_CHART_AXIS_PRIMARY_Y);
+  w.seriesHouse = lv_chart_add_series(w.powerChart, lv_color_hex(0x007BFF), LV_CHART_AXIS_PRIMARY_Y);
+  w.seriesBat = lv_chart_add_series(w.powerChart, lv_color_hex(0xD62728), LV_CHART_AXIS_PRIMARY_Y);
+  w.seriesWb1 = lv_chart_add_series(w.powerChart, lv_color_hex(0x9467BD), LV_CHART_AXIS_PRIMARY_Y);
+  w.seriesWb2 = lv_chart_add_series(w.powerChart, lv_color_hex(0x8C564B), LV_CHART_AXIS_PRIMARY_Y);
   for (int i = 0; i < kChartPoints; ++i) {
     g_chartGrid[i] = LV_CHART_POINT_NONE;
     g_chartPv[i] = LV_CHART_POINT_NONE;
     g_chartHouse[i] = LV_CHART_POINT_NONE;
     g_chartBattery[i] = LV_CHART_POINT_NONE;
+    g_chartWb1[i] = LV_CHART_POINT_NONE;
+    g_chartWb2[i] = LV_CHART_POINT_NONE;
   }
   lv_chart_set_series_ext_y_array(w.powerChart, w.seriesGrid, g_chartGrid);
   lv_chart_set_series_ext_y_array(w.powerChart, w.seriesPv, g_chartPv);
   lv_chart_set_series_ext_y_array(w.powerChart, w.seriesHouse, g_chartHouse);
   lv_chart_set_series_ext_y_array(w.powerChart, w.seriesBat, g_chartBattery);
+  lv_chart_set_series_ext_y_array(w.powerChart, w.seriesWb1, g_chartWb1);
+  lv_chart_set_series_ext_y_array(w.powerChart, w.seriesWb2, g_chartWb2);
 
   // Time labels at bottom (reversed: new values on right)
   const int xpos[5] = {8, 185, 375, 565, 755};
   for (int i = 0; i < 5; ++i) {
-    w.timeLabel[i] = label(w.page2, xpos[i], 322, 40, F_SMALL, C_MUTED,
+    w.timeLabel[i] = label(w.page2, xpos[i], 242, 40, F_SMALL, C_MUTED,
                            "--", LV_TEXT_ALIGN_CENTER);
   }
   updateTimeLabels(3600);
 
-  // Legend (centered)
-  const char *names[4] = {"Netz", "Erzeugung", "Verbrauch", "Akku"};
-  lv_color_t colors[4] = {lv_color_hex(0xFFA726), lv_color_hex(0x4A90D9), lv_color_hex(0xFF5D5D), lv_color_hex(0x66BB6A)};
-  const int legendOffset[4] = {0, -27, 0, 0};
-  for (int i = 0; i < 4; ++i) {
+  // Legend: the four meter series plus up to two wallboxes by name, in the
+  // same colours as the chart lines.
+  const char *names[4] = {"Netz", "PV", "Verbrauch", "Akku"};
+  lv_color_t colors[6] = {lv_color_hex(0x2CA02C), lv_color_hex(0xFF7F0E),
+                          lv_color_hex(0x007BFF), lv_color_hex(0xD62728),
+                          lv_color_hex(0x9467BD), lv_color_hex(0x8C564B)};
+  for (int i = 0; i < 6; ++i) {
     lv_obj_t *dot = lv_obj_create(w.page2);
     lv_obj_remove_style_all(dot);
-    int xoff = (i < 2) ? 20 : 0;
-    lv_obj_set_pos(dot, 180 + i * 120 + xoff + legendOffset[i], 345);
+    lv_obj_set_pos(dot, 16 + i * 128, 268);
     lv_obj_set_size(dot, 10, 10);
     lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(dot, colors[i], 0);
     lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
-    label(w.page2, 194 + i * 120 + xoff + legendOffset[i], 341, 0, F_SMALL,
-          C_MUTED, names[i]);
+    if (i < 4) {
+      label(w.page2, 30 + i * 128, 264, 110, F_SMALL, C_MUTED, names[i]);
+    } else {
+      w.wbLegendDot[i - 4] = dot;
+      w.wbLegendLabel[i - 4] = label(w.page2, 30 + i * 128, 264, 110, F_SMALL,
+                                     C_MUTED, "--");
+    }
+  }
+
+  // Current IO states as indicator dots: 4 inputs, 2 relays, 2 SG-Ready
+  // outputs. The web interface draws these as history bars over the chart;
+  // here only the current state fits, so each gets a dot below its label.
+  const char *ioNames[8] = {"Eingang 1", "Eingang 2", "Eingang 3",
+                            "Eingang 4", "Relais 1", "Relais 2", "SG 1",
+                            "SG 2"};
+  for (int i = 0; i < 8; ++i) {
+    label(w.page2, 5 + i * 95, 292, 90, F_SMALL, C_MUTED, ioNames[i],
+          LV_TEXT_ALIGN_CENTER);
+    lv_obj_t *dot = lv_obj_create(w.page2);
+    lv_obj_remove_style_all(dot);
+    lv_obj_set_pos(dot, 44 + i * 95, 312);
+    lv_obj_set_size(dot, 12, 12);
+    lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(dot, lv_color_hex(C_MUTED), 0);
+    lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
+    w.ioDot[i] = dot;
   }
 
   // Third page (settings) ---------------------------------------------
@@ -1899,6 +1945,42 @@ void update(const WarpData &d) {
       g_lastSampleMs = now;
       g_haveSample = true;
       rebuildPowerChart();
+    }
+    // IO indicator dots and wallbox legend names. The wallbox series are
+    // hidden when fewer than two chargers are present.
+    const bool ioState[8] = {d.ioInputs[0], d.ioInputs[1], d.ioInputs[2],
+                             d.ioInputs[3], d.ioRelays[0], d.ioRelays[1],
+                             d.ioSgReady[0], d.ioSgReady[1]};
+    for (int i = 0; i < 8; ++i) {
+      if (w.ioDot[i] != nullptr) {
+        lv_obj_set_style_bg_color(
+            w.ioDot[i],
+            lv_color_hex(d.hasIoStates && ioState[i] ? C_GREEN : C_MUTED),
+            0);
+      }
+    }
+    for (int i = 0; i < 2; ++i) {
+      const bool present = d.charger_count > i;
+      if (w.wbLegendDot[i] != nullptr) {
+        if (present) {
+          lv_obj_clear_flag(w.wbLegendDot[i], LV_OBJ_FLAG_HIDDEN);
+        } else {
+          lv_obj_add_flag(w.wbLegendDot[i], LV_OBJ_FLAG_HIDDEN);
+        }
+      }
+      if (w.wbLegendLabel[i] != nullptr) {
+        if (present) {
+          lv_obj_clear_flag(w.wbLegendLabel[i], LV_OBJ_FLAG_HIDDEN);
+          const char *name = d.chargers[i].name[0] != '\0'
+                                 ? d.chargers[i].name
+                                 : (i == 0 ? "Wallbox 1" : "Wallbox 2");
+          char shortName[16];
+          snprintf(shortName, sizeof(shortName), "%.12s", name);
+          setText(w.wbLegendLabel[i], shortName);
+        } else {
+          lv_obj_add_flag(w.wbLegendLabel[i], LV_OBJ_FLAG_HIDDEN);
+        }
+      }
     }
   }
   // Energy flow page ---------------------------------------------------
