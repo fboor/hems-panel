@@ -582,11 +582,11 @@ ModeCard buildModeCard(lv_obj_t *parent, bool global, int index,
   lv_obj_set_style_radius(mc.card, 10, 0);
   lv_obj_set_style_border_width(mc.card, 1, 0);
   lv_obj_set_style_border_color(mc.card,
-                                lv_color_hex(global ? C_EV_DIM : C_LINE), 0);
+                                lv_color_hex(C_LINE), 0);
   lv_obj_clear_flag(mc.card, LV_OBJ_FLAG_SCROLLABLE);
 
   if (global) {
-    mc.name = label(mc.card, 16, 8, 520, F_TITLE, C_EV, "ALLE WALLBOXEN");
+    mc.name = label(mc.card, 16, 8, 520, F_TITLE, C_TEXT, "ALLE WALLBOXEN");
     mc.state = label(mc.card, 16, 32, 520, F_SMALL, C_MUTED,
                      "Modus für alle Ladepunkte");
   } else {
@@ -1240,9 +1240,10 @@ void create(lv_obj_t *parent) {
   lv_obj_remove_style_all(w.page4);
   lv_obj_set_pos(w.page4, 0, 68);
   lv_obj_set_size(w.page4, 790, 356);
-  // Test: chart background image moved here from the history chart (page 3).
+  // Background image from the history chart (page 3), darkened at build
+  // time so it can be drawn opaque without per-pixel blending.
   lv_obj_set_style_bg_image_src(w.page4, &chart_bg, 0);
-  lv_obj_set_style_bg_image_opa(w.page4, LV_OPA_60, 0);
+  lv_obj_set_style_bg_image_opa(w.page4, LV_OPA_COVER, 0);
   lv_obj_add_flag(w.page4, LV_OBJ_FLAG_HIDDEN);
 
   // Fifth page (wallbox configuration) --------------------------------
@@ -1398,7 +1399,7 @@ void create(lv_obj_t *parent) {
   lv_obj_add_event_cb(bgImgBtn, [](lv_event_t *e) {
     static bool on = true;
     on = !on;
-    lv_obj_set_style_bg_image_opa(w.page4, on ? LV_OPA_60 : LV_OPA_TRANSP, 0);
+    lv_obj_set_style_bg_image_opa(w.page4, on ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
     lv_label_set_text(
         lv_obj_get_child(static_cast<lv_obj_t *>(lv_event_get_target(e)), 0),
         on ? "Bild: An" : "Bild: Aus");
