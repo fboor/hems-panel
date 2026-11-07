@@ -49,6 +49,7 @@ constexpr const char kNavFlowIcon[] = "\xF3\xB0\x8B\x9C";    // home
 constexpr const char kNavEnergyIcon[] = "\xF3\xB1\x90\x8B";  // lightning-bolt
 constexpr const char kNavChartIcon[] = "\xF3\xB0\x84\xAA";   // chart-line
 constexpr const char kNavServiceIcon[] = "\xF3\xB0\x96\xB7"; // wrench
+constexpr const char kNavHeatIcon[] = "\xF3\xB0\x94\x8F";    // thermometer
 
 constexpr const lv_font_t *F_SMALL = &lv_font_warp_14;
 constexpr const lv_font_t *F_BODY = &lv_font_warp_16;
@@ -106,17 +107,29 @@ struct Widgets {
   lv_obj_t *pageBtn3 = nullptr;
   lv_obj_t *pageBtn4 = nullptr;
   lv_obj_t *pageBtn5 = nullptr;
+  lv_obj_t *pageBtn6 = nullptr;
   lv_obj_t *caption1 = nullptr;
   lv_obj_t *caption2 = nullptr;
   lv_obj_t *caption3 = nullptr;
   lv_obj_t *caption4 = nullptr;
   lv_obj_t *caption5 = nullptr;
+  lv_obj_t *caption6 = nullptr;
   lv_obj_t *page1 = nullptr;
   lv_obj_t *page2 = nullptr;
   lv_obj_t *page3 = nullptr;
   lv_obj_t *page4 = nullptr;
   lv_obj_t *page5 = nullptr;
+  lv_obj_t *page6 = nullptr;
   lv_obj_t *bgBtn = nullptr;
+  lv_obj_t *heatBlocking = nullptr;
+  lv_obj_t *heatExtended = nullptr;
+  lv_obj_t *heatStatus = nullptr;
+  lv_obj_t *heatP14 = nullptr;
+  lv_obj_t *heatOverride = nullptr;
+  lv_obj_t *heatPartyBtn = nullptr;
+  lv_obj_t *tempNow = nullptr;
+  lv_obj_t *tempToday = nullptr;
+  lv_obj_t *tempTomorrow = nullptr;
 
   // Energy flow page ----------------------------------------------------
   lv_obj_t *pvNode = nullptr;
@@ -235,6 +248,11 @@ PendingMode g_pendingGlobal;
 PendingMode g_pendingCharger[kWarpMaxChargers];
 
 warpui::ChargeModeHandler g_chargeModeHandler = nullptr;
+warpui::HeatingOverrideHandler g_heatingOverrideHandler = nullptr;
+bool g_lastHeatingOverride = false;
+bool g_partyPending = false;
+bool g_partyPendingOn = true;
+uint32_t g_partyPendingUntil = 0;
 
 // Text that sits directly on the page background follows the background
 // colour. Labels inside cards keep their own palette, so they are deliberately
@@ -370,6 +388,15 @@ void fmtEnergy(char *out, size_t n, double wh) {
     snprintf(out, n, "%.2f MWh", wh / 1000000.0);
   } else {
     snprintf(out, n, "%.1f kWh", wh / 1000.0);
+  }
+}
+
+// Temperatures arrive in degC x 10; INT16_MAX means not available.
+void fmtTemp(char *out, size_t n, int16_t t10) {
+  if (t10 == INT16_MAX) {
+    snprintf(out, n, "--");
+  } else {
+    snprintf(out, n, "%.1f °C", t10 / 10.0);
   }
 }
 
@@ -935,13 +962,13 @@ void flowDots(lv_obj_t *parent, int idx, uint32_t color) {
 void showPage(int page) {
   // Display order. The flow view was built as page4, but it is the first page
   // users should see; the energy, history, wallbox and service pages follow it.
-  lv_obj_t *pages[5] = {w.page4, w.page1, w.page2, w.page5, w.page3};
-  lv_obj_t *captions[5] = {w.caption4, w.caption1, w.caption2, w.caption5,
-                           w.caption3};
-  lv_obj_t *buttons[5] = {w.pageBtn1, w.pageBtn2, w.pageBtn3, w.pageBtn4,
-                          w.pageBtn5};
+  lv_obj_t *pages[6] = {w.page4, w.page1, w.page2, w.page5, w.page6, w.page3};
+  lv_obj_t *captions[6] = {w.caption4, w.caption1, w.caption2, w.caption5,
+                           w.caption6, w.caption3};
+  lv_obj_t *buttons[6] = {w.pageBtn1, w.pageBtn2, w.pageBtn3, w.pageBtn4,
+                          w.pageBtn5, w.pageBtn6};
 
-  for (int i = 0; i < 5; ++i) {
+  for (int i = 0; i < 6; ++i) {
     const bool active = (i == page - 1);
     if (pages[i] != nullptr) {
       if (active) {
@@ -981,14 +1008,16 @@ void create(lv_obj_t *parent) {
   label(parent, 16, 8, 0, F_TITLE, C_TEXT, "WARP Energy Manager");
   // Page captions
   w.caption1 = label(parent, 16, 40, 0, F_BODY, C_MUTED, "Energie");
-  w.caption2 = label(parent, 16, 40, 0, F_BODY, C_MUTED, "Verlauf");
+  w.caption2 = label(parent, 16, 40, 0, F_BODY, C_MUTED, "Energiebilanz");
   w.caption3 = label(parent, 16, 40, 0, F_BODY, C_MUTED, "Service");
   w.caption4 = label(parent, 16, 40, 0, F_BODY, C_MUTED, "Energiefluss");
   w.caption5 = label(parent, 16, 40, 0, F_BODY, C_MUTED, "Wallboxen");
+  w.caption6 = label(parent, 16, 40, 0, F_BODY, C_MUTED, "Heizung");
   lv_obj_add_flag(w.caption2, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(w.caption3, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(w.caption4, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(w.caption5, LV_OBJ_FLAG_HIDDEN);
+  lv_obj_add_flag(w.caption6, LV_OBJ_FLAG_HIDDEN);
 
   // One pill for the connection state. The WiFi glyph shows whether the
   // network is up; the text beside it shows whether data is arriving, so both
@@ -1184,6 +1213,56 @@ void create(lv_obj_t *parent) {
   lv_obj_set_scrollbar_mode(w.page5, LV_SCROLLBAR_MODE_AUTO);
   lv_obj_add_flag(w.page5, LV_OBJ_FLAG_HIDDEN);
 
+  // Heating page (SG-Ready + temperatures), style like the service page:
+  // cards with a small muted title and body rows.
+  w.page6 = lv_obj_create(parent);
+  lv_obj_remove_style_all(w.page6);
+  lv_obj_set_pos(w.page6, 0, 68);
+  lv_obj_set_size(w.page6, 790, 372);
+  lv_obj_add_flag(w.page6, LV_OBJ_FLAG_HIDDEN);
+
+  lv_obj_t *sg = card(w.page6, 16, 0, 758, 160);
+  title(sg, "SG-READY");
+  row(sg, 16, 34, 720, "Blockiert", &w.heatBlocking);
+  row(sg, 16, 58, 720, "Erweitert", &w.heatExtended);
+  row(sg, 16, 82, 720, "Status", &w.heatStatus);
+  row(sg, 16, 106, 720, "14a EnWG", &w.heatP14);
+  row(sg, 16, 130, 720, "Automatik-Override", &w.heatOverride);
+
+  lv_obj_t *party = card(w.page6, 16, 172, 758, 58);
+  title(party, "PARTYMODUS");
+  label(party, 16, 34, 400, F_BODY, C_MUTED, "2 Std. Override");
+  w.heatPartyBtn = lv_btn_create(party);
+  lv_obj_set_pos(w.heatPartyBtn, 542, 9);
+  lv_obj_set_size(w.heatPartyBtn, 200, 40);
+  lv_obj_set_style_radius(w.heatPartyBtn, 9, 0);
+  lv_obj_set_style_bg_color(w.heatPartyBtn, lv_color_hex(C_CARD2), 0);
+  lv_obj_set_style_bg_opa(w.heatPartyBtn, LV_OPA_COVER, 0);
+  lv_obj_set_style_border_width(w.heatPartyBtn, 1, 0);
+  lv_obj_set_style_border_color(w.heatPartyBtn, lv_color_hex(C_LINE), 0);
+  lv_obj_set_style_shadow_width(w.heatPartyBtn, 0, 0);
+  lv_obj_t *partyLbl = lv_label_create(w.heatPartyBtn);
+  lv_label_set_text(partyLbl, "Einschalten");
+  lv_obj_set_style_text_font(partyLbl, F_SMALL, 0);
+  lv_obj_set_style_text_color(partyLbl, lv_color_hex(C_TEXT), 0);
+  lv_obj_center(partyLbl);
+  lv_obj_add_event_cb(w.heatPartyBtn, [](lv_event_t *) {
+    if (g_heatingOverrideHandler != nullptr) {
+      // Show the result immediately; the poll confirming it arrives a few
+      // seconds later. The pending state expires after 15 s if it does not.
+      g_partyPendingOn = !g_lastHeatingOverride;
+      g_partyPending = true;
+      g_partyPendingUntil = lv_tick_get() + 15000;
+      g_heatingOverrideHandler(g_partyPendingOn);
+    }
+  }, LV_EVENT_CLICKED, nullptr);
+
+  lv_obj_t *temps = card(w.page6, 16, 242, 758, 110);
+  title(temps, "TEMPERATUR");
+  row(temps, 16, 34, 720, "Jetzt", &w.tempNow);
+  row(temps, 16, 58, 720, "Heute Min/Max", &w.tempToday);
+  row(temps, 16, 82, 720, "Morgen Min/Max", &w.tempTomorrow);
+
   // Energy flow: four links around a central house hub. Links are drawn
   // first, particles next and cards last, so particles slide underneath the
   // nodes instead of crossing their text.
@@ -1310,7 +1389,7 @@ void create(lv_obj_t *parent) {
   auto makeNav = [](lv_obj_t *p, int x, int y, const char *text) {
     lv_obj_t *b = lv_btn_create(p);
     lv_obj_set_pos(b, x, y);
-    lv_obj_set_size(b, 50, 38);
+    lv_obj_set_size(b, 42, 38);
     lv_obj_set_style_radius(b, 9, 0);
     lv_obj_set_style_bg_color(b, lv_color_hex(C_CARD2), 0);
     lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
@@ -1326,10 +1405,11 @@ void create(lv_obj_t *parent) {
   };
 
   w.pageBtn1 = makeNav(parent, 500, 434, kNavFlowIcon);
-  w.pageBtn2 = makeNav(parent, 560, 434, kNavEnergyIcon);
-  w.pageBtn3 = makeNav(parent, 620, 434, kNavChartIcon);
-  w.pageBtn4 = makeNav(parent, 680, 434, kFlowCarIcon);
-  w.pageBtn5 = makeNav(parent, 740, 434, kNavServiceIcon);
+  w.pageBtn2 = makeNav(parent, 548, 434, kNavEnergyIcon);
+  w.pageBtn3 = makeNav(parent, 596, 434, kNavChartIcon);
+  w.pageBtn4 = makeNav(parent, 644, 434, kFlowCarIcon);
+  w.pageBtn5 = makeNav(parent, 692, 434, kNavHeatIcon);
+  w.pageBtn6 = makeNav(parent, 740, 434, kNavServiceIcon);
   lv_obj_add_event_cb(w.pageBtn1, [](lv_event_t *) { showPage(1); },
                       LV_EVENT_CLICKED, nullptr);
   lv_obj_add_event_cb(w.pageBtn2, [](lv_event_t *) { showPage(2); },
@@ -1339,6 +1419,8 @@ void create(lv_obj_t *parent) {
   lv_obj_add_event_cb(w.pageBtn4, [](lv_event_t *) { showPage(4); },
                       LV_EVENT_CLICKED, nullptr);
   lv_obj_add_event_cb(w.pageBtn5, [](lv_event_t *) { showPage(5); },
+                      LV_EVENT_CLICKED, nullptr);
+  lv_obj_add_event_cb(w.pageBtn6, [](lv_event_t *) { showPage(6); },
                       LV_EVENT_CLICKED, nullptr);
   showPage(1);
 
@@ -1399,14 +1481,18 @@ void setPage(int page) {
   if (page < 1) {
     page = 1;
   }
-  if (page > 5) {
-    page = 5;
+  if (page > 6) {
+    page = 6;
   }
   showPage(page);
 }
 
 void setChargeModeHandler(ChargeModeHandler handler) {
   g_chargeModeHandler = handler;
+}
+
+void setHeatingOverrideHandler(HeatingOverrideHandler handler) {
+  g_heatingOverrideHandler = handler;
 }
 
 void showSetup(const char *ssid, const char *password, const char *url) {
@@ -1967,6 +2053,75 @@ void update(const WarpData &d) {
     // Directions: grid/battery links run card -> hub by default.
     w.gridExporting = d.hasGrid && !d.island && d.gridPower < 0.0f;
     w.batCharging = d.hasBattery && d.batteryPower > 0.0f;
+  }
+
+  // Heating page ---------------------------------------------------------
+  {
+    auto onOff = [](bool v) { return v ? "Aktiv" : "Inaktiv"; };
+    g_lastHeatingOverride = d.hasSgrOverride;
+    if (d.hasHeating) {
+      setText(w.heatBlocking, onOff(d.sgrBlocking));
+      setColor(w.heatBlocking, d.sgrBlocking ? C_EV : C_MUTED);
+      setText(w.heatExtended, onOff(d.sgrExtended));
+      setColor(w.heatExtended, d.sgrExtended ? C_EV : C_MUTED);
+      setText(w.heatStatus, onOff(d.heatingEnabled));
+      setColor(w.heatStatus, d.heatingEnabled ? C_TEXT : C_MUTED);
+      setText(w.heatP14, onOff(d.p14Enwg));
+      setColor(w.heatP14, d.p14Enwg ? C_RED : C_MUTED);
+      setText(w.heatOverride, onOff(d.automationOverride));
+      setColor(w.heatOverride, d.automationOverride ? C_EV : C_MUTED);
+    } else {
+      setText(w.heatBlocking, "--");
+      setText(w.heatExtended, "--");
+      setText(w.heatStatus, "--");
+      setText(w.heatP14, "--");
+      setText(w.heatOverride, "--");
+    }
+    if (w.heatPartyBtn != nullptr) {
+      lv_obj_t *lbl = lv_obj_get_child(w.heatPartyBtn, 0);
+      // A tap shows its result immediately (pending), the real override
+      // state from the next poll replaces it within seconds.
+      if (g_partyPending &&
+          (int32_t)(lv_tick_get() - g_partyPendingUntil) >= 0) {
+        g_partyPending = false;
+      }
+      const bool overrideShown =
+          g_partyPending ? g_partyPendingOn : d.hasSgrOverride;
+      if (overrideShown) {
+        char buf[40];
+        const uint32_t remaining =
+            g_partyPending && !d.hasSgrOverride
+                ? 120
+                : d.sgrOverrideRemainingMin;
+        snprintf(buf, sizeof(buf), "Aus (%lu min)", (unsigned long)remaining);
+        setText(lbl, buf);
+        lv_obj_set_style_bg_color(w.heatPartyBtn, lv_color_hex(C_EV), 0);
+      } else {
+        setText(lbl, "Einschalten");
+        lv_obj_set_style_bg_color(w.heatPartyBtn, lv_color_hex(C_CARD2), 0);
+      }
+      // Always clickable: the party mode must also work when the SG-Ready
+      // output is not currently blocking anything.
+      lv_obj_clear_state(w.heatPartyBtn, LV_STATE_DISABLED);
+    }
+    char buf[64];
+    if (d.hasTemps) {
+      fmtTemp(buf, sizeof(buf), d.tempCurrent);
+      setText(w.tempNow, buf);
+      char lo[16], hi[16];
+      fmtTemp(lo, sizeof(lo), d.tempTodayMin);
+      fmtTemp(hi, sizeof(hi), d.tempTodayMax);
+      snprintf(buf, sizeof(buf), "%s / %s", lo, hi);
+      setText(w.tempToday, buf);
+      fmtTemp(lo, sizeof(lo), d.tempTomorrowMin);
+      fmtTemp(hi, sizeof(hi), d.tempTomorrowMax);
+      snprintf(buf, sizeof(buf), "%s / %s", lo, hi);
+      setText(w.tempTomorrow, buf);
+    } else {
+      setText(w.tempNow, "--");
+      setText(w.tempToday, "--");
+      setText(w.tempTomorrow, "--");
+    }
   }
 
   // Wallbox configuration page -----------------------------------------

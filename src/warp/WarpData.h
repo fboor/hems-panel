@@ -78,6 +78,32 @@ struct WarpData {
   int supported_modes[kWarpMaxModes] = {};
   int supported_mode_count = 0;
 
+  // Heating (SG-Ready for the heat pump) and outdoor temperatures.
+  // Temperatures arrive in °C x 10, INT16_MAX means not available.
+  bool hasHeating = false;
+  bool heatingEnabled = false;
+  bool sgrBlocking = false;
+  bool sgrExtended = false;
+  bool p14Enwg = false;
+  bool automationOverride = false;
+  bool hasSgrOverride = false;        // override_until != 0
+  uint32_t sgrOverrideRemainingMin = 0;
+  bool hasTemps = false;
+  int16_t tempCurrent = INT16_MAX;
+  int16_t tempTodayMin = INT16_MAX;
+  int16_t tempTodayMax = INT16_MAX;
+  int16_t tempTodayAvg = INT16_MAX;
+  int16_t tempTomorrowMin = INT16_MAX;
+  int16_t tempTomorrowMax = INT16_MAX;
+  int16_t tempTomorrowAvg = INT16_MAX;
+
+  // IO states from energy_manager/state: 4 inputs, 2 relays, 2 SG-Ready
+  // outputs. Shown as current-state indicators on the chart page.
+  bool hasIoStates = false;
+  bool ioInputs[4] = {};
+  bool ioRelays[2] = {};
+  bool ioSgReady[2] = {};
+
   // Grid connection.
   bool island = false;
   bool is_3phase = false;

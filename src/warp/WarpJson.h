@@ -328,4 +328,51 @@ inline bool arrayNumbers(const char *json, size_t len, const char *key,
   return numberArray(v, json + len, out, cap, count);
 }
 
+// Boolean array after "key":, e.g. {"inputs":[true,false,...]}.
+inline bool arrayBooleans(const char *json, size_t len, const char *key,
+                          bool *out, size_t cap, size_t &count) {
+  const char *v = nullptr;
+  if (json == nullptr || !find(json, len, key, &v)) {
+    return false;
+  }
+  const char *e = json + len;
+  v = skipWs(v, e);
+  if (v >= e || *v != '[') {
+    return false;
+  }
+  ++v;
+  count = 0;
+  for (;;) {
+    v = skipWs(v, e);
+    if (v >= e) {
+      return false;
+    }
+    if (*v == ']') {
+      return true;
+    }
+    bool value = false;
+    if (strncmp(v, "true", 4) == 0) {
+      value = true;
+      v += 4;
+    } else if (strncmp(v, "false", 5) == 0) {
+      v += 5;
+    } else {
+      return false;
+    }
+    if (count < cap) {
+      out[count] = value;
+    }
+    ++count;
+    v = skipWs(v, e);
+    if (v < e && *v == ',') {
+      ++v;
+      continue;
+    }
+    if (v < e && *v == ']') {
+      return true;
+    }
+    return false;
+  }
+}
+
 }  // namespace warpjson

@@ -80,6 +80,20 @@ BASE = {
     "charge_modes": None,         # per-charger list; None = use charge_mode
     "supported_charge_modes": [1, 2, 3, 0],  # Off, PV, Min+PV, Fast
     "charger_specs": None,        # explicit multi-charger layout
+    # Heating (SG-Ready) and outdoor temperatures.
+    "heating_enabled": True,
+    "sgr_blocking": True,
+    "sgr_extended": False,
+    "p14enwg": False,
+    "automation_override": False,
+    "sgr_override_until": 0,       # minutes since epoch, 0 = inactive
+    "temp_current": 52,            # degC x 10
+    "temp_today_min": 31,
+    "temp_today_max": 96,
+    "temp_today_avg": 63,
+    "temp_tomorrow_min": 28,
+    "temp_tomorrow_max": 88,
+    "temp_tomorrow_avg": 57,
 }
 
 
@@ -476,6 +490,7 @@ class Handler(BaseHTTPRequestHandler):
     # Command overrides persisted for the lifetime of the mock, per scenario.
     global_mode_overrides = {}
     charge_mode_overrides = {}
+    sgr_override_until = 0
 
     def log_message(self, fmt, *args):
         pass
@@ -663,6 +678,36 @@ class Handler(BaseHTTPRequestHandler):
             self._send({"mode": d.get("charge_mode", 2)})
             return
 
+        if path == "/heating/state":
+            self._send({
+                "automation_override": bool(d.get("automation_override", False)),
+                "sgr_blocking": bool(d.get("sgr_blocking", False)),
+                "sgr_extended": bool(d.get("sgr_extended", False)),
+                "p14enwg": bool(d.get("p14enwg", False)),
+                "next_update": 0,
+                "enabled": bool(d.get("heating_enabled", False)),
+            })
+            return
+
+        if path == "/heating/sgr_blocking_override":
+            self._send({"override_until": self.sgr_override_until})
+            return
+
+        if path == "/temperatures/state":
+            self._send({
+                "last_sync": 0,
+                "last_check": 0,
+                "next_check": 0,
+                "current": d.get("temp_current", 32767),
+                "today_min": d.get("temp_today_min", 32767),
+                "today_max": d.get("temp_today_max", 32767),
+                "today_avg": d.get("temp_today_avg", 32767),
+                "tomorrow_min": d.get("temp_tomorrow_min", 32767),
+                "tomorrow_max": d.get("temp_tomorrow_max", 32767),
+                "tomorrow_avg": d.get("temp_tomorrow_avg", 32767),
+            })
+            return
+
         if path == "/solar_forecast/state":
             self._send({
                 "wh_today": d.get("forecast_today_wh", 24100.0),
@@ -818,6 +863,17 @@ class Handler(BaseHTTPRequestHandler):
         if (path.startswith("/power_manager/charge_mode_update") or
                 path.startswith("/charge_manager/charge_modes")):
             self._command(path)
+            return
+        if path.startswith("/heating/sgr_blocking_override_update"):
+            length = int(self.headers.get("Content-Length", "0"))
+            raw = self.rfile.read(length) if length > 0 else b"{}"
+            try:
+                request = json.loads(raw)
+                Handler.sgr_override_until = int(request.get("override_until", 0))
+            except (json.JSONDecodeError, ValueError, TypeError):
+                self.send_error(400)
+                return
+            self._send("")
             return
         self.send_error(404)
 

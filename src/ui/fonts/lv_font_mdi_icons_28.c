@@ -1,11 +1,12 @@
 /*******************************************************************************
- * 28 px icon font with seven glyphs from Material Design Icons (Community),
+ * 28 px icon font with eight glyphs from Material Design Icons (Community),
  * Apache-2.0, https://github.com/pictogrammers/material-design-icons:
  *   U+F02DC "home"                        - nav: energy flow
  *   U+F140B "lightning-bolt"              - nav: energy
  *   U+F012A "chart-line"                  - nav: history chart
  *   U+F010B "car"                         - nav: wallbox, wallbox node
  *   U+F05B7 "wrench"                      - nav: service
+ *   U+F050F "thermometer"                 - nav: heating
  *   U+F0D3E "transmission-tower"          - grid / Netz node
  *   U+F1A74 "solar-power-variant-outline" - spare, kept because the font was
  *                                           generated as one file
@@ -16,7 +17,7 @@
  * Opts: --no-compress --no-prefilter --bpp 4 --size 28 --format lvgl
  *   --font materialdesignicons-webfont.ttf (MaterialDesign-Webfont, MDI 7.x)
  *   --range 0xF02DC --range 0xF140B --range 0xF012A --range 0xF010B
- *   --range 0xF05B7 --range 0xF0D3E --range 0xF1A74
+ *   --range 0xF05B7 --range 0xF0D3E --range 0xF1A74 --range 0xF050F
  *   --lv-font-name lv_font_mdi_icons_28
  ******************************************************************************/
 
@@ -128,6 +129,30 @@ static LV_ATTRIBUTE_LARGE_CONST const uint8_t glyph_bitmap[] = {
     0x0, 0x1, 0xff, 0xff, 0xfb, 0x0, 0x0, 0xbf,
     0xff, 0xff, 0x10, 0x0, 0x0, 0x1, 0xdd, 0xdd,
     0xd9, 0x0, 0x0, 0x9d, 0xdd, 0xdd, 0x10, 0x0,
+
+    /* U+F050F "󰔏" */
+    0x0, 0x0, 0x0, 0x11, 0x0, 0x0, 0x0, 0x0,
+    0x0, 0x2c, 0xff, 0xc2, 0x0, 0x0, 0x0, 0x0,
+    0xdf, 0xff, 0xfd, 0x0, 0x0, 0x0, 0x4, 0xff,
+    0x55, 0xff, 0x40, 0x0, 0x0, 0x6, 0xfe, 0x0,
+    0xef, 0x60, 0x0, 0x0, 0x6, 0xfe, 0x0, 0xef,
+    0x60, 0x0, 0x0, 0x6, 0xfe, 0x0, 0xef, 0x60,
+    0x0, 0x0, 0x6, 0xfe, 0x22, 0xef, 0x60, 0x0,
+    0x0, 0x6, 0xff, 0xff, 0xff, 0x60, 0x0, 0x0,
+    0x6, 0xff, 0xff, 0xff, 0x60, 0x0, 0x0, 0x6,
+    0xff, 0xff, 0xff, 0x60, 0x0, 0x0, 0x6, 0xff,
+    0xff, 0xff, 0x60, 0x0, 0x0, 0x6, 0xff, 0xff,
+    0xff, 0x60, 0x0, 0x0, 0x8, 0xff, 0xff, 0xff,
+    0x70, 0x0, 0x0, 0x4f, 0xff, 0xff, 0xff, 0xf4,
+    0x0, 0x0, 0xef, 0xff, 0xff, 0xff, 0xfe, 0x0,
+    0x7, 0xff, 0xff, 0xff, 0xff, 0xff, 0x60, 0xb,
+    0xff, 0xff, 0xff, 0xff, 0xff, 0xa0, 0xc, 0xff,
+    0xff, 0xff, 0xff, 0xff, 0xb0, 0xa, 0xff, 0xff,
+    0xff, 0xff, 0xff, 0x90, 0x4, 0xff, 0xff, 0xff,
+    0xff, 0xff, 0x40, 0x0, 0xcf, 0xff, 0xff, 0xff,
+    0xfc, 0x0, 0x0, 0x1d, 0xff, 0xff, 0xff, 0xd1,
+    0x0, 0x0, 0x0, 0x8e, 0xff, 0xe8, 0x0, 0x0,
+    0x0, 0x0, 0x0, 0x11, 0x0, 0x0, 0x0,
 
     /* U+F05B7 "󰖷" */
     0x0, 0x0, 0x0, 0x1, 0x32, 0x0, 0x0, 0x0,
@@ -288,10 +313,11 @@ static const lv_font_fmt_txt_glyph_dsc_t glyph_dsc[] = {
     {.bitmap_index = 0, .adv_w = 448, .box_w = 22, .box_h = 19, .ofs_x = 3, .ofs_y = 0},
     {.bitmap_index = 209, .adv_w = 448, .box_w = 24, .box_h = 21, .ofs_x = 2, .ofs_y = 0},
     {.bitmap_index = 461, .adv_w = 448, .box_w = 24, .box_h = 20, .ofs_x = 2, .ofs_y = 1},
-    {.bitmap_index = 701, .adv_w = 448, .box_w = 27, .box_h = 27, .ofs_x = 0, .ofs_y = -3},
-    {.bitmap_index = 1066, .adv_w = 448, .box_w = 20, .box_h = 25, .ofs_x = 4, .ofs_y = -2},
-    {.bitmap_index = 1316, .adv_w = 448, .box_w = 14, .box_h = 27, .ofs_x = 7, .ofs_y = -3},
-    {.bitmap_index = 1505, .adv_w = 448, .box_w = 24, .box_h = 25, .ofs_x = 2, .ofs_y = -2}
+    {.bitmap_index = 701, .adv_w = 448, .box_w = 14, .box_h = 25, .ofs_x = 7, .ofs_y = -2},
+    {.bitmap_index = 876, .adv_w = 448, .box_w = 27, .box_h = 27, .ofs_x = 0, .ofs_y = -3},
+    {.bitmap_index = 1241, .adv_w = 448, .box_w = 20, .box_h = 25, .ofs_x = 4, .ofs_y = -2},
+    {.bitmap_index = 1491, .adv_w = 448, .box_w = 14, .box_h = 27, .ofs_x = 7, .ofs_y = -3},
+    {.bitmap_index = 1680, .adv_w = 448, .box_w = 24, .box_h = 25, .ofs_x = 2, .ofs_y = -2}
 };
 
 /*---------------------
@@ -299,7 +325,7 @@ static const lv_font_fmt_txt_glyph_dsc_t glyph_dsc[] = {
  *--------------------*/
 
 static const uint16_t unicode_list_0[] = {
-    0x0, 0x1f, 0x1d1, 0x4ac, 0xc33, 0x1300, 0x1969
+    0x0, 0x1f, 0x1d1, 0x404, 0x4ac, 0xc33, 0x1300, 0x1969
 };
 
 /*Collect the unicode lists and glyph_id offsets*/
@@ -307,7 +333,7 @@ static const lv_font_fmt_txt_cmap_t cmaps[] =
 {
     {
         .range_start = 983307, .range_length = 6506, .glyph_id_start = 1,
-        .unicode_list = unicode_list_0, .glyph_id_ofs_list = NULL, .list_length = 7, .type = LV_FONT_FMT_TXT_CMAP_SPARSE_TINY
+        .unicode_list = unicode_list_0, .glyph_id_ofs_list = NULL, .list_length = 8, .type = LV_FONT_FMT_TXT_CMAP_SPARSE_TINY
     }
 };
 

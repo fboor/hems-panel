@@ -923,6 +923,24 @@ class Reader {
     return command(path, std::to_string(mode), error);
   }
 
+  /* Temporary SG-Ready override (the web interface's "Override", used here
+   * as the party mode): on=true sets override_until to now + 2 hours,
+   * on=false discards it with override_until = 0. */
+  bool setSgrOverride(bool on, std::string &error) {
+    uint32_t until = 0;
+    if (on) {
+      uint32_t nowMin = 0;
+      if (!nowMinutes(nowMin)) {
+        error = "keine Uhrzeit vom Geraet";
+        return false;
+      }
+      until = nowMin + 120;
+    }
+    const std::string body =
+        "{\"override_until\":" + std::to_string(until) + "}";
+    return command("/heating/sgr_blocking_override_update", body, error);
+  }
+
  private:
   // POSTs a command and treats a 2xx response as success. The firmware answers
   // commands with an empty body, so the response itself is not inspected.
@@ -934,6 +952,34 @@ class Reader {
 
   bool get(const std::string &path, std::string &body, std::string &error) {
     return transport_.get(base_ + path + query_, body, error);
+  }
+
+  // Current device time in minutes since the Unix epoch, from /rtc/time.
+  // The heating override_until uses the same unit, so the remaining time
+  // is a plain difference of the two.
+  bool nowMinutes(uint32_t &out) {
+    std::string body;
+    std::string error;
+    if (!get("/rtc/time", body, error)) {
+      return false;
+    }
+    int year = 0, month = 0, day = 0, hour = 0, minute = 0;
+    if (!warpjson::integer(body.data(), body.size(), "year", year) ||
+        !warpjson::integer(body.data(), body.size(), "month", month) ||
+        !warpjson::integer(body.data(), body.size(), "day", day) ||
+        !warpjson::integer(body.data(), body.size(), "hour", hour) ||
+        !warpjson::integer(body.data(), body.size(), "minute", minute)) {
+      return false;
+    }
+    // Days from civil (Howard Hinnant's algorithm), then minutes of day.
+    int y = year - (month <= 2 ? 1 : 0);
+    const int era = (y >= 0 ? y : y - 399) / 400;
+    const int yoe = y - era * 400;
+    const int doy = (153 * (month + (month > 2 ? -3 : 9)) + 2) / 5 + day - 1;
+    const int doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
+    const int64_t days = static_cast<int64_t>(era) * 146097 + doe - 719468;
+    out = static_cast<uint32_t>(days * 1440 + hour * 60 + minute);
+    return true;
   }
 
   static bool value(const Slot &slot, int id, double &out) {
@@ -1012,6 +1058,111 @@ class Reader {
       return NAN;
     }
     return values[base + slot];
+  }
+
+  void fetchSlow(WarpData &d) {
+    // Heating (SG-Ready) and outdoor temperatures. Both modules are optional;
+    // a missing endpoint simply leaves hasHeating/hasTemps false.
+    {
+      std::string body;
+      std::string error;
+      if (get("/heating/state", body, error)) {
+        bool v = false;
+        if (warpjson::boolean(body.data(), body.size(), "enabled", v)) {
+          d.heatingEnabled = v;
+        }
+        if (warpjson::boolean(body.data(), body.size(), "sgr_blocking", v)) {
+          d.sgrBlocking = v;
+        }
+        if (warpjson::boolean(body.data(), body.size(), "sgr_extended", v)) {
+          d.sgrExtended = v;
+        }
+        if (warpjson::boolean(body.data(), body.size(), "p14enwg", v)) {
+          d.p14Enwg = v;
+        }
+        if (warpjson::boolean(body.data(), body.size(), "automation_override",
+                              v)) {
+          d.automationOverride = v;
+        }
+        d.hasHeating = true;
+        std::string overrideBody;
+        std::string overrideError;
+        if (get("/heating/sgr_blocking_override", overrideBody,
+                overrideError)) {
+          double until = 0.0;
+          if (warpjson::number(overrideBody.data(), overrideBody.size(),
+                               "override_until", until) &&
+              until > 0.0) {
+            d.hasSgrOverride = true;
+            uint32_t nowMin = 0;
+            if (nowMinutes(nowMin)) {
+              d.sgrOverrideRemainingMin =
+                  until > nowMin ? static_cast<uint32_t>(until - nowMin) : 0;
+            }
+          }
+        }
+      }
+      if (get("/temperatures/state", body, error)) {
+        auto temp = [&body](const char *key, int16_t &out) {
+          double v = 0.0;
+          if (warpjson::number(body.data(), body.size(), key, v)) {
+            out = static_cast<int16_t>(v);
+            return true;
+          }
+          return false;
+        };
+        bool any = false;
+        any |= temp("current", d.tempCurrent);
+        any |= temp("today_min", d.tempTodayMin);
+        any |= temp("today_max", d.tempTodayMax);
+        any |= temp("today_avg", d.tempTodayAvg);
+        any |= temp("tomorrow_min", d.tempTomorrowMin);
+        any |= temp("tomorrow_max", d.tempTomorrowMax);
+        any |= temp("tomorrow_avg", d.tempTomorrowAvg);
+        d.hasTemps = any;
+      }
+    }
+
+    // IO states (inputs, relays, SG-Ready outputs) for the chart page.
+    {
+      std::string body;
+      std::string error;
+      if (get("/energy_manager/state", body, error)) {
+        size_t nInputs = 0, nRelays = 0, nSg = 0;
+        const bool okInputs = warpjson::arrayBooleans(
+            body.data(), body.size(), "inputs", d.ioInputs, 4, nInputs);
+        const bool okRelays = warpjson::arrayBooleans(
+            body.data(), body.size(), "relays", d.ioRelays, 2, nRelays);
+        const bool okSg = warpjson::arrayBooleans(
+            body.data(), body.size(), "sg_ready_outputs", d.ioSgReady, 2, nSg);
+        d.hasIoStates = okInputs || okRelays || okSg;
+      }
+    }
+  }
+
+  void copySlow(WarpData &d) {
+    d.hasHeating = slowCache_.hasHeating;
+    d.heatingEnabled = slowCache_.heatingEnabled;
+    d.sgrBlocking = slowCache_.sgrBlocking;
+    d.sgrExtended = slowCache_.sgrExtended;
+    d.p14Enwg = slowCache_.p14Enwg;
+    d.automationOverride = slowCache_.automationOverride;
+    d.hasSgrOverride = slowCache_.hasSgrOverride;
+    d.sgrOverrideRemainingMin = slowCache_.sgrOverrideRemainingMin;
+    d.hasTemps = slowCache_.hasTemps;
+    d.tempCurrent = slowCache_.tempCurrent;
+    d.tempTodayMin = slowCache_.tempTodayMin;
+    d.tempTodayMax = slowCache_.tempTodayMax;
+    d.tempTodayAvg = slowCache_.tempTodayAvg;
+    d.tempTomorrowMin = slowCache_.tempTomorrowMin;
+    d.tempTomorrowMax = slowCache_.tempTomorrowMax;
+    d.tempTomorrowAvg = slowCache_.tempTomorrowAvg;
+    d.hasIoStates = slowCache_.hasIoStates;
+    for (int i = 0; i < 4; ++i) d.ioInputs[i] = slowCache_.ioInputs[i];
+    for (int i = 0; i < 2; ++i) {
+      d.ioRelays[i] = slowCache_.ioRelays[i];
+      d.ioSgReady[i] = slowCache_.ioSgReady[i];
+    }
   }
 
   bool readDailyAutarky(WarpData &d) {
@@ -1123,6 +1274,8 @@ class Reader {
   int dailyTtl_ = 0;
   bool dailyHasAutarky_ = false;
   float dailyAutarky_ = 0.0f;
+  int slowTtl_ = 0;
+  WarpData slowCache_;
 };
 
 }  // namespace warpapi

@@ -315,6 +315,16 @@ void printData(const WarpData &d) {
          d.charge_state, d.chargeMeter ? "meter" : "calculated",
          d.chargeEstimated ? " (estimated)" : "");
   printf("global charge mode: %d\n", d.charge_mode);
+  if (d.hasHeating) {
+    printf("heating: enabled %d blocking %d extended %d p14enwg %d auto-ovr %d override-remaining %lu min\n",
+           d.heatingEnabled, d.sgrBlocking, d.sgrExtended, d.p14Enwg,
+           d.automationOverride, (unsigned long)d.sgrOverrideRemainingMin);
+  }
+  if (d.hasTemps) {
+    printf("temps: %.1f today %.1f/%.1f tomorrow %.1f/%.1f (degC)\n",
+           d.tempCurrent / 10.0, d.tempTodayMin / 10.0, d.tempTodayMax / 10.0,
+           d.tempTomorrowMin / 10.0, d.tempTomorrowMax / 10.0);
+  }
   for (int i = 0; i < d.charger_count; ++i) {
     const WarpChargerData &c = d.chargers[i];
     printf("  charger %d: %s  state %d  mode %d  %.1f W  %.1f A  %d ph%s%s\n",
@@ -336,6 +346,19 @@ void printData(const WarpData &d) {
 
 // Applies a mode from the wallbox page. The emulator opens a short-lived
 // reader for the command so it does not share state with the fetch thread.
+void setHeatingOverride(bool on) {
+  PosixTransport transport(g_options.timeoutMs, g_options.verbose);
+  warpapi::Reader reader(transport, g_options.url);
+  std::string error;
+  const bool ok = reader.setSgrOverride(on, error);
+  fprintf(stderr, "heating override %s: %s\n", on ? "on" : "off",
+          ok ? "ok" : "failed");
+  if (!ok && !error.empty()) {
+    fprintf(stderr, "  %s\n", error.c_str());
+  }
+  g_pollNow = true;
+}
+
 void setChargeMode(int charger, int mode) {
   PosixTransport transport(g_options.timeoutMs, g_options.verbose);
   warpapi::Reader reader(transport, g_options.url);
@@ -469,6 +492,7 @@ int main(int argc, char **argv) {
   warpui::create(lv_screen_active());
   warpui::setPage(opt.page);
   warpui::setChargeModeHandler(setChargeMode);
+  warpui::setHeatingOverrideHandler(setHeatingOverride);
   warpui::setConnectionState(warpui::ConnectionState::NoNet);
   warpui::setNetworkInfo("WLAN-Demo", "192.168.1.50", "http://192.168.1.222",
                          "http://warp-panel.local/");

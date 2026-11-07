@@ -26,7 +26,7 @@ enum class ConnectionState {
 
 void setConnectionState(ConnectionState state);
 
-// Switch the visible page (1..5). Used by the emulator to render a specific
+// Switch the visible page (1..6). Used by the emulator to render a specific
 // page for screenshots; the on-screen navigation calls the same helper.
 void setPage(int page);
 
@@ -35,6 +35,11 @@ void setPage(int page);
 // through the power manager. `mode` is a WARP ConfigChargeMode value.
 using ChargeModeHandler = void (*)(int charger, int mode);
 void setChargeModeHandler(ChargeModeHandler handler);
+
+// Called when the user toggles the temporary SG-Ready override (party mode)
+// on the heating page. `on` activates it for 15 minutes, off discards it.
+using HeatingOverrideHandler = void (*)(bool on);
+void setHeatingOverrideHandler(HeatingOverrideHandler handler);
 
 // First-boot Wi-Fi setup overlay. The setup access point is open, and the QR
 // code contains its SSID, so a phone can join without typing anything. The
