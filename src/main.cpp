@@ -16,6 +16,7 @@
 #include <lvgl.h>
 
 #include <memory>
+#include <atomic>
 
 #include "display/Backlight.h"
 #include "display/Display.h"
@@ -51,6 +52,20 @@ constexpr char g_apPassword[] = "";
 
 WarpData g_data;
 bool g_haveData = false;
+
+// Polling runs on core 0 so its blocking HTTP requests never freeze the
+// LVGL animation on core 1. The task writes g_pollData under g_dataMutex;
+// the UI thread copies it out and is the only caller of warpui::*.
+WarpData g_pollData;
+SemaphoreHandle_t g_dataMutex = nullptr;
+std::atomic<bool> g_dataReady{false};
+std::atomic<int> g_nextConnState{-1};  // warpui::ConnectionState, -1 = none
+std::atomic<bool> g_pollNow{false};
+std::atomic<bool> g_cmdPending{false};
+std::atomic<int> g_cmdCharger{-1};
+std::atomic<int> g_cmdMode{0};
+std::atomic<bool> g_heatCmdPending{false};
+std::atomic<bool> g_heatCmdOn{true};
 
 class HttpTransport : public warpapi::Transport {
  public:
@@ -103,7 +118,6 @@ class HttpTransport : public warpapi::Transport {
 HttpTransport g_transport;
 std::unique_ptr<warpapi::Reader> g_reader;
 
-uint32_t g_lastPoll = 0;
 uint32_t g_lastUi = 0;
 uint32_t g_lastTick = 0;
 
@@ -240,12 +254,22 @@ FetchResult fetchWarp(WarpData &out) {
 }
 
 // Applies a mode from the wallbox page. `charger` -1 means all chargers via
-// the power manager, otherwise the per-charger override. The next loop pass
-// polls immediately so the card reflects the new state without waiting 10 s.
+// the power manager, otherwise the per-charger override. The command runs on
+// the poll task (core 0) together with the next poll, so the card reflects
+// the new state without blocking the UI thread.
 void setChargeMode(int charger, int mode) {
+  g_cmdCharger = charger;
+  g_cmdMode = mode;
+  g_cmdPending = true;
+  g_pollNow = true;
+}
+
+void applyChargeMode() {
   if (!g_reader) {
     g_reader.reset(new warpapi::Reader(g_transport, g_url));
   }
+  const int charger = g_cmdCharger;
+  const int mode = g_cmdMode;
   std::string error;
   const bool ok =
       charger < 0 ? g_reader->setGlobalChargeMode(mode, error)
@@ -255,28 +279,65 @@ void setChargeMode(int charger, int mode) {
   if (!ok && !error.empty()) {
     Serial.printf("  %s\n", error.c_str());
   }
-  g_lastPoll = millis() - POLL_MS;
 }
 
-void poll() {
-  if (WiFi.status() != WL_CONNECTED) {
-    warpui::setConnectionState(warpui::ConnectionState::NoNet);
-    return;
-  }
+void setHeatingOverride(bool on) {
+  g_heatCmdOn = on;
+  g_heatCmdPending = true;
+  g_pollNow = true;
+}
 
-  WarpData fresh;
-  const FetchResult result = fetchWarp(fresh);
-  if (result != FetchResult::Ok) {
-    warpui::setConnectionState(result == FetchResult::Disconnected
-                                   ? warpui::ConnectionState::Disconnected
-                                   : warpui::ConnectionState::NoData);
-    return;
+void applyHeatingOverride() {
+  if (!g_reader) {
+    g_reader.reset(new warpapi::Reader(g_transport, g_url));
   }
-  fresh.lastUpdateMs = lv_tick_get();
-  g_data = fresh;
-  g_haveData = true;
-  warpui::update(g_data);
-  warpui::setConnectionState(warpui::ConnectionState::Data);
+  const bool on = g_heatCmdOn;
+  std::string error;
+  const bool ok = g_reader->setSgrOverride(on, error);
+  Serial.printf("Heizung Override %s: %s\n", on ? "an" : "aus",
+                ok ? "ok" : "fehlgeschlagen");
+  if (!ok && !error.empty()) {
+    Serial.printf("  %s\n", error.c_str());
+  }
+}
+
+void pollTask(void *) {
+  for (;;) {
+    if (g_cmdPending.exchange(false)) {
+      applyChargeMode();
+      g_pollNow = true;
+    }
+    if (g_heatCmdPending.exchange(false)) {
+      applyHeatingOverride();
+      g_pollNow = true;
+    }
+    if (WiFi.status() != WL_CONNECTED) {
+      g_nextConnState = static_cast<int>(warpui::ConnectionState::NoNet);
+    } else {
+      WarpData fresh;
+      const FetchResult result = fetchWarp(fresh);
+      if (result == FetchResult::Ok) {
+        fresh.lastUpdateMs = lv_tick_get();
+        if (xSemaphoreTake(g_dataMutex, portMAX_DELAY) == pdTRUE) {
+          g_pollData = fresh;
+          xSemaphoreGive(g_dataMutex);
+        }
+        g_dataReady = true;
+        g_nextConnState = static_cast<int>(warpui::ConnectionState::Data);
+      } else {
+        g_nextConnState = static_cast<int>(
+            result == FetchResult::Disconnected
+                ? warpui::ConnectionState::Disconnected
+                : warpui::ConnectionState::NoData);
+      }
+    }
+    // Sleep in 100 ms slices so a charge-mode tap or a Wi-Fi change is
+    // picked up within a second, not only at the next poll.
+    for (uint32_t waited = 0; waited < POLL_MS && !g_pollNow; waited += 100) {
+      vTaskDelay(pdMS_TO_TICKS(100));
+    }
+    g_pollNow = false;
+  }
 }
 
 void setupNetwork() {
@@ -352,6 +413,7 @@ void setup() {
   warpui::create(lv_screen_active());
   warpui::setConnectionState(warpui::ConnectionState::NoNet);
   warpui::setChargeModeHandler(setChargeMode);
+  warpui::setHeatingOverrideHandler(setHeatingOverride);
   backlightSetWakeable(touchInit());
   lv_indev_t *indev = lv_indev_create();
   lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
@@ -365,8 +427,8 @@ void setup() {
   ArduinoOTA.setHostname("warp-panel");
   ArduinoOTA.begin();
 
-  g_lastPoll = millis();
-  poll();
+  g_dataMutex = xSemaphoreCreateMutex();
+  xTaskCreatePinnedToCore(pollTask, "poll", 8192, nullptr, 2, nullptr, 0);
 }
 
 void loop() {
@@ -384,9 +446,18 @@ void loop() {
     updateNetworkInfo();
   }
 
-  if (now - g_lastPoll >= POLL_MS) {
-    g_lastPoll = now;
-    poll();
+  if (g_dataReady.exchange(false)) {
+    if (xSemaphoreTake(g_dataMutex, portMAX_DELAY) == pdTRUE) {
+      g_data = g_pollData;
+      xSemaphoreGive(g_dataMutex);
+    }
+    g_haveData = true;
+    warpui::update(g_data);
+  }
+  const int connState = g_nextConnState.exchange(-1);
+  if (connState >= 0) {
+    warpui::setConnectionState(
+        static_cast<warpui::ConnectionState>(connState));
   }
 
   if (now - g_lastUi >= UI_MS) {
