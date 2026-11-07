@@ -513,21 +513,60 @@ void setColorIfChanged(lv_obj_t *l, uint32_t color) {
   setColor(l, color);
 }
 
+// Same idea for the background colour (mode buttons, IO dots, party button).
+void setBgColorIfChanged(lv_obj_t *obj, uint32_t color, bool border = false) {
+  if (obj == nullptr) {
+    return;
+  }
+  struct Entry {
+    lv_obj_t *obj = nullptr;
+    uint32_t color = 0;
+    bool border = false;
+  };
+  static Entry cache[32];
+  auto apply = [&](Entry &e) {
+    e.obj = obj;
+    e.color = color;
+    e.border = border;
+    if (border) {
+      lv_obj_set_style_border_color(obj, lv_color_hex(color), 0);
+    } else {
+      lv_obj_set_style_bg_color(obj, lv_color_hex(color), 0);
+    }
+  };
+  for (Entry &e : cache) {
+    if (e.obj == obj && e.border == border) {
+      if (e.color == color) {
+        return;
+      }
+      apply(e);
+      return;
+    }
+  }
+  for (Entry &e : cache) {
+    if (e.obj == nullptr) {
+      apply(e);
+      return;
+    }
+  }
+  apply(cache[0]);
+}
+
 // Wallbox configuration page -------------------------------------------
 
 // German labels used by the WARP web interface for ConfigChargeMode.
 const char *chargeModeName(int mode) {
   switch (mode) {
-    case 0: return "Schnell";
-    case 1: return "Aus";
-    case 2: return "PV";
-    case 3: return "Min + PV";
-    case 4: return "Standard";
-    case 5: return "Min";
+    case 0: return TR("Schnell", "Fast");
+    case 1: return TR("Aus", "Off");
+    case 2: return TR("PV", "PV");
+    case 3: return TR("Min + PV", "Min + PV");
+    case 4: return TR("Standard", "Standard");
+    case 5: return TR("Min", "Min");
     case 6: return "Eco";
-    case 7: return "Eco + PV";
-    case 8: return "Eco + Min";
-    case 9: return "Eco + Min + PV";
+    case 7: return TR("Eco + PV", "Eco + PV");
+    case 8: return TR("Eco + Min", "Eco + Min");
+    case 9: return TR("Eco + Min + PV", "Eco + Min + PV");
     default: return "?";
   }
 }
@@ -566,15 +605,12 @@ void styleModeButton(lv_obj_t *button, bool selected) {
   if (button == nullptr) {
     return;
   }
-  lv_obj_set_style_bg_color(button,
-                            lv_color_hex(selected ? C_BLUE : C_CARD2), 0);
+  setBgColorIfChanged(button, selected ? C_BLUE : C_CARD2);
   lv_obj_set_style_bg_opa(button, LV_OPA_COVER, 0);
-  lv_obj_set_style_border_color(button,
-                                lv_color_hex(selected ? C_BLUE : C_LINE), 0);
+  setBgColorIfChanged(button, selected ? C_BLUE : C_LINE, true);
   lv_obj_t *lbl = lv_obj_get_child(button, 0);
   if (lbl != nullptr) {
-    lv_obj_set_style_text_color(
-        lbl, lv_color_hex(selected ? 0xFFFFFF : C_MUTED), 0);
+    setColorIfChanged(lbl, selected ? 0xFFFFFF : C_MUTED);
   }
 }
 
@@ -775,9 +811,9 @@ void updateModeCard(ModeCard &mc, const WarpData &d, int index, bool global) {
   if (c.name[0] != '\0') {
     snprintf(buf, sizeof(buf), "%s", c.name);
   } else {
-    snprintf(buf, sizeof(buf), "Wallbox %d", index + 1);
+    snprintf(buf, sizeof(buf), TR("Wallbox %d", "Wallbox %d"), index + 1);
   }
-  setText(mc.name, buf);
+  setTextIfChanged(mc.name, buf);
 
   const char *stateName = chargerStateName(c);
   if (c.estimated && c.state == 4) {
@@ -785,17 +821,17 @@ void updateModeCard(ModeCard &mc, const WarpData &d, int index, bool global) {
   } else {
     snprintf(buf, sizeof(buf), "%s", stateName);
   }
-  setText(mc.state, buf);
-  setColor(mc.state,
+  setTextIfChanged(mc.state, buf);
+  setColorIfChanged(mc.state,
            c.state == 5 ? C_RED : (c.state == 4 ? C_EV : C_MUTED));
 
   if (c.power > 0.5f) {
     fmtPower(buf, sizeof(buf), c.power);
-    setText(mc.power, buf);
-    setColor(mc.power, C_EV);
+    setTextIfChanged(mc.power, buf);
+    setColorIfChanged(mc.power, C_EV);
   } else {
-    setText(mc.power, "--");
-    setColor(mc.power, C_MUTED);
+    setTextIfChanged(mc.power, "--");
+    setColorIfChanged(mc.power, C_MUTED);
   }
 }
 
@@ -1006,7 +1042,7 @@ void flowDots(lv_obj_t *parent, int idx, uint32_t color) {
   for (int d = 0; d < 2; ++d) {
     lv_obj_t *dot = lv_obj_create(parent);
     lv_obj_remove_style_all(dot);
-    lv_obj_set_size(dot, 12, 12);
+    lv_obj_set_size(dot, 10, 10);
     lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(dot, lv_color_hex(color), 0);
     lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
@@ -1520,7 +1556,7 @@ void create(lv_obj_t *parent) {
                       LV_EVENT_CLICKED, nullptr);
   showPage(1);
 
-  // Particle animation. 12.5 fps on purpose: small 12 px objects, no opacity
+  // Particle animation. 10 fps on purpose: small 12 px objects, no opacity
   // layers and no full-page invalidation. Speed scales with power, so a strong
   // flow visibly moves faster without ever exceeding the CPU budget.
   lv_timer_create([](lv_timer_t *) {
@@ -1564,13 +1600,13 @@ void create(lv_obj_t *parent) {
         if (reverse) {
           s = 1.0f - s;
         }
-        const int x = static_cast<int>(x1 + (x2 - x1) * s + 0.5f) - 6;
-        const int y = static_cast<int>(y1 + (y2 - y1) * s + 0.5f) - 6;
+        const int x = static_cast<int>(x1 + (x2 - x1) * s + 0.5f) - 5;
+        const int y = static_cast<int>(y1 + (y2 - y1) * s + 0.5f) - 5;
         lv_obj_clear_flag(dot, LV_OBJ_FLAG_HIDDEN);
         lv_obj_set_pos(dot, x, y);
       }
     }
-  }, 80, nullptr);
+  }, 100, nullptr);
 }
 
 void setPage(int page) {
@@ -1748,15 +1784,15 @@ void update(const WarpData &d) {
     if (d.hasAutarky && d.hasAutarkyToday) {
       snprintf(buf, sizeof(buf), "%.0f %% / %.0f %%", d.autarkyToday,
                d.autarky);
-      setText(w.autarkyValue, buf);
-      setColor(w.autarkyValue, C_TEXT);
+      setTextIfChanged(w.autarkyValue, buf);
+      setColorIfChanged(w.autarkyValue, C_TEXT);
     } else if (d.hasAutarky) {
       snprintf(buf, sizeof(buf), "%.0f %%", d.autarky);
-      setText(w.autarkyValue, buf);
-      setColor(w.autarkyValue, C_TEXT);
+      setTextIfChanged(w.autarkyValue, buf);
+      setColorIfChanged(w.autarkyValue, C_TEXT);
     } else {
-      setText(w.autarkyValue, "--");
-      setColor(w.autarkyValue, C_MUTED);
+      setTextIfChanged(w.autarkyValue, "--");
+      setColorIfChanged(w.autarkyValue, C_MUTED);
     }
   }
   if (w.forecastValue != nullptr) {
@@ -1772,11 +1808,11 @@ void update(const WarpData &d) {
       } else {
         snprintf(buf, sizeof(buf), "-- / %s kWh", total);
       }
-      setText(w.forecastValue, buf);
-      setColor(w.forecastValue, C_TEXT);
+      setTextIfChanged(w.forecastValue, buf);
+      setColorIfChanged(w.forecastValue, C_TEXT);
     } else {
-      setText(w.forecastValue, "--");
-      setColor(w.forecastValue, C_MUTED);
+      setTextIfChanged(w.forecastValue, "--");
+      setColorIfChanged(w.forecastValue, C_MUTED);
     }
   }
 
@@ -1785,26 +1821,26 @@ void update(const WarpData &d) {
     if (d.hasGrid) {
       fmtPower(buf, sizeof(buf), std::fabs(d.gridPower));
       snprintf(buf2, sizeof(buf2), "%s%s", d.gridPower < 0.0 ? "-" : "", buf);
-      setText(w.gridTotal, buf2);
-      setColor(w.gridTotal, d.gridPower < 0.0 ? C_GREEN : C_AMBER);
+      setTextIfChanged(w.gridTotal, buf2);
+      setColorIfChanged(w.gridTotal, d.gridPower < 0.0 ? C_GREEN : C_AMBER);
     } else {
-      setText(w.gridTotal, "--");
-      setColor(w.gridTotal, C_MUTED);
+      setTextIfChanged(w.gridTotal, "--");
+      setColorIfChanged(w.gridTotal, C_MUTED);
     }
   }
-  setText(w.gridDir, !d.hasGrid ? "kein Messwert"
-                                : (d.gridPower < 0.0 ? "Einspeisung" : "Bezug"));
+  setTextIfChanged(w.gridDir, !d.hasGrid ? TR("kein Messwert", "no measurement")
+                                : (d.gridPower < 0.0 ? TR("Einspeisung", "Feed-in") : TR("Bezug", "Import")));
   {
     const float phases[3] = {d.gridL1, d.gridL2, d.gridL3};
     for (int i = 0; i < 3; ++i) {
       if (!d.hasGrid) {
-        setText(w.gridPhase[i], "--");
-        setColor(w.gridPhase[i], C_MUTED);
+        setTextIfChanged(w.gridPhase[i], "--");
+        setColorIfChanged(w.gridPhase[i], C_MUTED);
         continue;
       }
       fmtSignedPower(buf, sizeof(buf), phases[i]);
-      setText(w.gridPhase[i], buf);
-      setColor(w.gridPhase[i],
+      setTextIfChanged(w.gridPhase[i], buf);
+      setColorIfChanged(w.gridPhase[i],
                phases[i] < 0.0 ? C_GREEN : (phases[i] > 0.0 ? C_AMBER : C_TEXT));
     }
   }
@@ -1813,22 +1849,22 @@ void update(const WarpData &d) {
   if (w.houseTotal != nullptr) {
     if (d.hasHouse) {
       fmtPower(buf, sizeof(buf), d.housePower);
-      setText(w.houseTotal, buf);
-      setColor(w.houseTotal, C_TEXT);
+      setTextIfChanged(w.houseTotal, buf);
+      setColorIfChanged(w.houseTotal, C_TEXT);
     } else {
-      setText(w.houseTotal, "--");
-      setColor(w.houseTotal, C_MUTED);
+      setTextIfChanged(w.houseTotal, "--");
+      setColorIfChanged(w.houseTotal, C_MUTED);
     }
   }
   {
     const float phases[3] = {d.houseL1, d.houseL2, d.houseL3};
     for (int i = 0; i < 3; ++i) {
       if (!d.hasHouse) {
-        setText(w.housePhase[i], "--");
+        setTextIfChanged(w.housePhase[i], "--");
         continue;
       }
       fmtPower(buf, sizeof(buf), phases[i]);
-      setText(w.housePhase[i], buf);
+      setTextIfChanged(w.housePhase[i], buf);
     }
   }
 
@@ -1836,21 +1872,21 @@ void update(const WarpData &d) {
   if (w.pvTotal != nullptr) {
     if (d.hasPv) {
       fmtPower(buf, sizeof(buf), d.pvPower);
-      setText(w.pvTotal, buf);
-      setColor(w.pvTotal, C_GREEN);
+      setTextIfChanged(w.pvTotal, buf);
+      setColorIfChanged(w.pvTotal, C_GREEN);
     } else {
-      setText(w.pvTotal, "--");
-      setColor(w.pvTotal, C_MUTED);
+      setTextIfChanged(w.pvTotal, "--");
+      setColorIfChanged(w.pvTotal, C_MUTED);
     }
   }
   if (d.hasPvStrings) {
     fmtPower(buf, sizeof(buf), d.pvA);
-    setText(w.pvA, buf);
+    setTextIfChanged(w.pvA, buf);
     fmtPower(buf, sizeof(buf), d.pvB);
-    setText(w.pvB, buf);
+    setTextIfChanged(w.pvB, buf);
   } else {
-    setText(w.pvA, "--");
-    setText(w.pvB, "--");
+    setTextIfChanged(w.pvA, "--");
+    setTextIfChanged(w.pvB, "--");
   }
 
   // Wallbox -----------------------------------------------------------
@@ -1859,82 +1895,82 @@ void update(const WarpData &d) {
    * the allocated current and the phase voltages. */
   if (d.hasCharger && (d.charge_power > 0.1f || d.charge_current > 0.1)) {
     fmtPower(chargeBuf, sizeof(chargeBuf), d.charge_power);
-    setText(w.wallboxValue, chargeBuf);
+    setTextIfChanged(w.wallboxValue, chargeBuf);
     const bool charging = d.charge_state == 4 || d.charge_power > 10.0f;
     if (charging) {
-      setText(w.wallboxNote, d.chargeEstimated ? "Laden (geschätzt)" : "Laden");
+      setTextIfChanged(w.wallboxNote, d.chargeEstimated ? TR("Laden (geschätzt)", "Charging (estimated)") : TR("Laden", "Charging"));
     } else {
-      setText(w.wallboxNote, d.chargeEstimated ? "Bereit (geschätzt)" : "Bereit");
+      setTextIfChanged(w.wallboxNote, d.chargeEstimated ? TR("Bereit (geschätzt)", "Ready (estimated)") : TR("Bereit", "Ready"));
     }
   } else if (d.hasCharger) {
-    setText(w.wallboxValue, "--");
+    setTextIfChanged(w.wallboxValue, "--");
     if (d.charge_state == 5) {
-      setText(w.wallboxNote, "Fehler");
+      setTextIfChanged(w.wallboxNote, TR("Fehler", "Fault"));
     } else if (d.charge_state == 6) {
-      setText(w.wallboxNote, "Fertig");
+      setTextIfChanged(w.wallboxNote, TR("Fertig", "Finished"));
     } else if (d.charge_state == 1 || d.charge_state == 2 ||
                d.charge_state == 3 || d.charge_state == 7) {
-      setText(w.wallboxNote, "Blockiert");
+      setTextIfChanged(w.wallboxNote, TR("Blockiert", "Blocked"));
     } else {
-      setText(w.wallboxNote, "Kein Fahrzeug");
+      setTextIfChanged(w.wallboxNote, TR("Kein Fahrzeug", "No vehicle"));
     }
   } else {
-    setText(w.wallboxValue, "--");
-    setText(w.wallboxNote, "Getrennt");
+    setTextIfChanged(w.wallboxValue, "--");
+    setTextIfChanged(w.wallboxNote, TR("Getrennt", "Disconnected"));
   }
   const int overviewMode =
       d.charger_count > 0 ? d.chargers[0].mode : d.charge_mode;
-  snprintf(chargeBuf, sizeof(chargeBuf), "Modus: %s",
+  snprintf(chargeBuf, sizeof(chargeBuf), TR("Modus: %s", "Mode: %s"),
            chargeModeName(overviewMode));
-  setText(w.wallboxMode, chargeBuf);
+  setTextIfChanged(w.wallboxMode, chargeBuf);
   if (d.hasCharger && d.charge_phases > 0) {
-    snprintf(chargeBuf, sizeof(chargeBuf), "Phase: %s",
+    snprintf(chargeBuf, sizeof(chargeBuf), TR("Phase: %s", "Phase: %s"),
              d.charge_phases >= 3 ? "3-phasig" : "1-phasig");
   } else {
-    snprintf(chargeBuf, sizeof(chargeBuf), "Phase: --");
+    snprintf(chargeBuf, sizeof(chargeBuf), TR("Phase: --", "Phase: --"));
   }
-  setText(w.wallboxPhase, chargeBuf);
+  setTextIfChanged(w.wallboxPhase, chargeBuf);
   if (w.batSoc != nullptr) {
     if (d.hasBattery) {
       snprintf(buf, sizeof(buf), "%.0f %%", d.soc);
-      setText(w.batSoc, buf);
-      setColor(w.batSoc, C_TEXT);
+      setTextIfChanged(w.batSoc, buf);
+      setColorIfChanged(w.batSoc, C_TEXT);
       if (w.batBar != nullptr) lv_bar_set_value(w.batBar, (int32_t)(d.soc + 0.5f), LV_ANIM_OFF);
     } else {
-      setText(w.batSoc, "-- %");
-      setColor(w.batSoc, C_MUTED);
+      setTextIfChanged(w.batSoc, "-- %");
+      setColorIfChanged(w.batSoc, C_MUTED);
       if (w.batBar != nullptr) lv_bar_set_value(w.batBar, 0, LV_ANIM_OFF);
     }
   }
   if (w.batDir != nullptr) {
     if (!d.hasBattery) {
-      setText(w.batDir, "--");
-      setColor(w.batDir, C_MUTED);
+      setTextIfChanged(w.batDir, "--");
+      setColorIfChanged(w.batDir, C_MUTED);
     } else if (d.batteryPower > 1.0f) {
-      setText(w.batDir, "laden");
-      setColor(w.batDir, C_GREEN);
+      setTextIfChanged(w.batDir, TR("laden", "charging"));
+      setColorIfChanged(w.batDir, C_GREEN);
     } else if (d.batteryPower < -1.0f) {
-      setText(w.batDir, "entladen");
-      setColor(w.batDir, C_AMBER);
+      setTextIfChanged(w.batDir, TR("entladen", "discharging"));
+      setColorIfChanged(w.batDir, C_AMBER);
     } else {
-      setText(w.batDir, "inaktiv");
-      setColor(w.batDir, C_MUTED);
+      setTextIfChanged(w.batDir, "inaktiv");
+      setColorIfChanged(w.batDir, C_MUTED);
     }
   }
   if (d.hasBattery) {
     const bool charging = d.batteryPower >= 0.0f;
     fmtSignedPower(buf, sizeof(buf), d.batteryPower);
-    setText(w.batPower, buf);
-    setColor(w.batPower, charging ? C_GREEN : C_AMBER);
+    setTextIfChanged(w.batPower, buf);
+    setColorIfChanged(w.batPower, charging ? C_GREEN : C_AMBER);
 
     snprintf(buf, sizeof(buf), "%.1f V", d.batteryVoltage);
-    setText(w.batVoltage, buf);
+    setTextIfChanged(w.batVoltage, buf);
     snprintf(buf, sizeof(buf), "%.1f A", d.batteryCurrent);
-    setText(w.batCurrent, buf);
+    setTextIfChanged(w.batCurrent, buf);
   } else {
-    setText(w.batPower, "--");
-    setText(w.batVoltage, "--");
-    setText(w.batCurrent, "--");
+    setTextIfChanged(w.batPower, "--");
+    setTextIfChanged(w.batVoltage, "--");
+    setTextIfChanged(w.batCurrent, "--");
   }
 
   // Energy totals ------------------------------------------------------
@@ -1943,28 +1979,28 @@ void update(const WarpData &d) {
   } else {
     fmtEnergy(buf, sizeof(buf), d.dayGenerationWh);
   }
-  setText(w.energyPv, buf);
+  setTextIfChanged(w.energyPv, buf);
 
   if (d.houseEnergyWh > 0.0f) {
     fmtEnergy(buf, sizeof(buf), d.houseEnergyWh);
   } else {
     fmtEnergy(buf, sizeof(buf), d.dayLoadWh);
   }
-  setText(w.energyHouse, buf);
+  setTextIfChanged(w.energyHouse, buf);
 
   if (d.gridImportWh > 0.0f) {
     fmtEnergy(buf, sizeof(buf), d.gridImportWh);
   } else {
     fmtEnergy(buf, sizeof(buf), d.dayGridDrawWh);
   }
-  setText(w.energyImport, buf);
+  setTextIfChanged(w.energyImport, buf);
 
   if (d.gridExportWh > 0.0f) {
     fmtEnergy(buf, sizeof(buf), d.gridExportWh);
   } else {
     fmtEnergy(buf, sizeof(buf), d.dayFeedInWh);
   }
-  setText(w.energyExport, buf);
+  setTextIfChanged(w.energyExport, buf);
 
   {
     char charge[24];
@@ -1977,7 +2013,7 @@ void update(const WarpData &d) {
     } else {
       snprintf(combined, sizeof(combined), "--");
     }
-    setText(w.energyBattery, combined);
+    setTextIfChanged(w.energyBattery, combined);
   }
 
   // Power chart --------------------------------------------------------
@@ -2001,10 +2037,8 @@ void update(const WarpData &d) {
                              d.ioSgReady[0], d.ioSgReady[1]};
     for (int i = 0; i < 8; ++i) {
       if (w.ioDot[i] != nullptr) {
-        lv_obj_set_style_bg_color(
-            w.ioDot[i],
-            lv_color_hex(d.hasIoStates && ioState[i] ? C_GREEN : C_MUTED),
-            0);
+        setBgColorIfChanged(w.ioDot[i],
+                            d.hasIoStates && ioState[i] ? C_GREEN : C_MUTED);
       }
     }
     for (int i = 0; i < 2; ++i) {
@@ -2024,7 +2058,7 @@ void update(const WarpData &d) {
                                  : (i == 0 ? "Wallbox 1" : "Wallbox 2");
           char shortName[16];
           snprintf(shortName, sizeof(shortName), "%.12s", name);
-          setText(w.wbLegendLabel[i], shortName);
+          setTextIfChanged(w.wbLegendLabel[i], shortName);
         } else {
           lv_obj_add_flag(w.wbLegendLabel[i], LV_OBJ_FLAG_HIDDEN);
         }
@@ -2038,68 +2072,68 @@ void update(const WarpData &d) {
     // PV ---------------------------------------------------------------
     if (d.hasPv) {
       fmtPower(buf, sizeof(buf), d.pvPower);
-      setText(w.pvValue, buf);
-      setColor(w.pvValue, d.pvPower > 25.0f ? C_SOLAR : C_MUTED);
-      setText(w.pvState, d.pvPower > 25.0f ? "Erzeugung" : "Keine Erzeugung");
-      setColor(w.pvState, d.pvPower > 25.0f ? C_SOLAR : C_MUTED);
+      setTextIfChanged(w.pvValue, buf);
+      setColorIfChanged(w.pvValue, d.pvPower > 25.0f ? C_SOLAR : C_MUTED);
+      setTextIfChanged(w.pvState, d.pvPower > 25.0f ? TR("Erzeugung", "Generation") : TR("Keine Erzeugung", "No generation"));
+      setColorIfChanged(w.pvState, d.pvPower > 25.0f ? C_SOLAR : C_MUTED);
     } else {
-      setText(w.pvValue, "--");
-      setColor(w.pvValue, C_MUTED);
-      setText(w.pvState, "kein Messwert");
-      setColor(w.pvState, C_MUTED);
+      setTextIfChanged(w.pvValue, "--");
+      setColorIfChanged(w.pvValue, C_MUTED);
+      setTextIfChanged(w.pvState, TR("kein Messwert", "no measurement"));
+      setColorIfChanged(w.pvState, C_MUTED);
     }
 
     // Grid -------------------------------------------------------------
     if (d.hasGrid && !d.island) {
       fmtPower(buf, sizeof(buf), std::fabs(d.gridPower));
-      setText(w.gridValue, buf);
-      setColor(w.gridValue, std::fabs(d.gridPower) < 10.0f ? C_MUTED : C_BLUE);
+      setTextIfChanged(w.gridValue, buf);
+      setColorIfChanged(w.gridValue, std::fabs(d.gridPower) < 10.0f ? C_MUTED : C_BLUE);
       if (std::fabs(d.gridPower) < 10.0f) {
-        setText(w.gridState, "ausgeglichen");
-        setColor(w.gridState, C_MUTED);
+        setTextIfChanged(w.gridState, "ausgeglichen");
+        setColorIfChanged(w.gridState, C_MUTED);
       } else if (d.gridPower < 0.0f) {
-        setText(w.gridState, "Einspeisung");
-        setColor(w.gridState, C_GREEN);
+        setTextIfChanged(w.gridState, TR("Einspeisung", "Feed-in"));
+        setColorIfChanged(w.gridState, C_GREEN);
       } else {
-        setText(w.gridState, "Bezug");
-        setColor(w.gridState, C_BLUE);
+        setTextIfChanged(w.gridState, TR("Bezug", "Import"));
+        setColorIfChanged(w.gridState, C_BLUE);
       }
     } else if (d.island) {
-      setText(w.gridValue, "--");
-      setColor(w.gridValue, C_MUTED);
-      setText(w.gridState, "Inselbetrieb");
-      setColor(w.gridState, C_RED);
+      setTextIfChanged(w.gridValue, "--");
+      setColorIfChanged(w.gridValue, C_MUTED);
+      setTextIfChanged(w.gridState, TR("Inselbetrieb", "Island mode"));
+      setColorIfChanged(w.gridState, C_RED);
     } else {
-      setText(w.gridValue, "--");
-      setColor(w.gridValue, C_MUTED);
-      setText(w.gridState, "kein Messwert");
-      setColor(w.gridState, C_MUTED);
+      setTextIfChanged(w.gridValue, "--");
+      setColorIfChanged(w.gridValue, C_MUTED);
+      setTextIfChanged(w.gridState, TR("kein Messwert", "no measurement"));
+      setColorIfChanged(w.gridState, C_MUTED);
     }
 
     // Battery ----------------------------------------------------------
     if (d.hasBattery) {
       snprintf(buf, sizeof(buf), "%.0f %%", d.soc);
-      setText(w.batValue, buf);
-      setColor(w.batValue, C_BAT);
+      setTextIfChanged(w.batValue, buf);
+      setColorIfChanged(w.batValue, C_BAT);
       if (d.batteryPower > 25.0f) {
         fmtPower(pbuf, sizeof(pbuf), d.batteryPower);
-        snprintf(buf, sizeof(buf), "Laden %s", pbuf);
-        setText(w.batState, buf);
-        setColor(w.batState, C_BAT);
+        snprintf(buf, sizeof(buf), TR("Laden %s", "Charging %s"), pbuf);
+        setTextIfChanged(w.batState, buf);
+        setColorIfChanged(w.batState, C_BAT);
       } else if (d.batteryPower < -25.0f) {
         fmtPower(pbuf, sizeof(pbuf), -d.batteryPower);
-        snprintf(buf, sizeof(buf), "Entladen %s", pbuf);
-        setText(w.batState, buf);
-        setColor(w.batState, C_BAT);
+        snprintf(buf, sizeof(buf), TR("Entladen %s", "Discharging %s"), pbuf);
+        setTextIfChanged(w.batState, buf);
+        setColorIfChanged(w.batState, C_BAT);
       } else {
-        setText(w.batState, "inaktiv");
-        setColor(w.batState, C_MUTED);
+        setTextIfChanged(w.batState, "inaktiv");
+        setColorIfChanged(w.batState, C_MUTED);
       }
     } else {
-      setText(w.batValue, "--");
-      setColor(w.batValue, C_MUTED);
-      setText(w.batState, "kein Messwert");
-      setColor(w.batState, C_MUTED);
+      setTextIfChanged(w.batValue, "--");
+      setColorIfChanged(w.batValue, C_MUTED);
+      setTextIfChanged(w.batState, TR("kein Messwert", "no measurement"));
+      setColorIfChanged(w.batState, C_MUTED);
     }
 
     // Wallbox ----------------------------------------------------------
@@ -2108,43 +2142,43 @@ void update(const WarpData &d) {
         d.hasCharger && (wallboxW > 10.0 || d.charge_current > 0.1);
     if (wallboxOn) {
       fmtPower(pbuf, sizeof(pbuf), wallboxW);
-      setText(w.wbValue, pbuf);
-      setColor(w.wbValue, C_EV);
-      setText(w.wbState, (d.charge_state == 4 || wallboxW > 10.0) ? "Laden"
-                                                                : "Verbunden");
-      setColor(w.wbState, C_EV);
+      setTextIfChanged(w.wbValue, pbuf);
+      setColorIfChanged(w.wbValue, C_EV);
+      setTextIfChanged(w.wbState, (d.charge_state == 4 || wallboxW > 10.0) ? TR("Laden", "Charging")
+                                                                : TR("Verbunden", "Connected"));
+      setColorIfChanged(w.wbState, C_EV);
     } else if (d.hasCharger) {
-      setText(w.wbValue, "--");
-      setColor(w.wbValue, C_MUTED);
+      setTextIfChanged(w.wbValue, "--");
+      setColorIfChanged(w.wbValue, C_MUTED);
       if (d.charge_state == 5) {
-        setText(w.wbState, "Fehler");
-        setColor(w.wbState, C_RED);
+        setTextIfChanged(w.wbState, TR("Fehler", "Fault"));
+        setColorIfChanged(w.wbState, C_RED);
       } else if (d.charge_state == 6) {
-        setText(w.wbState, "Fertig");
-        setColor(w.wbState, C_MUTED);
+        setTextIfChanged(w.wbState, TR("Fertig", "Finished"));
+        setColorIfChanged(w.wbState, C_MUTED);
       } else if (d.charge_state == 1 || d.charge_state == 2 ||
                  d.charge_state == 3 || d.charge_state == 7) {
-        setText(w.wbState, "Blockiert");
-        setColor(w.wbState, C_MUTED);
+        setTextIfChanged(w.wbState, TR("Blockiert", "Blocked"));
+        setColorIfChanged(w.wbState, C_MUTED);
       } else {
-        setText(w.wbState, "Kein Fahrzeug");
-        setColor(w.wbState, C_MUTED);
+        setTextIfChanged(w.wbState, TR("Kein Fahrzeug", "No vehicle"));
+        setColorIfChanged(w.wbState, C_MUTED);
       }
     } else {
-      setText(w.wbValue, "--");
-      setColor(w.wbValue, C_MUTED);
-      setText(w.wbState, "Getrennt");
-      setColor(w.wbState, C_MUTED);
+      setTextIfChanged(w.wbValue, "--");
+      setColorIfChanged(w.wbValue, C_MUTED);
+      setTextIfChanged(w.wbState, TR("Getrennt", "Disconnected"));
+      setColorIfChanged(w.wbState, C_MUTED);
     }
 
     // House hub --------------------------------------------------------
     if (d.hasHouse) {
       fmtPower(buf, sizeof(buf), d.housePower);
-      setText(w.hubValue, buf);
-      setColor(w.hubValue, C_TEXT);
+      setTextIfChanged(w.hubValue, buf);
+      setColorIfChanged(w.hubValue, C_TEXT);
     } else {
-      setText(w.hubValue, "--");
-      setColor(w.hubValue, C_MUTED);
+      setTextIfChanged(w.hubValue, "--");
+      setColorIfChanged(w.hubValue, C_MUTED);
     }
 
     // Links: hysteresis (25 W on, 10 W off) avoids flickering around zero.
