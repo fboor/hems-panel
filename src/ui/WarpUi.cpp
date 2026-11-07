@@ -1318,7 +1318,7 @@ void create(lv_obj_t *parent) {
   w.page4 = lv_obj_create(parent);
   lv_obj_remove_style_all(w.page4);
   lv_obj_set_pos(w.page4, 0, 68);
-  lv_obj_set_size(w.page4, 790, 356);
+  lv_obj_set_size(w.page4, 800, 356);
   // Background image from the history chart (page 3), darkened at build
   // time so it can be drawn opaque without per-pixel blending.
   lv_obj_set_style_bg_image_src(w.page4, &chart_bg, 0);
@@ -1428,7 +1428,7 @@ void create(lv_obj_t *parent) {
   // House hub in the middle: the one place everything flows to or from.
   w.hubNode = lv_obj_create(w.page4);
   lv_obj_remove_style_all(w.hubNode);
-  lv_obj_set_pos(w.hubNode, 329, 110);
+  lv_obj_set_pos(w.hubNode, 334, 110);
   lv_obj_set_size(w.hubNode, 132, 132);
   lv_obj_set_style_radius(w.hubNode, LV_RADIUS_CIRCLE, 0);
   lv_obj_set_style_bg_color(w.hubNode, lv_color_hex(C_CARD2), 0);
