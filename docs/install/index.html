@@ -1,0 +1,192 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Install the WARP Energy Manager panel firmware</title>
+
+<!--
+  Installer page for a blank panel.
+
+  ESP Web Tools opens the browser's Web Serial port and writes the parts named in
+  the manifest. It needs the page over HTTPS - a Web Serial security requirement.
+  localhost counts as secure, which is why this can be tried before it is published.
+
+  One list, two readers: devices.json says which devices exist and which build each
+  language comes from. This page fills the pickers from it; tools/pack_web_install.sh
+  reads it to know what to build. The version comes from include/FirmwareVersion.h at
+  pack time - nothing here carries a version of its own to fall out of date.
+
+  Adapted from the RCT Power Panel installer (same structure: landing page in
+  docs/index.html, GitHub Pages serves the /docs folder).
+-->
+<script
+  type="module"
+  src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"
+></script>
+
+<style>
+  :root {
+    --fg: #e8eaed; --muted: #9aa0a6; --bg: #16181c;
+    --card: #1e2126; --line: #2c3038; --warn: #e8b23a;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; padding: 2rem 1rem 4rem;
+    background: var(--bg); color: var(--fg);
+    font: 16px/1.6 system-ui, -apple-system, "Segoe UI", sans-serif;
+  }
+  main { max-width: 42rem; margin: 0 auto; }
+  h1 { font-size: 1.7rem; margin: 0 0 .25rem; }
+  h2 { font-size: 1.05rem; margin: 2.25rem 0 .6rem; }
+  p { margin: .7rem 0; }
+  .sub { color: var(--muted); margin: 0; }
+  .card {
+    background: var(--card); border: 1px solid var(--line);
+    border-radius: 8px; padding: 1.1rem 1.4rem; margin: 1rem 0;
+  }
+  .warn { border-color: var(--warn); border-left-width: 4px; }
+  .warn strong { color: var(--warn); }
+  ol, ul { padding-left: 1.25rem; }
+  li { margin: .35rem 0; }
+  code { background: #262a31; padding: .1rem .35rem; border-radius: 4px; font-size: .92em; }
+  a { color: #8ab4f8; }
+  label { display: block; font-size: .85rem; color: var(--muted); margin: 0 0 .3rem; }
+  select {
+    width: 100%; padding: .55rem .6rem; font: inherit; color: var(--fg);
+    background: #262a31; border: 1px solid var(--line); border-radius: 6px;
+  }
+  .row { display: grid; grid-template-columns: 1fr 1fr; gap: 1rem; margin: 1.25rem 0; }
+  @media (max-width: 30rem) { .row { grid-template-columns: 1fr; } }
+  .version {
+    display: inline-block; margin-top: .4rem; padding: .15rem .55rem;
+    border: 1px solid var(--line); border-radius: 999px;
+    font-size: .8rem; color: var(--muted);
+  }
+  footer {
+    margin-top: 3rem; padding-top: 1.25rem;
+    border-top: 1px solid var(--line); color: var(--muted); font-size: .875rem;
+  }
+</style>
+</head>
+<body>
+<main>
+
+<h1>Install the WARP Energy Manager panel firmware</h1>
+<p class="sub">Flashing a blank panel over USB, from the browser.</p>
+
+<h2>Choose</h2>
+<div class="row">
+  <div>
+    <label for="geraet">Device</label>
+    <select id="geraet"></select>
+  </div>
+  <div>
+    <label for="sprache">Language</label>
+    <select id="sprache"></select>
+  </div>
+</div>
+
+<div class="card">
+  <esp-web-install-button id="knopf">
+    <button slot="activate">Install</button>
+    <span slot="unsupported">This browser cannot flash. Use Chrome, Edge or Firefox.</span>
+    <span slot="not-allowed">This page must be served over https://</span>
+  </esp-web-install-button>
+  <p class="version">Release <span id="version">&mdash;</span></p>
+</div>
+
+<div class="card warn">
+  <p>
+    <strong>Everything on the panel is erased, including its configuration.</strong>
+    An already installed panel has its own updater &mdash; use that one.
+  </p>
+</div>
+
+<h2>Next steps</h2>
+<ol>
+  <li>The panel starts a Wi-Fi network called <b>WARP-Panel</b> (open, no password). Join it.</li>
+  <li>A setup screen with a QR code appears. Scan it or join the network and open the portal.</li>
+  <li>
+    Enter your network and the WARP Energy Manager address. The panel then joins your
+    network and stays on the setup screen until that is done &mdash; it switches to the
+    normal view by itself once it is connected.
+  </li>
+</ol>
+
+<h2>Troubleshooting</h2>
+<ul>
+  <li>
+    A dialog asking which port to use has to appear. If it does not, the panel is not
+    enumerating: another USB cable, another port, cover off.
+  </li>
+  <li>The flash stopped halfway &mdash; run it again. Everything is erased first anyway.</li>
+  <li>Nothing after the flash &mdash; press reset once.</li>
+</ul>
+
+<footer>
+  <p>
+    Independent project, no connection to, endorsement by or support from
+    Tinkerforge GmbH / WARP Energy Manager.
+  </p>
+  <p>
+    Flashing by <a href="https://esphome.github.io/esp-web-tools/">ESP Web Tools</a>
+  </p>
+</footer>
+
+</main>
+
+<script type="module">
+// The pickers and the manifest come from one place, devices.json. The page holds no
+// list of its own, so a device added there shows up here without an edit - and a
+// device that exists in neither does not appear at all.
+const geraet = document.getElementById('geraet');
+const sprache = document.getElementById('sprache');
+const knopf = document.getElementById('knopf');
+const version = document.getElementById('version');
+
+const antwort = await fetch('devices.json');
+const liste = await antwort.json();
+
+// German before English, because the panel is German first but the page is English:
+// the order in the list decides which is preselected, and it is the reader's list.
+for (const s of liste.languages) {
+  const o = document.createElement('option');
+  o.value = s.id;
+  o.textContent = s.name;
+  sprache.append(o);
+}
+
+for (const d of liste.devices) {
+  const o = document.createElement('option');
+  o.value = d.id;
+  o.textContent = d.name;
+  geraet.append(o);
+}
+
+// The manifest lives in the release folder, and the folder is named after the release.
+// Both names come from devices.json, which tools/pack_web_install.sh writes when it
+// builds - so a release bump moves the page along with it, and a hand-edited path here
+// could only ever point at a release that does not exist.
+function aktualisieren() {
+  const d = liste.devices.find((x) => x.id === geraet.value);
+  knopf.manifest = `${liste.release}/manifest-${d.id}-${sprache.value}.json`;
+}
+
+// The manifest is the only thing that changes; the button is created by ESP Web
+// Tools and is not rebuilt, which would throw away whatever it has already shown.
+geraet.addEventListener('change', aktualisieren);
+sprache.addEventListener('change', aktualisieren);
+
+// ESP Web Tools reads the manifest when it opens, so it has to be there before the
+// first click. Waiting for the custom element avoids a button that is briefly dead.
+await customElements.whenDefined('esp-web-install-button');
+aktualisieren();
+
+// The release number, from the manifest that was just selected. Not a literal here:
+// a version on the page is a second version to keep in step.
+const m = await (await fetch(knopf.manifest)).json();
+version.textContent = m.version;
+</script>
+</body>
+</html>
