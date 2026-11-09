@@ -15,6 +15,7 @@ extern "C" {
 
 #include <lvgl.h>
 
+LV_FONT_DECLARE(lv_font_warp_11);
 LV_FONT_DECLARE(lv_font_warp_14);
 LV_FONT_DECLARE(lv_font_warp_16);
 LV_FONT_DECLARE(lv_font_warp_20);
