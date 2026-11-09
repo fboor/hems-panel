@@ -884,13 +884,18 @@ class Reader {
     // counters and yesterday's as the baseline. The SD-card history updates
     // every five minutes, so six polls (about a minute) are enough.
     if (dailyTtl_ <= 0) {
-      dailyHasAutarky_ = readDailyAutarky(d);
-      dailyAutarky_ = dailyHasAutarky_ ? d.autarkyToday : 0.0f;
-      dailyHasDaySums_ = d.hasDaySums;
-      dailyDayGen_ = d.dayGenerationWh;
-      dailyDayLoad_ = d.dayLoadWh;
-      dailyDayDraw_ = d.dayGridDrawWh;
-      dailyDayFeed_ = d.dayFeedInWh;
+      const bool dailyOk = readDailyAutarky(d);
+      if (dailyOk) {
+        dailyHasAutarky_ = true;
+        dailyAutarky_ = d.autarkyToday;
+      }
+      if (d.hasDaySums) {
+        dailyHasDaySums_ = true;
+        dailyDayGen_ = d.dayGenerationWh;
+        dailyDayLoad_ = d.dayLoadWh;
+        dailyDayDraw_ = d.dayGridDrawWh;
+        dailyDayFeed_ = d.dayFeedInWh;
+      }
       dailyTtl_ = 6;
     } else {
       --dailyTtl_;
@@ -1205,12 +1210,12 @@ class Reader {
     if (get("/day_ahead_prices/prices", body, error)) {
       double firstDate = 0.0;
       double resolution = 1.0;
-      double values[200];
+      std::vector<double> values(200);
       size_t count = 0;
       if (warpjson::number(body.data(), body.size(), "first_date", firstDate) &&
           warpjson::number(body.data(), body.size(), "resolution", resolution) &&
-          warpjson::arrayNumbers(body.data(), body.size(), "prices", values,
-                                 200, count) &&
+          warpjson::arrayNumbers(body.data(), body.size(), "prices", values.data(),
+                                 values.size(), count) &&
           count > 0) {
         d.priceFirstMin = (uint32_t)firstDate;
         d.priceResMin = (resolution < 0.5) ? 15 : 60;
@@ -1220,6 +1225,15 @@ class Reader {
         }
         d.hasPrices = true;
       }
+    }
+    if (!d.hasPrices && slowCache_.hasPrices) {
+      d.hasPrices = slowCache_.hasPrices;
+      d.pricesEnabled = slowCache_.pricesEnabled;
+      d.priceFirstMin = slowCache_.priceFirstMin;
+      d.priceResMin = slowCache_.priceResMin;
+      d.priceCount = slowCache_.priceCount;
+      for (int i = 0; i < 200; ++i) d.prices[i] = slowCache_.prices[i];
+      d.nowMin = slowCache_.nowMin;
     }
   }
 

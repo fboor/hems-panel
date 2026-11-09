@@ -428,7 +428,7 @@ void setup() {
   ArduinoOTA.begin();
 
   g_dataMutex = xSemaphoreCreateMutex();
-  xTaskCreatePinnedToCore(pollTask, "poll", 8192, nullptr, 2, nullptr, 0);
+  xTaskCreatePinnedToCore(pollTask, "poll", 16384, nullptr, 2, nullptr, 0);
 }
 
 void loop() {
