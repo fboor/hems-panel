@@ -1391,7 +1391,7 @@ void create(lv_obj_t *parent) {
 
   // Battery ------------------------------------------------------------
   lv_obj_t *bat = card(page1, 536, 68, 250, 176);
-  title(bat, TR("BATTERIE", "BATTERY"));
+  title(bat, TR("AKKU", "BATTERY"));
   w.batSoc = label(bat, 16, 28, 120, F_BIG, C_TEXT, "-- %");
   w.batDir = label(bat, 130, 42, 104, F_SMALL, C_MUTED, "--",
                    LV_TEXT_ALIGN_RIGHT);
@@ -1597,10 +1597,10 @@ void create(lv_obj_t *parent) {
 
   lv_obj_t *sg = card(w.page6, 16, 0, 758, 164);
   title(sg, TR("SG-READY", "SG-READY"));
-  row(sg, 16, 30, 720, TR("Blockiert", "Blocked"), &w.heatBlocking);
-  row(sg, 16, 52, 720, TR("Erweitert", "Extended"), &w.heatExtended);
+  row(sg, 16, 30, 720, TR("Blockiert (SG1)", "Blocked (SG1)"), &w.heatBlocking);
+  row(sg, 16, 52, 720, TR("Erweitert (SG2)", "Extended (SG2)"), &w.heatExtended);
   row(sg, 16, 74, 720, "Status", &w.heatStatus);
-  row(sg, 16, 96, 720, "14a EnWG", &w.heatP14);
+  row(sg, 16, 96, 720, "§14a EnWG", &w.heatP14);
   // 24 h history band in the same card: grey = no data, blue = none active,
   // red = SG1 (blocking), green = SG2 (extended), orange = both (wrong state).
   {
@@ -1728,7 +1728,7 @@ void create(lv_obj_t *parent) {
   lv_obj_set_style_border_color(bgImgBtn, lv_color_hex(C_LINE), 0);
   lv_obj_set_style_shadow_width(bgImgBtn, 0, 0);
   lv_obj_t *bgImgBtnLbl = lv_label_create(bgImgBtn);
-  lv_label_set_text(bgImgBtnLbl, TR("Bild: An", "Image: on"));
+  lv_label_set_text(bgImgBtnLbl, TR("Bild: an", "Image: on"));
   lv_obj_set_style_text_font(bgImgBtnLbl, F_BODY, 0);
   lv_obj_set_style_text_color(bgImgBtnLbl, lv_color_hex(C_TEXT), 0);
   lv_obj_center(bgImgBtnLbl);
@@ -1738,7 +1738,7 @@ void create(lv_obj_t *parent) {
     lv_obj_set_style_bg_image_opa(w.page4, on ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
     lv_label_set_text(
         lv_obj_get_child(static_cast<lv_obj_t *>(lv_event_get_target(e)), 0),
-        on ? TR("Bild: An", "Image: on") : TR("Bild: Aus", "Image: off"));
+        on ? TR("Bild: an", "Image: on") : TR("Bild: aus", "Image: off"));
   }, LV_EVENT_CLICKED, nullptr);
   lv_obj_add_event_cb(w.bgBtn, [](lv_event_t *e) {
     g_backgroundMode = (g_backgroundMode + 1) % 3;
@@ -1757,8 +1757,8 @@ void create(lv_obj_t *parent) {
   title(net, TR("NETZWERK", "NETWORK"));
   w.netSsid = label(net, 16, 34, 338, F_BODY, C_TEXT, "WLAN: --");
   w.netIp = label(net, 16, 58, 338, F_BODY, C_TEXT, "IP: --");
-  w.netWarp = label(net, 16, 82, 338, F_BODY, C_TEXT, "WARP: --");
-  w.netWeb = label(net, 16, 106, 338, F_BODY, C_BLUE, "Web: --");
+  w.netWarp = label(net, 16, 82, 338, F_BODY, C_TEXT, "WARP EM: --");
+  w.netWeb = label(net, 16, 106, 338, F_BODY, C_BLUE, "Webinterface: --");
   label(net, 16, 142, 338, F_SMALL, C_MUTED,
         TR("Zum Ändern die Web-Adresse im Browser öffnen.", "Open the web address in your browser to change it."));
 
@@ -2008,11 +2008,11 @@ void setNetworkInfo(const char *ssid, const char *ip, const char *warpUrl,
              strncmp(warpDisplay, "https://", 8) == 0) {
     warpDisplay += 8;
   }
-  snprintf(buf, sizeof(buf), "WARP: %s",
+  snprintf(buf, sizeof(buf), "WARP EM: %s",
            (warpDisplay != nullptr && warpDisplay[0] != '\0') ? warpDisplay
                                                               : "--");
   setTextIfChanged(w.netWarp, buf);
-  snprintf(buf, sizeof(buf), "Web: %s",
+  snprintf(buf, sizeof(buf), "Webinterface: %s",
            (webUrl != nullptr && webUrl[0] != '\0') ? webUrl : "--");
   setTextIfChanged(w.netWeb, buf);
 }
@@ -2186,9 +2186,9 @@ void update(const WarpData &d) {
     setTextIfChanged(w.wallboxValue, chargeBuf);
     const bool charging = d.charge_state == 4 || d.charge_power > 10.0f;
     if (charging) {
-      setTextIfChanged(w.wallboxNote, d.chargeEstimated ? TR("Laden (geschätzt)", "Charging (estimated)") : TR("Laden", "Charging"));
+      setTextIfChanged(w.wallboxNote, d.chargeEstimated ? TR("Laden (berechnet)", "Charging (berechnet)") : TR("Laden", "Charging"));
     } else {
-      setTextIfChanged(w.wallboxNote, d.chargeEstimated ? TR("Bereit (geschätzt)", "Ready (estimated)") : TR("Bereit", "Ready"));
+      setTextIfChanged(w.wallboxNote, d.chargeEstimated ? TR("Bereit", "Ready") : TR("Bereit", "Ready"));
     }
   } else if (d.hasCharger) {
     setTextIfChanged(w.wallboxValue, "--");
