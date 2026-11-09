@@ -121,6 +121,18 @@ struct WarpData {
   float batteryDischargeWh = 0.0f;
 
   // Day counters, Wh (flat JSON only).
+  // Dynamic tariff (day-ahead) prices, ct/kWh/1000. prices[0] is valid
+  // from priceFirstMin (unix minutes), entries are priceResMin apart.
+  // nowMin is the device unix time in minutes (slow cache).
+  bool hasPrices = false;
+  bool pricesEnabled = false;
+  uint32_t priceFirstMin = 0;
+  int priceResMin = 15;
+  int priceCount = 0;
+  int32_t prices[200] = {};
+  uint32_t nowMin = 0;
+
+  bool hasDaySums = false;
   float dayGenerationWh = 0.0f;
   float dayLoadWh = 0.0f;
   float dayFeedInWh = 0.0f;

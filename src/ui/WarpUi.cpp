@@ -235,6 +235,11 @@ struct Widgets {
   lv_obj_t *batDir = nullptr;
 
   lv_obj_t *energyPv = nullptr;
+  lv_obj_t *zPv = nullptr;
+  lv_obj_t *zHouse = nullptr;
+  lv_obj_t *zImport = nullptr;
+  lv_obj_t *zExport = nullptr;
+  lv_obj_t *zBattery = nullptr;
   lv_obj_t *energyHouse = nullptr;
   lv_obj_t *energyImport = nullptr;
   lv_obj_t *energyExport = nullptr;
@@ -1264,7 +1269,7 @@ void create(lv_obj_t *parent) {
   w.wallboxMode = label(wallbox, 16, 96, 0, F_SMALL, C_MUTED, "--");
   w.wallboxPhase = label(wallbox, 16, 116, 0, F_SMALL, C_MUTED, "--");
 
-  // Energy totals ------------------------------------------------------
+  // Energy totals for today --------------------------------------------
   lv_obj_t *energy = card(page1, 536, 256, 250, 166);
   title(energy, TR("ENERGIE", "ENERGY"));
   row(energy, 16, 30, 218, TR("Erzeugung", "Generation"), &w.energyPv, F_SMALL);
@@ -1272,6 +1277,7 @@ void create(lv_obj_t *parent) {
   row(energy, 16, 74, 218, TR("Netzbezug", "Grid import"), &w.energyImport, F_SMALL);
   row(energy, 16, 96, 218, TR("Einspeisung", "Feed-in"), &w.energyExport, F_SMALL);
   row(energy, 16, 118, 218, TR("Akku", "Battery"), &w.energyBattery, F_SMALL);
+  label(energy, 16, 142, 218, F_SMALL, C_MUTED, TR("heute", "today"), LV_TEXT_ALIGN_RIGHT);
 
   // Footer -------------------------------------------------------------
   // Second page (power graph) -----------------------------------------
@@ -1578,18 +1584,49 @@ void create(lv_obj_t *parent) {
 
   // Network state. The setup portal stays reachable on the local network, so
   // this card is also the pointer to it when the WARP address has to change.
-  lv_obj_t *net = card(w.page3, 16, 70, 758, 190);
+  lv_obj_t *net = card(w.page3, 16, 70, 370, 190);
   title(net, TR("NETZWERK", "NETWORK"));
-  w.netSsid = label(net, 16, 34, 720, F_BODY, C_TEXT, "WLAN: --");
-  w.netIp = label(net, 16, 58, 720, F_BODY, C_TEXT, "IP: --");
-  w.netWarp = label(net, 16, 82, 720, F_BODY, C_TEXT, "WARP: --");
-  w.netWeb = label(net, 16, 106, 720, F_BODY, C_BLUE, "Web: --");
-  label(net, 16, 142, 720, F_SMALL, C_MUTED,
+  w.netSsid = label(net, 16, 34, 338, F_BODY, C_TEXT, "WLAN: --");
+  w.netIp = label(net, 16, 58, 338, F_BODY, C_TEXT, "IP: --");
+  w.netWarp = label(net, 16, 82, 338, F_BODY, C_TEXT, "WARP: --");
+  w.netWeb = label(net, 16, 106, 338, F_BODY, C_BLUE, "Web: --");
+  label(net, 16, 142, 338, F_SMALL, C_MUTED,
         TR("Zum Ändern die Web-Adresse im Browser öffnen.", "Open the web address in your browser to change it."));
+
+  // Energy counters since commissioning, next to the network card.
+  lv_obj_t *z = card(w.page3, 402, 70, 372, 190);
+  title(z, TR("ZÄHLER", "METERS"));
+  row(z, 16, 30, 340, TR("Erzeugung", "Generation"), &w.zPv, F_SMALL);
+  row(z, 16, 52, 340, TR("Verbrauch", "Consumption"), &w.zHouse, F_SMALL);
+  row(z, 16, 74, 340, TR("Netzbezug", "Grid import"), &w.zImport, F_SMALL);
+  row(z, 16, 96, 340, TR("Einspeisung", "Feed-in"), &w.zExport, F_SMALL);
+  row(z, 16, 118, 340, TR("Akku", "Battery"), &w.zBattery, F_SMALL);
+  label(z, 16, 142, 340, F_SMALL, C_MUTED, TR("seit Inbetriebnahme", "since commissioning"),
+        LV_TEXT_ALIGN_RIGHT);
+
+  // Digital IO states: 4 inputs, 2 relays, 2 SG-Ready outputs, each with a
+  // dot below its label.
+  lv_obj_t *io = card(w.page3, 16, 272, 758, 80);
+  title(io, TR("I/O STATUS", "I/O STATUS"));
+  const char *ioNames[8] = {TR("Eingang 1", "Input 1"), TR("Eingang 2", "Input 2"), TR("Eingang 3", "Input 3"),
+                            TR("Eingang 4", "Input 4"), TR("Relais 1", "Relay 1"), TR("Relais 2", "Relay 2"), TR("SG 1", "SG 1"),
+                            TR("SG 2", "SG 2")};
+  for (int i = 0; i < 8; ++i) {
+    label(io, 5 + i * 95, 30, 90, F_SMALL, C_MUTED, ioNames[i],
+          LV_TEXT_ALIGN_CENTER);
+    lv_obj_t *dot = lv_obj_create(io);
+    lv_obj_remove_style_all(dot);
+    lv_obj_set_pos(dot, 44 + i * 95, 50);
+    lv_obj_set_size(dot, 12, 12);
+    lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
+    lv_obj_set_style_bg_color(dot, lv_color_hex(C_MUTED), 0);
+    lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
+    w.ioDot[i] = dot;
+  }
 
   // Bottom bar, left of the page buttons: today's and overall autarky, plus
   // today's solar forecast as remaining / total kWh.
-  label(parent, 16, 443, 0, F_SMALL, C_MUTED, TR("Autarkie", "Self-sufficiency"));
+  label(parent, 16, 443, 0, F_SMALL, C_MUTED, TR("Autarkie", "Independence"));
 #ifdef WARP_LANG_EN
   w.autarkyValue = label(parent, 150, 439, 160, F_TITLE, C_TEXT, "--");
   label(parent, 320, 443, 0, F_SMALL, C_MUTED, TR("Prognose", "Forecast"));
@@ -2055,34 +2092,33 @@ void update(const WarpData &d) {
     setTextIfChanged(w.batCurrent, "--");
   }
 
-  // Energy totals ------------------------------------------------------
-  if (d.pvEnergyWh > 0.0f) {
-    fmtEnergy(buf, sizeof(buf), d.pvEnergyWh);
-  } else {
+  // Energy totals for today (page 2) -----------------------------------
+  if (d.hasDaySums) {
     fmtEnergy(buf, sizeof(buf), d.dayGenerationWh);
-  }
-  setTextIfChanged(w.energyPv, buf);
-
-  if (d.houseEnergyWh > 0.0f) {
-    fmtEnergy(buf, sizeof(buf), d.houseEnergyWh);
-  } else {
+    setTextIfChanged(w.energyPv, buf);
     fmtEnergy(buf, sizeof(buf), d.dayLoadWh);
-  }
-  setTextIfChanged(w.energyHouse, buf);
-
-  if (d.gridImportWh > 0.0f) {
-    fmtEnergy(buf, sizeof(buf), d.gridImportWh);
-  } else {
+    setTextIfChanged(w.energyHouse, buf);
     fmtEnergy(buf, sizeof(buf), d.dayGridDrawWh);
-  }
-  setTextIfChanged(w.energyImport, buf);
-
-  if (d.gridExportWh > 0.0f) {
-    fmtEnergy(buf, sizeof(buf), d.gridExportWh);
-  } else {
+    setTextIfChanged(w.energyImport, buf);
     fmtEnergy(buf, sizeof(buf), d.dayFeedInWh);
+    setTextIfChanged(w.energyExport, buf);
+  } else {
+    setTextIfChanged(w.energyPv, "--");
+    setTextIfChanged(w.energyHouse, "--");
+    setTextIfChanged(w.energyImport, "--");
+    setTextIfChanged(w.energyExport, "--");
   }
-  setTextIfChanged(w.energyExport, buf);
+  setTextIfChanged(w.energyBattery, "--");
+
+  // Energy counters since commissioning (ZÄHLER card, service page) -----
+  fmtEnergy(buf, sizeof(buf), d.pvEnergyWh);
+  setTextIfChanged(w.zPv, buf);
+  fmtEnergy(buf, sizeof(buf), d.houseEnergyWh);
+  setTextIfChanged(w.zHouse, buf);
+  fmtEnergy(buf, sizeof(buf), d.gridImportWh);
+  setTextIfChanged(w.zImport, buf);
+  fmtEnergy(buf, sizeof(buf), d.gridExportWh);
+  setTextIfChanged(w.zExport, buf);
 
   {
     char charge[24];
@@ -2095,7 +2131,7 @@ void update(const WarpData &d) {
     } else {
       snprintf(combined, sizeof(combined), "--");
     }
-    setTextIfChanged(w.energyBattery, combined);
+    setTextIfChanged(w.zBattery, combined);
   }
 
   // Power chart --------------------------------------------------------

@@ -886,12 +886,22 @@ class Reader {
     if (dailyTtl_ <= 0) {
       dailyHasAutarky_ = readDailyAutarky(d);
       dailyAutarky_ = dailyHasAutarky_ ? d.autarkyToday : 0.0f;
+      dailyHasDaySums_ = d.hasDaySums;
+      dailyDayGen_ = d.dayGenerationWh;
+      dailyDayLoad_ = d.dayLoadWh;
+      dailyDayDraw_ = d.dayGridDrawWh;
+      dailyDayFeed_ = d.dayFeedInWh;
       dailyTtl_ = 6;
     } else {
       --dailyTtl_;
     }
     d.hasAutarkyToday = dailyHasAutarky_;
     d.autarkyToday = dailyAutarky_;
+    d.hasDaySums = dailyHasDaySums_;
+    d.dayGenerationWh = dailyDayGen_;
+    d.dayLoadWh = dailyDayLoad_;
+    d.dayGridDrawWh = dailyDayDraw_;
+    d.dayFeedInWh = dailyDayFeed_;
 
     // Slow-changing state (heating, temperatures, IO): fetch every 6th poll
     // (~60 s) and serve the cache in between. Fewer HTTP round trips means
@@ -1063,6 +1073,15 @@ class Reader {
     return values[base + slot] - (std::isnan(exported) ? 0.0 : exported);
   }
 
+  static double dailyExport(const std::vector<double> &values, size_t count,
+                            int day, int slot) {
+    const size_t base = static_cast<size_t>(day) * 17;
+    if (base + 17 > count || std::isnan(values[base + 7 + slot])) {
+      return NAN;
+    }
+    return values[base + 7 + slot];
+  }
+
   static double dailyGridImport(const std::vector<double> &values,
                                 size_t count, int day, int slot) {
     const size_t base = static_cast<size_t>(day) * 17;
@@ -1180,12 +1199,16 @@ class Reader {
   bool readDailyAutarky(WarpData &d) {
     int loadSlot = -1;
     int gridSlot = -1;
+    int pvSlot = -1;
     for (const Slot &slot : slots_) {
       if (slot.role == ROLE_LOAD && loadSlot < 0) {
         loadSlot = slot.slot;
       }
       if (slot.role == ROLE_GRID && gridSlot < 0) {
         gridSlot = slot.slot;
+      }
+      if (slot.role == ROLE_PV && pvSlot < 0) {
+        pvSlot = slot.slot;
       }
     }
     if (loadSlot < 0 || gridSlot < 0) {
@@ -1222,6 +1245,8 @@ class Reader {
 
     double previousLoad = NAN;
     double previousGrid = NAN;
+    double previousPvExport = NAN;
+    double previousGridExport = NAN;
     if (today > 0) {
       const int previous =
           dailyLastValid(values, count, loadSlot, gridSlot, today);
@@ -1230,6 +1255,10 @@ class Reader {
       }
       previousLoad = dailyLoadNet(values, count, previous, loadSlot);
       previousGrid = dailyGridImport(values, count, previous, gridSlot);
+      if (pvSlot >= 0) {
+        previousPvExport = dailyExport(values, count, previous, pvSlot);
+      }
+      previousGridExport = dailyExport(values, count, previous, gridSlot);
     } else {
       // The first of the month: yesterday lives in the previous month.
       int previousYear = year;
@@ -1254,12 +1283,50 @@ class Reader {
           dailyLoadNet(previousValues, previousCount, previous, loadSlot);
       previousGrid =
           dailyGridImport(previousValues, previousCount, previous, gridSlot);
+      if (pvSlot >= 0) {
+        previousPvExport =
+            dailyExport(previousValues, previousCount, previous, pvSlot);
+      }
+      previousGridExport =
+          dailyExport(previousValues, previousCount, previous, gridSlot);
     }
 
     const double todayLoad = dailyLoadNet(values, count, today, loadSlot);
     const double todayGrid = dailyGridImport(values, count, today, gridSlot);
     const double loadDelta = todayLoad - previousLoad;
     const double gridDelta = todayGrid - previousGrid;
+
+    // Today's sums from the same day-over-day deltas (kWh -> Wh). Set before
+    // the autarky guard below: a near-empty day still has sums. PV generation
+    // is the export counter of the PV slot, feed-in the export counter of
+    // the grid slot.
+    bool anySum = false;
+    if (!std::isnan(loadDelta)) {
+      d.dayLoadWh = (float)(std::max(0.0, loadDelta) * 1000.0);
+      anySum = true;
+    }
+    if (!std::isnan(gridDelta)) {
+      d.dayGridDrawWh = (float)(std::max(0.0, gridDelta) * 1000.0);
+      anySum = true;
+    }
+    if (pvSlot >= 0) {
+      const double pvDelta =
+          dailyExport(values, count, today, pvSlot) - previousPvExport;
+      if (!std::isnan(pvDelta)) {
+        d.dayGenerationWh = (float)(std::max(0.0, pvDelta) * 1000.0);
+        anySum = true;
+      }
+    }
+    {
+      const double feedDelta =
+          dailyExport(values, count, today, gridSlot) - previousGridExport;
+      if (!std::isnan(feedDelta)) {
+        d.dayFeedInWh = (float)(std::max(0.0, feedDelta) * 1000.0);
+        anySum = true;
+      }
+    }
+    d.hasDaySums = anySum;
+
     if (!(loadDelta > 0.01) || std::isnan(gridDelta)) {
       return false;
     }
@@ -1284,8 +1351,14 @@ class Reader {
   char deviceName_[40] = "";
   char firmware_[24] = "";
   int dailyTtl_ = 0;
+  int priceTtl_ = 0;  // fetchSlow ticks (~60 s): 15 ticks ~ 15 min
   bool dailyHasAutarky_ = false;
   float dailyAutarky_ = 0.0f;
+  bool dailyHasDaySums_ = false;
+  float dailyDayGen_ = 0.0f;
+  float dailyDayLoad_ = 0.0f;
+  float dailyDayDraw_ = 0.0f;
+  float dailyDayFeed_ = 0.0f;
   int slowTtl_ = 0;
   WarpData slowCache_;
 };
