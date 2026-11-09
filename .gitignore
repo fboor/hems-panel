@@ -3,3 +3,5 @@ sim/build/
 __pycache__/
 *.pyc
 *.o
+*~
+todo.txt
