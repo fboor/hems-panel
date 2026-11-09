@@ -2317,6 +2317,55 @@ void update(const WarpData &d) {
       g_haveSample = true;
       rebuildPowerChart();
     }
+    // Day-ahead exchange price band: next 24 h from now, one state per
+    // price slot. Low = below the midpoint between median and minimum,
+    // high = above the midpoint between median and maximum.
+    if (w.priceBand != nullptr) {
+      const bool show = d.pricesEnabled && d.hasPrices && d.nowMin > 0;
+      setBandVisible(w.priceBand, show);
+      if (show) {
+        const int64_t windowStartMin = (int64_t)d.nowMin;
+        static uint32_t times[200];
+        static int8_t state[200];
+        static int32_t win[200];
+        int n = 0;
+        for (int i = 0; i < d.priceCount && n < 200; ++i) {
+          const int64_t tMin =
+              (int64_t)d.priceFirstMin + (int64_t)i * d.priceResMin;
+          if (tMin < windowStartMin || tMin >= windowStartMin + 1440) {
+            continue;
+          }
+          times[n] = (uint32_t)tMin;
+          win[n] = d.prices[i];
+          ++n;
+        }
+        if (n > 0) {
+          int32_t sorted[200];
+          for (int i = 0; i < n; ++i) sorted[i] = win[i];
+          for (int i = 1; i < n; ++i) {
+            const int32_t v = sorted[i];
+            int j = i - 1;
+            while (j >= 0 && sorted[j] > v) {
+              sorted[j + 1] = sorted[j];
+              --j;
+            }
+            sorted[j + 1] = v;
+          }
+          const int32_t mid = sorted[n / 2];
+          const int32_t mn = sorted[0];
+          const int32_t mx = sorted[n - 1];
+          const int32_t lowThresh = (mid + mn) / 2;
+          const int32_t highThresh = (mid + mx) / 2;
+          for (int i = 0; i < n; ++i) {
+            state[i] = (win[i] < lowThresh) ? (int8_t)1
+                         : (win[i] > highThresh) ? (int8_t)2
+                                                 : (int8_t)0;
+          }
+          updateHistoryBand(w.priceBand, times, state, n, windowStartMin, 1440);
+        }
+      }
+    }
+
     // IO indicator dots and wallbox legend names. The wallbox series are
     // hidden when fewer than two chargers are present.
     const bool ioState[8] = {d.ioInputs[0], d.ioInputs[1], d.ioInputs[2],

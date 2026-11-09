@@ -721,6 +721,26 @@ class Handler(BaseHTTPRequestHandler):
             self._send({"config_error_flags": 0, "external_control": 0})
             return
 
+        if path == "/day_ahead_prices/config":
+            self._send({"enable": True, "source": 0, "resolution": 0})
+            return
+
+        if path == "/day_ahead_prices/prices":
+            # Synthetic day-ahead curve in 15-min steps for two days:
+            # cheap at night, peak in the evening (ct/kWh/1000).
+            now = datetime.datetime.now()
+            midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
+            first_min = int(midnight.timestamp()) // 60
+            prices = []
+            for i in range(192):
+                t = midnight + datetime.timedelta(minutes=15 * i)
+                hour = t.hour + t.minute / 60.0
+                base = 22000 + int(14000 * ((hour - 14.0) / 10.0) ** 2)
+                prices.append(max(8000, base))
+            self._send({"first_date": first_min, "resolution": 0,
+                        "prices": prices})
+            return
+
         if path == "/energy_manager/state":
             self._send({
                 "error_flags": 0,

@@ -1169,6 +1169,58 @@ class Reader {
         d.hasIoStates = okInputs || okRelays || okSg;
       }
     }
+
+    // Dynamic tariff prices: only fetched every ~15 min, the day-ahead
+    // curve barely changes in between. On skipped rounds the cached
+    // values are restored into d, so the slowCache_ snapshot below does
+    // not poison the cache with zeros.
+    if (priceTtl_ <= 0) {
+      fetchPrices(d);
+      priceTtl_ = 15;
+    } else {
+      --priceTtl_;
+      d.hasPrices = slowCache_.hasPrices;
+      d.pricesEnabled = slowCache_.pricesEnabled;
+      d.priceFirstMin = slowCache_.priceFirstMin;
+      d.priceResMin = slowCache_.priceResMin;
+      d.priceCount = slowCache_.priceCount;
+      for (int i = 0; i < 200; ++i) d.prices[i] = slowCache_.prices[i];
+      d.nowMin = slowCache_.nowMin;
+    }
+  }
+
+  void fetchPrices(WarpData &d) {
+    uint32_t nowMin = 0;
+    if (nowMinutes(nowMin)) {
+      d.nowMin = nowMin;
+    }
+    std::string body;
+    std::string error;
+    if (get("/day_ahead_prices/config", body, error)) {
+      bool enable = false;
+      if (warpjson::boolean(body.data(), body.size(), "enable", enable)) {
+        d.pricesEnabled = enable;
+      }
+    }
+    if (get("/day_ahead_prices/prices", body, error)) {
+      double firstDate = 0.0;
+      double resolution = 1.0;
+      double values[200];
+      size_t count = 0;
+      if (warpjson::number(body.data(), body.size(), "first_date", firstDate) &&
+          warpjson::number(body.data(), body.size(), "resolution", resolution) &&
+          warpjson::arrayNumbers(body.data(), body.size(), "prices", values,
+                                 200, count) &&
+          count > 0) {
+        d.priceFirstMin = (uint32_t)firstDate;
+        d.priceResMin = (resolution < 0.5) ? 15 : 60;
+        d.priceCount = (int)count;
+        for (size_t i = 0; i < count; ++i) {
+          d.prices[i] = (int32_t)values[i];
+        }
+        d.hasPrices = true;
+      }
+    }
   }
 
   void copySlow(WarpData &d) {
@@ -1189,6 +1241,13 @@ class Reader {
     d.tempTomorrowMax = slowCache_.tempTomorrowMax;
     d.tempTomorrowAvg = slowCache_.tempTomorrowAvg;
     d.hasIoStates = slowCache_.hasIoStates;
+    d.hasPrices = slowCache_.hasPrices;
+    d.pricesEnabled = slowCache_.pricesEnabled;
+    d.priceFirstMin = slowCache_.priceFirstMin;
+    d.priceResMin = slowCache_.priceResMin;
+    d.priceCount = slowCache_.priceCount;
+    for (int i = 0; i < 200; ++i) d.prices[i] = slowCache_.prices[i];
+    d.nowMin = slowCache_.nowMin;
     for (int i = 0; i < 4; ++i) d.ioInputs[i] = slowCache_.ioInputs[i];
     for (int i = 0; i < 2; ++i) {
       d.ioRelays[i] = slowCache_.ioRelays[i];
