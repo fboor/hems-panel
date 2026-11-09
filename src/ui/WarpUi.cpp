@@ -204,6 +204,8 @@ struct Widgets {
   lv_obj_t *ioDot[8] = {};
   HistoryBand *sgBand = nullptr;
   HistoryBand *priceBand = nullptr;
+  lv_obj_t *priceCard = nullptr;
+  lv_obj_t *priceStats = nullptr;
   lv_obj_t *wbLegendDot[2] = {};
   lv_obj_t *wbLegendLabel[2] = {};
   lv_obj_t *scaleMax = nullptr;
@@ -1511,16 +1513,21 @@ void create(lv_obj_t *parent) {
   }
   lv_chart_set_series_ext_y_array(w.socChart, w.seriesSoc, g_chartSoc);
 
-  // Day-ahead exchange price band over the next 24 h, shown only when the
-  // dynamic tariff is enabled. Colours: grey = no data, blue = medium,
-  // green = low, red = high.
+  // Day-ahead exchange price band over the next 24 h in its own card,
+  // shown only when the dynamic tariff is enabled. Colours: grey = no
+  // data, blue = medium, green = low, red = high.
+  w.priceCard = card(w.page2, 12, 289, 776, 64);
+  lv_obj_t *priceCard = w.priceCard;
   {
     const char *const priceTicks[5] = {"0h", "6h", "12h", "18h", "24h"};
-    w.priceBand = createHistoryBand(w.page2, 304, TR("Börsenpreis", "Exchange price"),
+    w.priceBand = createHistoryBand(priceCard, 17, TR("Börsenpreis", "Exchange price"),
                                     0x999999, 0x007BFF, 0x2CA02C, 0xD62728, 0x999999,
                                     160, priceTicks);
   }
   setBandVisible(w.priceBand, false);
+  w.priceStats =
+      label(priceCard, 160, 41, 560, F_SMALL, C_MUTED, "--");
+  lv_obj_add_flag(w.priceStats, LV_OBJ_FLAG_HIDDEN);
 
   // Time labels at bottom (reversed: new values on right)
   const int xpos[5] = {8, 185, 375, 565, 755};
@@ -2323,6 +2330,20 @@ void update(const WarpData &d) {
     if (w.priceBand != nullptr) {
       const bool show = d.pricesEnabled && d.hasPrices && d.nowMin > 0;
       setBandVisible(w.priceBand, show);
+      if (w.priceCard != nullptr) {
+        if (show) {
+          lv_obj_clear_flag(w.priceCard, LV_OBJ_FLAG_HIDDEN);
+        } else {
+          lv_obj_add_flag(w.priceCard, LV_OBJ_FLAG_HIDDEN);
+        }
+      }
+      if (w.priceStats != nullptr) {
+        if (show) {
+          lv_obj_clear_flag(w.priceStats, LV_OBJ_FLAG_HIDDEN);
+        } else {
+          lv_obj_add_flag(w.priceStats, LV_OBJ_FLAG_HIDDEN);
+        }
+      }
       if (show) {
         const int64_t windowStartMin = (int64_t)d.nowMin;
         static uint32_t times[200];
@@ -2332,7 +2353,11 @@ void update(const WarpData &d) {
         for (int i = 0; i < d.priceCount && n < 200; ++i) {
           const int64_t tMin =
               (int64_t)d.priceFirstMin + (int64_t)i * d.priceResMin;
-          if (tMin < windowStartMin || tMin >= windowStartMin + 1440) {
+          // Include the slot that contains "now" (its start is before the
+          // window, its end after) - excluding it would leave a grey
+          // no-data gap of up to one resolution at the left edge.
+          if (tMin + d.priceResMin <= windowStartMin ||
+              tMin >= windowStartMin + 1440) {
             continue;
           }
           times[n] = (uint32_t)tMin;
@@ -2354,6 +2379,15 @@ void update(const WarpData &d) {
           const int32_t mid = sorted[n / 2];
           const int32_t mn = sorted[0];
           const int32_t mx = sorted[n - 1];
+          double sum = 0.0;
+          for (int i = 0; i < n; ++i) sum += win[i];
+          const double avg = sum / n;
+          char sbuf[96];
+          snprintf(sbuf, sizeof(sbuf),
+                   TR("Min %.1f · Mittel %.1f · Max %.1f ct/kWh",
+                      "Min %.1f · Mid %.1f · Max %.1f ct/kWh"),
+                   mn / 1000.0, avg / 1000.0, mx / 1000.0);
+          setTextIfChanged(w.priceStats, sbuf);
           const int32_t lowThresh = (mid + mn) / 2;
           const int32_t highThresh = (mid + mx) / 2;
           for (int i = 0; i < n; ++i) {
