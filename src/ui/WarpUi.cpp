@@ -64,6 +64,7 @@ constexpr const char kNavServiceIcon[] = "\xF3\xB0\x96\xB7"; // wrench
 constexpr const char kNavHeatIcon[] = "\xF3\xB0\x94\x8F";    // thermometer
 
 constexpr const lv_font_t *F_SMALL = &lv_font_warp_14;
+constexpr const lv_font_t *F_LEGEND = &lv_font_warp_11;  // chart legend labels
 constexpr const lv_font_t *F_BODY = &lv_font_warp_16;
 constexpr const lv_font_t *F_TITLE = &lv_font_warp_20;
 constexpr const lv_font_t *F_BIG = &lv_font_warp_36;
@@ -125,6 +126,13 @@ int32_t g_chartBattery[kChartPoints];
 int32_t g_chartWb1[kChartPoints];
 int32_t g_chartWb2[kChartPoints];
 int32_t g_chartSoc[kChartPoints];  // raw SOC %, mapped into the power range
+
+// Tapped chart position: the tapped sample is shown in the legend as
+// "Label [value]" and the legend resets after 30 s.
+bool g_tapActive = false;
+uint32_t g_tapMs = 0;
+PowerSample g_tapSample{};
+char g_wbBase[2][16] = {};
 
 struct HistoryBand;
 
@@ -208,6 +216,7 @@ struct Widgets {
   lv_obj_t *priceStats = nullptr;
   lv_obj_t *wbLegendDot[2] = {};
   lv_obj_t *wbLegendLabel[2] = {};
+  lv_obj_t *legendLabel[7] = {};
   lv_obj_t *scaleMax = nullptr;
   lv_obj_t *scaleMid = nullptr;
   lv_obj_t *scaleMin = nullptr;
@@ -1069,6 +1078,114 @@ int selectWindow(uint32_t spanMs) {
   return 24 * 3600;
 }
 
+// Find the sample plotted at chart point pointIdx (same resampling as
+// rebuildPowerChart). Returns false in the empty left region before the
+// first sample.
+bool sampleForChartPoint(int pointIdx, PowerSample &out) {
+  if (g_sampleCount == 0) {
+    return false;
+  }
+  const uint32_t newest = sampleAt(g_sampleCount - 1).timeMs;
+  const uint32_t oldest = sampleAt(0).timeMs;
+  const uint32_t windowMs = (uint32_t)selectWindow(newest - oldest) * 1000u;
+  const uint32_t age = (uint32_t)((uint64_t)windowMs *
+                                  (uint32_t)(kChartPoints - 1 - pointIdx) /
+                                  (uint32_t)(kChartPoints - 1));
+  int sampleIndex = 0;
+  while (sampleIndex + 1 < g_sampleCount &&
+         (uint32_t)(newest - sampleAt(sampleIndex + 1).timeMs) >= age) {
+    ++sampleIndex;
+  }
+  if ((uint32_t)(newest - sampleAt(sampleIndex).timeMs) < age) {
+    return false;
+  }
+  out = sampleAt(sampleIndex);
+  return true;
+}
+
+const char *legendBaseName(int i) {
+  static const char *const names[7] = {TR("Netz", "Grid"), TR("PV", "PV"),
+                                       TR("Verbrauch", "Consumption"),
+                                       TR("Akku", "Battery"), nullptr, nullptr,
+                                       TR("Akku %", "Battery %")};
+  if (i == 4 || i == 5) {
+    return g_wbBase[i - 4];
+  }
+  return names[i];
+}
+
+void applyTapLabels() {
+  const float values[7] = {g_tapSample.grid, g_tapSample.pv,
+                           g_tapSample.house, g_tapSample.battery,
+                           g_tapSample.wb1, g_tapSample.wb2, g_tapSample.soc};
+  for (int i = 0; i < 7; ++i) {
+    if (w.legendLabel[i] == nullptr) {
+      continue;
+    }
+    char buf[48];
+    if (i == 6) {
+      if (g_tapSample.soc < 0.0f) {
+        snprintf(buf, sizeof(buf), "%s [--]", legendBaseName(i));
+      } else {
+        snprintf(buf, sizeof(buf), "%s [%d%%]", legendBaseName(i),
+                 (int)lroundf(g_tapSample.soc));
+      }
+    } else if (std::fabs(values[i]) >= 1000.0f) {
+      // Compact: kW from 1000 W up, no space before the unit, so the
+      // legend labels stay on one line even for large values.
+      snprintf(buf, sizeof(buf), "%s [%.1fkW]", legendBaseName(i),
+               values[i] / 1000.0f);
+    } else {
+      snprintf(buf, sizeof(buf), "%s [%dW]", legendBaseName(i),
+               (int)lroundf(values[i]));
+    }
+    setTextIfChanged(w.legendLabel[i], buf);
+  }
+}
+
+void restoreLegendLabels(const WarpData &d) {
+  for (int i = 0; i < 7; ++i) {
+    if (w.legendLabel[i] == nullptr) {
+      continue;
+    }
+    if (i == 4 || i == 5) {
+      const int k = i - 4;
+      if (d.charger_count <= k) {
+        continue;
+      }
+      const char *name = d.chargers[k].name[0] != '\0'
+                             ? d.chargers[k].name
+                             : (k == 0 ? "Wallbox 1" : "Wallbox 2");
+      char shortName[16];
+      snprintf(shortName, sizeof(shortName), "%.12s", name);
+      snprintf(g_wbBase[k], sizeof(g_wbBase[k]), "%s", shortName);
+      setTextIfChanged(w.legendLabel[i], shortName);
+    } else {
+      setTextIfChanged(w.legendLabel[i], legendBaseName(i));
+    }
+  }
+}
+
+void chartTapEvent(lv_event_t *e) {
+  lv_point_t p{};
+  lv_indev_get_point(lv_indev_get_act(), &p);
+  lv_area_t coords{};
+  lv_obj_get_coords(w.powerChart, &coords);
+  int localX = p.x - coords.x1;
+  if (localX < 0) localX = 0;
+  const int chartW = coords.x2 - coords.x1;
+  if (localX > chartW) localX = chartW;
+  const int pointIdx =
+      (int)lroundf((float)localX * (float)(kChartPoints - 1) / (float)chartW);
+  PowerSample sample{};
+  if (sampleForChartPoint(pointIdx, sample)) {
+    g_tapSample = sample;
+    g_tapMs = lv_tick_get();
+    g_tapActive = true;
+    applyTapLabels();
+  }
+}
+
 void recordPowerSample(uint32_t now, const WarpData &d) {
   if (g_sampleCount == kMaxSamples) {
     g_sampleHead = (g_sampleHead + 1) % kMaxSamples;
@@ -1468,6 +1585,9 @@ void create(lv_obj_t *parent) {
   w.scaleMax = label(w.page2, 20, 5, 60, F_SMALL, C_MUTED, "--", LV_TEXT_ALIGN_LEFT, false);
   w.scaleMid = label(w.page2, 20, 122, 60, F_SMALL, C_MUTED, "--", LV_TEXT_ALIGN_LEFT, false);
   w.scaleMin = label(w.page2, 20, 222, 60, F_SMALL, C_MUTED, "--", LV_TEXT_ALIGN_LEFT, false);
+  lv_obj_clear_flag(w.scaleMax, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_clear_flag(w.scaleMid, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_clear_flag(w.scaleMin, LV_OBJ_FLAG_CLICKABLE);
   w.seriesGrid = lv_chart_add_series(w.powerChart, lv_color_hex(0x2CA02C), LV_CHART_AXIS_PRIMARY_Y);
   w.seriesPv = lv_chart_add_series(w.powerChart, lv_color_hex(0xFF7F0E), LV_CHART_AXIS_PRIMARY_Y);
   w.seriesHouse = lv_chart_add_series(w.powerChart, lv_color_hex(0x007BFF), LV_CHART_AXIS_PRIMARY_Y);
@@ -1512,6 +1632,9 @@ void create(lv_obj_t *parent) {
     g_chartSoc[i] = LV_CHART_POINT_NONE;
   }
   lv_chart_set_series_ext_y_array(w.socChart, w.seriesSoc, g_chartSoc);
+  // Tap on the chart shows the sample values in the legend for 30 s.
+  lv_obj_clear_flag(w.socChart, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_event_cb(w.powerChart, chartTapEvent, LV_EVENT_CLICKED, nullptr);
 
   // Day-ahead exchange price band over the next 24 h in its own card,
   // shown only when the dynamic tariff is enabled. Colours: grey = no
@@ -1545,20 +1668,27 @@ void create(lv_obj_t *parent) {
                           lv_color_hex(0x007BFF), lv_color_hex(0xD62728),
                           lv_color_hex(0x9467BD), lv_color_hex(0x8C564B),
                           lv_color_hex(0xC9CED4)};
+  // Variable slot widths: "Verbrauch" and the wallbox names are long, so
+  // they get wide slots (in the 11 px legend font their tapped values
+  // "[1234 W]" fit on one line without wrapping).
+  const int dotX[7] = {8, 108, 190, 318, 418, 558, 698};
+  const int labelW[7] = {78, 66, 112, 78, 124, 124, 80};
   for (int i = 0; i < 7; ++i) {
     lv_obj_t *dot = lv_obj_create(w.page2);
     lv_obj_remove_style_all(dot);
-    lv_obj_set_pos(dot, 16 + i * 110, 268);
+    lv_obj_set_pos(dot, dotX[i], 268);
     lv_obj_set_size(dot, 10, 10);
     lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(dot, colors[i], 0);
     lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
     if (i < 4 || i == 6) {
-      label(w.page2, 30 + i * 110, 264, 100, F_SMALL, C_MUTED, names[i]);
+      w.legendLabel[i] = label(w.page2, dotX[i] + 12, 266, labelW[i], F_LEGEND,
+                               C_MUTED, names[i]);
     } else {
       w.wbLegendDot[i - 4] = dot;
-      w.wbLegendLabel[i - 4] = label(w.page2, 30 + i * 110, 264, 100, F_SMALL,
-                                     C_MUTED, "--");
+      w.wbLegendLabel[i - 4] = label(w.page2, dotX[i] + 12, 266, labelW[i],
+                                     F_LEGEND, C_MUTED, "--");
+      w.legendLabel[i] = w.wbLegendLabel[i - 4];
     }
   }
 
@@ -2428,7 +2558,10 @@ void update(const WarpData &d) {
                                  : (i == 0 ? "Wallbox 1" : "Wallbox 2");
           char shortName[16];
           snprintf(shortName, sizeof(shortName), "%.12s", name);
-          setTextIfChanged(w.wbLegendLabel[i], shortName);
+          snprintf(g_wbBase[i], sizeof(g_wbBase[i]), "%s", shortName);
+          if (!g_tapActive) {
+            setTextIfChanged(w.wbLegendLabel[i], shortName);
+          }
         } else {
           lv_obj_add_flag(w.wbLegendLabel[i], LV_OBJ_FLAG_HIDDEN);
         }
@@ -2437,6 +2570,10 @@ void update(const WarpData &d) {
   }
   // Energy flow page ---------------------------------------------------
   {
+    if (g_tapActive && lv_tick_get() - g_tapMs > 30000) {
+      g_tapActive = false;
+      restoreLegendLabels(d);
+    }
     char pbuf[24];
 
     // PV ---------------------------------------------------------------

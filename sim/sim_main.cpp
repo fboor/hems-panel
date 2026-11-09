@@ -83,6 +83,9 @@ struct Options {
   int timeoutMs = 5000;
   int afterS = 2;
   int page = 1;
+  int tapX = -1;
+  int tapY = -1;
+  int tapDelayS = -1;
   bool probe = false;
   bool setup = false;
   bool verbose = false;
@@ -412,6 +415,11 @@ int main(int argc, char **argv) {
       opt.afterS = atoi(value("2").c_str());
     } else if (a == "--page") {
       opt.page = atoi(value("1").c_str());
+    } else if (a == "--tap") {
+      opt.tapX = atoi(value("0").c_str());
+      opt.tapY = atoi(value("0").c_str());
+    } else if (a == "--tapdelay") {
+      opt.tapDelayS = atoi(value("0").c_str());
     } else if (a == "--setup") {
       opt.setup = true;
     } else if (a == "--probe") {
@@ -508,8 +516,34 @@ int main(int argc, char **argv) {
   uint32_t lastUiMs = 0;
   bool shotDone = false;
 
+  bool tapPushed = false;
   while (!g_quit) {
     const uint32_t now = SDL_GetTicks();
+    if (opt.tapX >= 0 && !tapPushed &&
+        SDL_GetTicks() - startMs >=
+            static_cast<uint32_t>(opt.tapDelayS >= 0
+                                      ? opt.tapDelayS
+                                      : (opt.afterS > 0 ? opt.afterS - 1 : 0)) *
+                1000u) {
+      SDL_Event motion{};
+      motion.type = SDL_MOUSEMOTION;
+      motion.motion.x = opt.tapX;
+      motion.motion.y = opt.tapY;
+      SDL_PushEvent(&motion);
+      SDL_Event press{};
+      press.type = SDL_MOUSEBUTTONDOWN;
+      press.button.button = SDL_BUTTON_LEFT;
+      press.button.x = opt.tapX;
+      press.button.y = opt.tapY;
+      SDL_PushEvent(&press);
+      SDL_Event release{};
+      release.type = SDL_MOUSEBUTTONUP;
+      release.button.button = SDL_BUTTON_LEFT;
+      release.button.x = opt.tapX;
+      release.button.y = opt.tapY;
+      SDL_PushEvent(&release);
+      tapPushed = true;
+    }
     advanceTick(now);
 
     WarpData data;
