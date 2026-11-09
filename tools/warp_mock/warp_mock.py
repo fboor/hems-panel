@@ -722,7 +722,9 @@ class Handler(BaseHTTPRequestHandler):
             return
 
         if path == "/day_ahead_prices/config":
-            self._send({"enable": True, "source": 0, "resolution": 0})
+            self._send({"enable": True, "source": 0, "resolution": 0,
+                        "vat": 1900, "grid_costs_and_taxes": 15000,
+                        "supplier_markup": 2000})
             return
 
         if path == "/day_ahead_prices/prices":

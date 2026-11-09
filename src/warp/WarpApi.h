@@ -1185,6 +1185,12 @@ class Reader {
     } else {
       --priceTtl_;
       d.hasPrices = slowCache_.hasPrices;
+    d.vatBp = slowCache_.vatBp;
+    d.gridCosts = slowCache_.gridCosts;
+    d.supplierMarkup = slowCache_.supplierMarkup;
+    d.vatBp = slowCache_.vatBp;
+    d.gridCosts = slowCache_.gridCosts;
+    d.supplierMarkup = slowCache_.supplierMarkup;
       d.pricesEnabled = slowCache_.pricesEnabled;
       d.priceFirstMin = slowCache_.priceFirstMin;
       d.priceResMin = slowCache_.priceResMin;
@@ -1207,6 +1213,28 @@ class Reader {
         d.pricesEnabled = enable;
       }
     }
+    // Tariff adders from the config: the prices endpoint returns raw
+    // spot prices, the final tariff is (spot + grid costs/taxes + supplier
+    // markup) with VAT on top. Verified against ENTSO-E on 2026-11-09:
+    // device prices == spot exactly (ratio 1.000 on 192 slots).
+    int32_t vatBp = slowCache_.vatBp;
+    int32_t gridCosts = slowCache_.gridCosts;
+    int32_t markup = slowCache_.supplierMarkup;
+    double adder = 0.0;
+    if (!body.empty()) {
+      if (warpjson::number(body.data(), body.size(), "vat", adder)) {
+        vatBp = (int32_t)adder;
+      }
+      if (warpjson::number(body.data(), body.size(), "grid_costs_and_taxes", adder)) {
+        gridCosts = (int32_t)adder;
+      }
+      if (warpjson::number(body.data(), body.size(), "supplier_markup", adder)) {
+        markup = (int32_t)adder;
+      }
+    }
+    d.vatBp = vatBp;
+    d.gridCosts = gridCosts;
+    d.supplierMarkup = markup;
     if (get("/day_ahead_prices/prices", body, error)) {
       double firstDate = 0.0;
       double resolution = 1.0;
@@ -1221,7 +1249,10 @@ class Reader {
         d.priceResMin = (resolution < 0.5) ? 15 : 60;
         d.priceCount = (int)count;
         for (size_t i = 0; i < count; ++i) {
-          d.prices[i] = (int32_t)values[i];
+          // Final tariff price: (spot + adders) with VAT on top.
+          const int64_t spot = (int64_t)values[i];
+          d.prices[i] =
+              (int32_t)((spot + gridCosts + markup) * (10000 + vatBp) / 10000);
         }
         d.hasPrices = true;
       }

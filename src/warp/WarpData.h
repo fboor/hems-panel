@@ -125,6 +125,9 @@ struct WarpData {
   // from priceFirstMin (unix minutes), entries are priceResMin apart.
   // nowMin is the device unix time in minutes (slow cache).
   bool hasPrices = false;
+  int32_t vatBp = 0;          // VAT in basis points (1900 = 19 %)
+  int32_t gridCosts = 0;      // ct/kWh/1000
+  int32_t supplierMarkup = 0; // ct/kWh/1000
   bool pricesEnabled = false;
   uint32_t priceFirstMin = 0;
   int priceResMin = 15;
