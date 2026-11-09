@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: MIT
 #include "WarpUi.h"
+
+#include <algorithm>
 #include "fonts/lv_font_mdi_icons_28.h"
 #include "fonts/lv_font_warp.h"
 
@@ -91,11 +93,25 @@ struct PowerSample {
   float battery;
   float wb1;
   float wb2;
+  float soc;  // battery state of charge in %, -1 = no battery
 };
 
 PowerSample g_samples[kMaxSamples];
 int g_sampleHead = 0;
 int g_sampleCount = 0;
+
+// SG-Ready state history for the timeline band: one entry per minute over
+// 24 h, combined into one state: -1 = no data, 0 = none active,
+// 1 = SG1 (blocking) active, 2 = SG2 (extended) active, 3 = both active
+// (should not happen - orange marks a wrong device state).
+struct SgSample {
+  uint32_t timeMs;
+  int8_t state;
+};
+
+SgSample g_sgSamples[kMaxSamples];
+int g_sgHead = 0;
+int g_sgCount = 0;
 bool g_haveSample = false;
 uint32_t g_lastSampleMs = 0;
 uint32_t g_lastDataUpdateMs = 0;
@@ -108,6 +124,9 @@ int32_t g_chartHouse[kChartPoints];
 int32_t g_chartBattery[kChartPoints];
 int32_t g_chartWb1[kChartPoints];
 int32_t g_chartWb2[kChartPoints];
+int32_t g_chartSoc[kChartPoints];  // raw SOC %, mapped into the power range
+
+struct HistoryBand;
 
 struct Widgets {
   lv_obj_t *statusChip = nullptr;
@@ -173,7 +192,9 @@ struct Widgets {
   bool gridExporting = false;
   bool batCharging = false;
   lv_obj_t *powerChart = nullptr;
+  lv_obj_t *socChart = nullptr;
   lv_chart_series_t *powerSeries = nullptr;
+  lv_chart_series_t *seriesSoc = nullptr;
   lv_chart_series_t *seriesGrid = nullptr;
   lv_chart_series_t *seriesPv = nullptr;
   lv_chart_series_t *seriesHouse = nullptr;
@@ -889,9 +910,28 @@ void recordPowerSample(uint32_t now, const WarpData &d) {
   const int index = (g_sampleHead + g_sampleCount) % kMaxSamples;
   const float wb1 = d.charger_count > 0 ? d.chargers[0].power : 0.0f;
   const float wb2 = d.charger_count > 1 ? d.chargers[1].power : 0.0f;
+  const float soc = d.hasBattery ? d.soc : -1.0f;
   g_samples[index] = {now, d.gridPower, d.pvPower, d.housePower,
-                      d.batteryPower, wb1, wb2};
+                      d.batteryPower, wb1, wb2, soc};
   ++g_sampleCount;
+
+  if (g_sgCount == kMaxSamples) {
+    g_sgHead = (g_sgHead + 1) % kMaxSamples;
+    --g_sgCount;
+  }
+  const int sgIndex = (g_sgHead + g_sgCount) % kMaxSamples;
+  g_sgSamples[sgIndex] = {now,
+                          (int8_t)(!d.hasHeating ? -1
+                                   : (d.sgrBlocking && d.sgrExtended) ? 3
+                                   : d.sgrBlocking ? 1
+                                   : d.sgrExtended ? 2
+                                                   : 0)};
+  ++g_sgCount;
+  while (g_sgCount > 1 &&
+         (uint32_t)(now - g_sgSamples[g_sgHead].timeMs) > kHistoryMs) {
+    g_sgHead = (g_sgHead + 1) % kMaxSamples;
+    --g_sgCount;
+  }
 
   // Drop the oldest entries as soon as they fall out of the 24 h window.
   while (g_sampleCount > 1 &&
@@ -938,6 +978,7 @@ void rebuildPowerChart() {
       g_chartBattery[i] = LV_CHART_POINT_NONE;
       g_chartWb1[i] = LV_CHART_POINT_NONE;
       g_chartWb2[i] = LV_CHART_POINT_NONE;
+      g_chartSoc[i] = LV_CHART_POINT_NONE;
       continue;
     }
 
@@ -947,6 +988,7 @@ void rebuildPowerChart() {
                              g_chartBattery, g_chartWb1, g_chartWb2};
     for (int j = 0; j < 6; ++j) {
       out[j][i] = (int32_t)lroundf(values[j]);
+      g_chartSoc[i] = (int32_t)lroundf(s.soc);
       if (!haveValue) {
         mn = mx = values[j];
         haveValue = true;
@@ -956,22 +998,44 @@ void rebuildPowerChart() {
     }
   }
 
-  // Round outwards to whole kW. A symmetric range keeps the zero line in the
-  // middle, which the static chart background and the three scale labels use.
+  // Round outwards on a progressive step grid: 500 W steps up to 2 kW,
+  // 2000 W steps up to 10 kW, 5000 W steps above - open-ended, no cap.
+  // A symmetric range keeps the zero line in the middle, which the static
+  // chart background and the three scale labels use.
   const float absMax = std::fmax(std::fabs(mn), std::fabs(mx));
-  int steps = (int)std::ceil(absMax / 1000.0f);
+  const int stepW = absMax <= 2000.0f ? 500 : (absMax <= 10000.0f ? 2000 : 5000);
+  int steps = (int)std::ceil(absMax / (float)stepW);
   if (steps < 1) steps = 1;
-  if (steps > 100) steps = 100;
-  const int range = steps * 1000;
+  const int range = steps * stepW;
 
   lv_chart_set_range(w.powerChart, LV_CHART_AXIS_PRIMARY_Y, -range, range);
+  if (w.socChart != nullptr) {
+    lv_chart_set_range(w.socChart, LV_CHART_AXIS_PRIMARY_Y, -range, range);
+  }
+  for (int i = 0; i < kChartPoints; ++i) {
+    if (g_chartSoc[i] == LV_CHART_POINT_NONE || g_chartSoc[i] < 0) {
+      g_chartSoc[i] = LV_CHART_POINT_NONE;
+    } else {
+      const int pct = std::min(100, std::max(0, g_chartSoc[i]));
+      g_chartSoc[i] = (int32_t)lroundf(
+          ((float)pct / 100.0f) * (2.0f * (float)range) - (float)range);
+    }
+  }
   char buf[24];
-  snprintf(buf, sizeof(buf), "%d W", range);
-  setText(w.scaleMax, buf);
-  setText(w.scaleMid, "0 W");
-  snprintf(buf, sizeof(buf), "%d W", -range);
-  setText(w.scaleMin, buf);
+  if (range % 1000 == 0) {
+    snprintf(buf, sizeof(buf), "%d kW", range / 1000);
+    setText(w.scaleMax, buf);
+    snprintf(buf, sizeof(buf), "-%d kW", range / 1000);
+    setText(w.scaleMin, buf);
+  } else {
+    snprintf(buf, sizeof(buf), "%.1f kW", range / 1000.0f);
+    setText(w.scaleMax, buf);
+    snprintf(buf, sizeof(buf), "-%.1f kW", range / 1000.0f);
+    setText(w.scaleMin, buf);
+  }
+  setText(w.scaleMid, TR("0 kW", "0 kW"));
   lv_chart_refresh(w.powerChart);
+  if (w.socChart != nullptr) lv_chart_refresh(w.socChart);
 }
 
 struct FlowNode {
@@ -1257,6 +1321,41 @@ void create(lv_obj_t *parent) {
   lv_chart_set_series_ext_y_array(w.powerChart, w.seriesWb1, g_chartWb1);
   lv_chart_set_series_ext_y_array(w.powerChart, w.seriesWb2, g_chartWb2);
 
+  // Battery SOC on its own transparent overlay chart: same line width as the
+  // power lines, but a light grey clearly lighter than the grid - it is a
+  // percentage, not a power value. Same geometry as the power chart, so both
+  // ranges line up; 0 % sits at the bottom edge, 100 % at the top,
+  // independent of the power range.
+  w.socChart = lv_chart_create(w.page2);
+  lv_obj_set_pos(w.socChart, 12, 0);
+  lv_obj_set_size(w.socChart, 766, 240);
+  lv_chart_set_type(w.socChart, LV_CHART_TYPE_LINE);
+  lv_chart_set_point_count(w.socChart, kChartPoints);
+  lv_chart_set_range(w.socChart, LV_CHART_AXIS_PRIMARY_Y, -5000, 5000);
+  lv_obj_set_style_bg_opa(w.socChart, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_border_width(w.socChart, 0, 0);
+  lv_obj_set_style_line_width(w.socChart, kChartLineWidth, LV_PART_ITEMS);
+  lv_obj_set_style_width(w.socChart, kChartLineWidth, LV_PART_INDICATOR);
+  lv_obj_set_style_height(w.socChart, kChartLineWidth, LV_PART_INDICATOR);
+  lv_obj_set_style_line_opa(w.socChart, LV_OPA_TRANSP, LV_PART_MAIN);
+  lv_obj_set_style_pad_all(w.socChart, 0, 0);
+  w.seriesSoc = lv_chart_add_series(w.socChart, lv_color_hex(0xC9CED4), LV_CHART_AXIS_PRIMARY_Y);
+  for (int i = 0; i < kChartPoints; ++i) {
+    g_chartSoc[i] = LV_CHART_POINT_NONE;
+  }
+  lv_chart_set_series_ext_y_array(w.socChart, w.seriesSoc, g_chartSoc);
+
+  // Day-ahead exchange price band over the next 24 h, shown only when the
+  // dynamic tariff is enabled. Colours: grey = no data, blue = medium,
+  // green = low, red = high.
+  {
+    const char *const priceTicks[5] = {"0h", "6h", "12h", "18h", "24h"};
+    w.priceBand = createHistoryBand(w.page2, 304, TR("Börsenpreis", "Exchange price"),
+                                    0x999999, 0x007BFF, 0x2CA02C, 0xD62728, 0x999999,
+                                    160, priceTicks);
+  }
+  setBandVisible(w.priceBand, false);
+
   // Time labels at bottom (reversed: new values on right)
   const int xpos[5] = {8, 185, 375, 565, 755};
   for (int i = 0; i < 5; ++i) {
@@ -1267,44 +1366,27 @@ void create(lv_obj_t *parent) {
 
   // Legend: the four meter series plus up to two wallboxes by name, in the
   // same colours as the chart lines.
-  const char *names[4] = {TR("Netz", "Grid"), TR("PV", "PV"), TR("Verbrauch", "Consumption"), TR("Akku", "Battery")};
-  lv_color_t colors[6] = {lv_color_hex(0x2CA02C), lv_color_hex(0xFF7F0E),
+  const char *names[7] = {TR("Netz", "Grid"), TR("PV", "PV"), TR("Verbrauch", "Consumption"), TR("Akku", "Battery"),
+                          nullptr, nullptr, TR("Akku %", "Battery %")};
+  lv_color_t colors[7] = {lv_color_hex(0x2CA02C), lv_color_hex(0xFF7F0E),
                           lv_color_hex(0x007BFF), lv_color_hex(0xD62728),
-                          lv_color_hex(0x9467BD), lv_color_hex(0x8C564B)};
-  for (int i = 0; i < 6; ++i) {
+                          lv_color_hex(0x9467BD), lv_color_hex(0x8C564B),
+                          lv_color_hex(0xC9CED4)};
+  for (int i = 0; i < 7; ++i) {
     lv_obj_t *dot = lv_obj_create(w.page2);
     lv_obj_remove_style_all(dot);
-    lv_obj_set_pos(dot, 16 + i * 128, 268);
+    lv_obj_set_pos(dot, 16 + i * 110, 268);
     lv_obj_set_size(dot, 10, 10);
     lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(dot, colors[i], 0);
     lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
-    if (i < 4) {
-      label(w.page2, 30 + i * 128, 264, 110, F_SMALL, C_MUTED, names[i]);
+    if (i < 4 || i == 6) {
+      label(w.page2, 30 + i * 110, 264, 100, F_SMALL, C_MUTED, names[i]);
     } else {
       w.wbLegendDot[i - 4] = dot;
-      w.wbLegendLabel[i - 4] = label(w.page2, 30 + i * 128, 264, 110, F_SMALL,
+      w.wbLegendLabel[i - 4] = label(w.page2, 30 + i * 110, 264, 100, F_SMALL,
                                      C_MUTED, "--");
     }
-  }
-
-  // Current IO states as indicator dots: 4 inputs, 2 relays, 2 SG-Ready
-  // outputs. The web interface draws these as history bars over the chart;
-  // here only the current state fits, so each gets a dot below its label.
-  const char *ioNames[8] = {TR("Eingang 1", "Input 1"), TR("Eingang 2", "Input 2"), TR("Eingang 3", "Input 3"),
-                            TR("Eingang 4", "Input 4"), TR("Relais 1", "Relay 1"), TR("Relais 2", "Relay 2"), TR("SG 1", "SG 1"),
-                            TR("SG 2", "SG 2")};
-  for (int i = 0; i < 8; ++i) {
-    label(w.page2, 5 + i * 95, 292, 90, F_SMALL, C_MUTED, ioNames[i],
-          LV_TEXT_ALIGN_CENTER);
-    lv_obj_t *dot = lv_obj_create(w.page2);
-    lv_obj_remove_style_all(dot);
-    lv_obj_set_pos(dot, 44 + i * 95, 312);
-    lv_obj_set_size(dot, 12, 12);
-    lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(dot, lv_color_hex(C_MUTED), 0);
-    lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
-    w.ioDot[i] = dot;
   }
 
   // Third page (settings) ---------------------------------------------
