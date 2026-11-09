@@ -202,6 +202,8 @@ struct Widgets {
   lv_chart_series_t *seriesWb1 = nullptr;
   lv_chart_series_t *seriesWb2 = nullptr;
   lv_obj_t *ioDot[8] = {};
+  HistoryBand *sgBand = nullptr;
+  HistoryBand *priceBand = nullptr;
   lv_obj_t *wbLegendDot[2] = {};
   lv_obj_t *wbLegendLabel[2] = {};
   lv_obj_t *scaleMax = nullptr;
@@ -397,6 +399,164 @@ lv_obj_t *label(lv_obj_t *parent, int x, int y, int width,
   }
   return l;
 }
+// Timeline band: a 5 px high strip over 24 h with discrete colour-coded
+// states (no data / inactive / active / extra). The caption sits left of the
+// band, the band itself reaches almost to the right edge. One segment object
+// per run of equal states, reused across updates.
+constexpr int kBandMaxSegments = 32;
+constexpr int kBandX0 = 90;
+constexpr int kBandX1 = 720;
+constexpr int kBandH = 5;
+
+struct HistoryBand {
+  lv_obj_t *label = nullptr;
+  lv_obj_t *tick[5] = {};
+  int y = 0;
+  int x0 = kBandX0;
+  lv_obj_t *seg[kBandMaxSegments] = {};
+  uint32_t colors[5] = {};  // index: state + 1 (-1 no data, 0, 1, 2, 3)
+  int lastCount = -1;
+  int lastState[kBandMaxSegments] = {};
+  int lastX0[kBandMaxSegments] = {};
+  int lastX1[kBandMaxSegments] = {};
+};
+
+HistoryBand *createHistoryBand(lv_obj_t *parent, int y, const char *caption,
+                               uint32_t noData, uint32_t inactive,
+                               uint32_t active, uint32_t extra,
+                               uint32_t both, int x0 = kBandX0,
+                               const char *const *tickLabels = nullptr) {
+  HistoryBand *band = new HistoryBand();
+  band->y = y;
+  band->x0 = x0;
+  band->colors[0] = noData;
+  band->colors[1] = inactive;
+  band->colors[2] = active;
+  band->colors[3] = extra;
+  band->colors[4] = both;
+  band->label = label(parent, 16, y - 8, x0 - 26, F_BODY, C_MUTED, caption);
+  if (tickLabels != nullptr) {
+    for (int k = 0; k < 5; ++k) {
+      const int tx = x0 + (kBandX1 - x0) * k / 4;
+      // Auto-width label centred on the tick: a fixed box clips the text.
+      lv_obj_t *t = label(parent, 0, y + kBandH + 2, 0, F_SMALL, C_MUTED,
+                          tickLabels[k]);
+      int lx = tx - (int)lv_obj_get_width(t) / 2;
+      if (lx < 2) lx = 2;
+      lv_obj_set_pos(t, lx, y + kBandH + 2);
+      band->tick[k] = t;
+    }
+  }
+  for (int i = 0; i < kBandMaxSegments; ++i) {
+    lv_obj_t *segObj = lv_obj_create(parent);
+    lv_obj_remove_style_all(segObj);
+    lv_obj_set_size(segObj, 0, kBandH);
+    lv_obj_set_style_bg_opa(segObj, LV_OPA_COVER, 0);
+    lv_obj_set_style_radius(segObj, 0, 0);
+    lv_obj_add_flag(segObj, LV_OBJ_FLAG_HIDDEN);
+    band->seg[i] = segObj;
+  }
+  return band;
+}
+
+// times/states: oldest first, in one time unit (milliseconds for the SG
+// history, minutes for the price forecast). The band shows the window
+// [windowStart, windowStart + windowSpan); entries outside are clipped.
+// Times before the first entry inside the window become an explicit
+// no-data segment.
+void updateHistoryBand(HistoryBand *band, const uint32_t *times,
+                       const int8_t *states, int count,
+                       int64_t windowStart, int64_t windowSpan) {
+  if (band == nullptr || count <= 0) return;
+  const int64_t windowEnd = windowStart + windowSpan;
+  auto toX = [&windowStart, &windowSpan, &band](int64_t t) {
+    return band->x0 + (int)((t - windowStart) * (int64_t)(kBandX1 - band->x0) / windowSpan);
+  };
+  int segCount = 0;
+  int segState[kBandMaxSegments];
+  int segX0[kBandMaxSegments];
+  int segX1[kBandMaxSegments];
+  // Leading no-data segment up to the first entry inside the window.
+  if ((int64_t)times[0] > windowStart && segCount < kBandMaxSegments) {
+    segState[segCount] = -1;
+    segX0[segCount] = toX(windowStart);
+    segX1[segCount] = toX((int64_t)times[0]);
+    ++segCount;
+  }
+  // Entries before the window are skipped; the run loop below still
+  // starts at the first entry, clipped to the window.
+  int runState = states[0];
+  int64_t runStart = (int64_t)times[0];
+  for (int i = 1; i <= count; ++i) {
+    const bool end = (i == count) || (states[i] != runState);
+    if (end) {
+      if (segCount < kBandMaxSegments) {
+        const int64_t t0 = runStart > windowStart ? runStart : windowStart;
+        const int64_t t1 = (i < count) ? (int64_t)times[i] : windowEnd;
+        segState[segCount] = runState;
+        segX0[segCount] = toX(t0);
+        segX1[segCount] = toX(t1);
+        ++segCount;
+      }
+      if (i < count) {
+        runState = states[i];
+        runStart = (int64_t)times[i];
+      }
+    }
+  }
+  bool changed = (segCount != band->lastCount);
+  if (!changed) {
+    for (int i = 0; i < segCount; ++i) {
+      if (segState[i] != band->lastState[i] || segX0[i] != band->lastX0[i] ||
+          segX1[i] != band->lastX1[i]) {
+        changed = true;
+        break;
+      }
+    }
+  }
+  if (!changed) return;
+  for (int i = 0; i < kBandMaxSegments; ++i) {
+    if (i < segCount) {
+      const int w = std::max(1, segX1[i] - segX0[i]);
+      lv_obj_set_pos(band->seg[i], segX0[i], band->y);
+      lv_obj_set_size(band->seg[i], w, kBandH);
+      lv_obj_set_style_bg_color(band->seg[i],
+                                lv_color_hex(band->colors[segState[i] + 1]), 0);
+      lv_obj_clear_flag(band->seg[i], LV_OBJ_FLAG_HIDDEN);
+      band->lastState[i] = segState[i];
+      band->lastX0[i] = segX0[i];
+      band->lastX1[i] = segX1[i];
+    } else {
+      lv_obj_add_flag(band->seg[i], LV_OBJ_FLAG_HIDDEN);
+    }
+  }
+  band->lastCount = segCount;
+}
+
+void setBandVisible(HistoryBand *band, bool visible) {
+  if (band == nullptr) return;
+  if (visible) {
+    lv_obj_clear_flag(band->label, LV_OBJ_FLAG_HIDDEN);
+  } else {
+    lv_obj_add_flag(band->label, LV_OBJ_FLAG_HIDDEN);
+  }
+  for (int i = 0; i < kBandMaxSegments; ++i) {
+    if (visible && i < band->lastCount) {
+      lv_obj_clear_flag(band->seg[i], LV_OBJ_FLAG_HIDDEN);
+    } else {
+      lv_obj_add_flag(band->seg[i], LV_OBJ_FLAG_HIDDEN);
+    }
+  }
+  for (int k = 0; k < 5; ++k) {
+    if (band->tick[k] == nullptr) continue;
+    if (visible) {
+      lv_obj_clear_flag(band->tick[k], LV_OBJ_FLAG_HIDDEN);
+    } else {
+      lv_obj_add_flag(band->tick[k], LV_OBJ_FLAG_HIDDEN);
+    }
+  }
+}
+
 
 // Name on the left, value on the right.
 lv_obj_t *row(lv_obj_t *parent, int x, int y, int width, const char *name,
@@ -1435,19 +1595,26 @@ void create(lv_obj_t *parent) {
   lv_obj_set_size(w.page6, 790, 372);
   lv_obj_add_flag(w.page6, LV_OBJ_FLAG_HIDDEN);
 
-  lv_obj_t *sg = card(w.page6, 16, 0, 758, 160);
+  lv_obj_t *sg = card(w.page6, 16, 0, 758, 164);
   title(sg, TR("SG-READY", "SG-READY"));
-  row(sg, 16, 34, 720, TR("Blockiert", "Blocked"), &w.heatBlocking);
-  row(sg, 16, 58, 720, TR("Erweitert", "Extended"), &w.heatExtended);
-  row(sg, 16, 82, 720, "Status", &w.heatStatus);
-  row(sg, 16, 106, 720, "14a EnWG", &w.heatP14);
-  row(sg, 16, 130, 720, TR("Automatik-Override", "Automation override"), &w.heatOverride);
+  row(sg, 16, 30, 720, TR("Blockiert", "Blocked"), &w.heatBlocking);
+  row(sg, 16, 52, 720, TR("Erweitert", "Extended"), &w.heatExtended);
+  row(sg, 16, 74, 720, "Status", &w.heatStatus);
+  row(sg, 16, 96, 720, "14a EnWG", &w.heatP14);
+  // 24 h history band in the same card: grey = no data, blue = none active,
+  // red = SG1 (blocking), green = SG2 (extended), orange = both (wrong state).
+  {
+    const char *const sgTicks[5] = {"24h", "18h", "12h", "6h", "0h"};
+    w.sgBand = createHistoryBand(sg, 128, TR("Verlauf", "History"),
+                                 0x999999, 0x007BFF, 0xD62728, 0x2CA02C, 0xFF7F0E,
+                                 kBandX0, sgTicks);
+  }
 
-  lv_obj_t *party = card(w.page6, 16, 172, 758, 58);
+  lv_obj_t *party = card(w.page6, 16, 176, 758, 52);
   title(party, TR("PARTYMODUS", "PARTY MODE"));
-  label(party, 16, 34, 400, F_BODY, C_MUTED, TR("2 Std. Override", "2 h override"));
+  label(party, 16, 30, 400, F_BODY, C_MUTED, TR("2 Std. Override", "2 h override"));
   w.heatPartyBtn = lv_btn_create(party);
-  lv_obj_set_pos(w.heatPartyBtn, 542, 9);
+  lv_obj_set_pos(w.heatPartyBtn, 542, 6);
   lv_obj_set_size(w.heatPartyBtn, 200, 40);
   lv_obj_set_style_radius(w.heatPartyBtn, 9, 0);
   lv_obj_set_style_bg_color(w.heatPartyBtn, lv_color_hex(C_CARD2), 0);
@@ -1471,19 +1638,21 @@ void create(lv_obj_t *parent) {
     }
   }, LV_EVENT_CLICKED, nullptr);
 
-  lv_obj_t *temps = card(w.page6, 16, 242, 758, 110);
+  lv_obj_t *temps = card(w.page6, 16, 240, 758, 94);
   title(temps, TR("TEMPERATUR", "TEMPERATURE"));
-  row(temps, 16, 34, 720, TR("Jetzt", "Now"), &w.tempNow);
-  row(temps, 16, 58, 720, TR("Heute Min/Max", "Today min/max"), &w.tempToday);
-  row(temps, 16, 82, 720, TR("Morgen Min/Max", "Tomorrow min/max"), &w.tempTomorrow);
+  row(temps, 16, 28, 720, TR("Jetzt", "Now"), &w.tempNow);
+  row(temps, 16, 48, 720, TR("Heute Min/Max", "Today min/max"), &w.tempToday);
+  row(temps, 16, 68, 720, TR("Morgen Min/Max", "Tomorrow min/max"), &w.tempTomorrow);
+
+
 
   // Energy flow: four links around a central house hub. Links are drawn
   // first, particles next and cards last, so particles slide underneath the
   // nodes instead of crossing their text.
-  flowLink(w.page4, 0, 200, 98, 334, 151, C_SOLAR);  // PV <-> house
-  flowLink(w.page4, 1, 200, 254, 334, 201, C_BLUE);   // grid <-> house
-  flowLink(w.page4, 2, 600, 98, 466, 151, C_BAT);    // battery <-> house
-  flowLink(w.page4, 3, 466, 201, 600, 254, C_EV);     // house -> wallbox
+  flowLink(w.page4, 0, 200, 98, 340, 153, C_SOLAR);  // PV <-> house
+  flowLink(w.page4, 1, 200, 254, 340, 199, C_BLUE);   // grid <-> house
+  flowLink(w.page4, 2, 600, 98, 460, 153, C_BAT);    // battery <-> house
+  flowLink(w.page4, 3, 460, 199, 600, 254, C_EV);     // house -> wallbox
   flowDots(w.page4, 0, C_SOLAR_HI);
   flowDots(w.page4, 1, C_GRID_HI);
   flowDots(w.page4, 2, C_BAT_HI);
@@ -2350,14 +2519,24 @@ void update(const WarpData &d) {
       setColorIfChanged(w.heatStatus, d.heatingEnabled ? C_TEXT : C_MUTED);
       setTextIfChanged(w.heatP14, onOff(d.p14Enwg));
       setColorIfChanged(w.heatP14, d.p14Enwg ? C_RED : C_MUTED);
-      setTextIfChanged(w.heatOverride, onOff(d.automationOverride));
-      setColorIfChanged(w.heatOverride, d.automationOverride ? C_EV : C_MUTED);
     } else {
       setTextIfChanged(w.heatBlocking, "--");
       setTextIfChanged(w.heatExtended, "--");
       setTextIfChanged(w.heatStatus, "--");
       setTextIfChanged(w.heatP14, "--");
-      setTextIfChanged(w.heatOverride, "--");
+    }
+    // SG history band: redraw only when the segment picture changes.
+    if (w.sgBand != nullptr && g_sgCount > 0) {
+      static uint32_t times[kMaxSamples];
+      static int8_t state[kMaxSamples];
+      for (int i = 0; i < g_sgCount; ++i) {
+        const SgSample &e = g_sgSamples[(g_sgHead + i) % kMaxSamples];
+        times[i] = e.timeMs;
+        state[i] = e.state;
+      }
+      updateHistoryBand(w.sgBand, times, state, g_sgCount,
+                        (int64_t)times[g_sgCount - 1] - (int64_t)kHistoryMs,
+                        (int64_t)kHistoryMs);
     }
     if (w.heatPartyBtn != nullptr) {
       lv_obj_t *lbl = lv_obj_get_child(w.heatPartyBtn, 0);
