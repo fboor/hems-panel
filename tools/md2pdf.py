@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Render docs/install/anleitung.md -> docs/install/anleitung.pdf via
-python-markdown + chromium. Same approach as the rct-panel md2pdf.py:
-system python3.10 has the markdown module, chromium prints the HTML."""
+python-markdown + chromium. The system python3.10 has the markdown module;
+chromium prints the HTML to PDF."""
 import pathlib
 import re
 import subprocess
@@ -11,7 +11,7 @@ import markdown
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 MD = ROOT / "docs" / "install" / "anleitung.md"
-HTML = pathlib.Path("/tmp/warp-anleitung.html")
+HTML = pathlib.Path("/tmp/hems-anleitung.html")
 PDF = ROOT / "docs" / "install" / "anleitung.pdf"
 
 with open(MD, "r", encoding="utf-8") as f:

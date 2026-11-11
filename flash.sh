@@ -16,7 +16,7 @@ set -euo pipefail
 # wrong one puts two push-pull outputs on the same enable line.
 #
 # Serial log: the application's Serial is the native USB CDC port. The UART
-# Type-C port is for flashing and for the ROM output. See README.md.
+# Type-C port is for flashing and for the ROM output. See docs/firmware.md.
 
 here=$(cd "$(dirname "$0")" && pwd)
 invoke_dir=$PWD

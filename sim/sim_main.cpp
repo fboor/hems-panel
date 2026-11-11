@@ -1,4 +1,4 @@
-// WARP Energy Manager panel - desktop emulator.
+// Home Energy Manager panel - desktop emulator.
 //
 // Same UI source as the firmware, SDL window instead of the RGB panel, POSIX
 // socket instead of WiFiClient. The point is that a picture from here shows the
@@ -379,14 +379,14 @@ void setChargeMode(int charger, int mode) {
 
 void usage() {
   printf(
-      "warp-panel Emulator\n"
+      "hems-panel Emulator\n"
       "  --url URL        WARP base URL or flat /json endpoint\n"
       "                   (default http://localhost:8082)\n"
       "  --interval MS    poll interval (default 10000)\n"
       "  --timeout MS     HTTP timeout (default 5000)\n"
       "  --shot FILE      render one frame to PNG, then exit\n"
       "  --after S        seconds to wait before the shot (default 2)\n"
-      "  --page N         page to show, 1..5 (default 1)\n"
+      "  --page N         page to show, 1..6 (default 1)\n"
       "  --setup          show the first-boot Wi-Fi setup screen\n"
       "  --probe          read once, print the mapped values, exit\n"
       "  -v, --verbose    log every HTTP request\n"
@@ -493,7 +493,7 @@ int main(int argc, char **argv) {
     SDL_Quit();
     return 1;
   }
-  lv_sdl_window_set_title(disp, "WARP Energy Manager (Emulator)");
+  lv_sdl_window_set_title(disp, "Home Energy Manager (Emulator)");
   lv_sdl_mouse_create();
   // SDL_AddEventWatch(quitWatch, nullptr);
 
@@ -503,9 +503,9 @@ int main(int argc, char **argv) {
   warpui::setHeatingOverrideHandler(setHeatingOverride);
   warpui::setConnectionState(warpui::ConnectionState::NoNet);
   warpui::setNetworkInfo("WLAN-Demo", "192.168.1.50", "http://192.168.1.222",
-                         "http://warp-panel.local/");
+                         "http://hems-panel.local/");
   if (opt.setup) {
-    warpui::showSetup("WARP-Panel-A1B2", nullptr, "http://192.168.4.1");
+    warpui::showSetup("HEMS-Panel-A1B2", nullptr, "http://192.168.4.1");
   }
 
   g_lastTick = SDL_GetTicks();

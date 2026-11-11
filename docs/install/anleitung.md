@@ -1,4 +1,4 @@
-# WARP Energy Manager Panel - Kurzanleitung
+# Home Energy Manager Panel - Kurzanleitung
 
 ## 1. Firmware installieren
 
@@ -18,7 +18,7 @@ eingerichtetes Panel das Update im Panel selbst verwenden.
 
 ## 2. Einrichtung
 
-Das Panel startet ein offenes WLAN namens **WARP-Panel** (kein Passwort).
+Das Panel startet ein offenes WLAN namens **HEMS-Panel** (kein Passwort).
 Verbinde dich damit - es erscheint ein Einrichtungsbildschirm mit QR-Code.
 
 Dort eintragen:

@@ -1,4 +1,4 @@
-// Minimal JSON value lookup for the WARP panel.
+// Minimal JSON value lookup for the Home Energy Manager panel.
 //
 // The device answers with a single JSON object. This scanner finds a key at any
 // nesting depth and reads its value, so it works for a flat response as well as

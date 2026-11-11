@@ -642,6 +642,12 @@ bool displayInit() {
       (LV_COLOR_FORMAT_GET_BPP(lv_display_get_color_format(s_lv_disp)) + 7) / 8;
   const uint32_t buf_rows = BOARD_LCD_BUF_ROWS;
   const size_t bufBytes = (size_t)LCD_H_RES * buf_rows * pxBytes;
+  // SRAM first for fast DMA flushes, but only 28 rows (44.8 kB): the old
+  // 48-row buffer (76.8 kB in internal heap) left just ~32 kB for
+  // Wi-Fi/HTTPClient, whose TCP allocations then failed on the device
+  // (emulator uses POSIX sockets, so it never showed this). A PSRAM buffer
+  // fixed the heap but flickered during Wi-Fi traffic (shared PSRAM bus),
+  // so: small SRAM buffer, PSRAM only as fallback.
   lv_color_t *buf1 =
       (lv_color_t *)heap_caps_malloc(bufBytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
   bool imSram = buf1 != nullptr;

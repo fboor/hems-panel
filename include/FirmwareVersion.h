@@ -1,4 +1,4 @@
-// WARP Energy Manager V2 panel - firmware version.
+// Home Energy Manager panel - firmware version.
 //
 // One place to bump for a release. tools/pack_web_install.sh reads the
 // version (and month) from here and stamps it into the web installer

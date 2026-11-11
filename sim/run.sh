@@ -1,22 +1,21 @@
 #!/usr/bin/env bash
 set -euo pipefail
-# Build and run the WARP panel emulator.
+# Build and run the Home Energy Manager panel emulator.
 #
 #   sim/run.sh                                  window, mock on :8082
 #   sim/run.sh --url http://wem2-abcd/json      real device
 #   sim/run.sh --shot out.png --after 3         one frame, then exit
-#   sim/run.sh --shot out.png --page 4          a specific page (1..5)
+#   sim/run.sh --shot out.png --page 4          a specific page (1..6)
 #   sim/run.sh --probe                          raw JSON to stdout
 #
-# LVGL comes from the PlatformIO library directory. Set LVGL_DIR if it lives
-# somewhere else; the default is the sibling rct-panel checkout, which is only
-# read, never written.
+# LVGL comes from the project's PlatformIO library directory. Set LVGL_DIR if it
+# lives somewhere else; the default is the build environment of the 7" board.
 
 here=$(cd "$(dirname "$0")" && pwd)
 repo=$(cd "$here/.." && pwd)
 build="$here/build"
-lvgl=${LVGL_DIR:-$repo/../rct-panel/.pio/libdeps/esp32-s3/lvgl}
-out="$build/warp_panel_sim"
+lvgl=${LVGL_DIR:-$repo/.pio/libdeps/esp32-s3-touch-lcd-7/lvgl}
+out="$build/hems_panel_sim"
 
 if [ ! -d "$lvgl/src" ]; then
   echo "LVGL nicht gefunden: $lvgl/src" >&2

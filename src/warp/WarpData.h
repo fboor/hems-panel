@@ -1,4 +1,4 @@
-// WARP Energy Manager V2 panel - data model.
+// Home Energy Manager panel - data model.
 //
 // One struct, filled from the device's JSON and read by the UI. Kept free of
 // Arduino and LVGL so the firmware and the desktop emulator share it verbatim.

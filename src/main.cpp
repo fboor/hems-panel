@@ -1,4 +1,4 @@
-// WARP Energy Manager V2 panel - firmware entry point.
+// Home Energy Manager panel - firmware entry point.
 //
 // Boot order: display, UI, Wi-Fi configuration portal, then the 10 s poll of
 // the device's JSON endpoint. The same UI and parser run in the desktop
@@ -45,7 +45,7 @@ char g_url[96] = "http://192.168.1.222";
 WiFiManager *g_wm = nullptr;
 WiFiManagerParameter *g_urlParam = nullptr;
 bool g_mdnsOk = false;
-char g_apSsid[32] = "WARP-Panel";
+char g_apSsid[32] = "HEMS-Panel";
 // The setup network is intentionally open. The QR code and the setup screen
 // carry the SSID, so joining it needs no password on any device.
 constexpr char g_apPassword[] = "";
@@ -179,7 +179,7 @@ void updateNetworkInfo() {
   const String ip = WiFi.localIP().toString();
   char web[80];
   if (g_mdnsOk) {
-    snprintf(web, sizeof(web), "http://warp-panel.local/");
+    snprintf(web, sizeof(web), "http://hems-panel.local/");
   } else {
     snprintf(web, sizeof(web), "http://%s/", ip.c_str());
   }
@@ -195,10 +195,10 @@ void setupMdns() {
   if (g_mdnsOk) {
     return;
   }
-  g_mdnsOk = MDNS.begin("warp-panel");
+  g_mdnsOk = MDNS.begin("hems-panel");
   if (g_mdnsOk) {
     MDNS.addService("http", "tcp", 80);
-    Serial.println(F("mDNS: http://warp-panel.local/"));
+    Serial.println(F("mDNS: http://hems-panel.local/"));
   } else {
     Serial.println(F("mDNS start failed, use the panel IP"));
   }
@@ -206,7 +206,7 @@ void setupMdns() {
 
 void generateApSsid() {
   const uint64_t chip = ESP.getEfuseMac();
-  snprintf(g_apSsid, sizeof(g_apSsid), "WARP-Panel-%04X",
+  snprintf(g_apSsid, sizeof(g_apSsid), "HEMS-Panel-%04X",
            static_cast<unsigned>(chip & 0xFFFFu));
 }
 
@@ -362,8 +362,8 @@ void setupNetwork() {
   // stays visible until the user has configured a WLAN and the panel joined it.
   g_wm->setConfigPortalTimeout(0);
   g_wm->setConnectTimeout(20);
-  g_wm->setHostname("warp-panel");
-  g_wm->setTitle("WARP-Panel Setup");
+  g_wm->setHostname("hems-panel");
+  g_wm->setTitle("HEMS-Panel Setup");
   g_wm->setDarkMode(true);
   g_wm->setAPCallback([](WiFiManager *mgr) {
     const String ssid = mgr->getConfigPortalSSID();
@@ -374,6 +374,9 @@ void setupNetwork() {
   g_wm->setSaveParamsCallback(onParamsSaved);
 
   warpui::setConnectionState(warpui::ConnectionState::NoNet);
+  // No modem sleep: on the Waveshare board's weak onboard antenna, modem
+  // sleep makes beacons/packets get missed and TCP sessions drop.
+  WiFi.setSleep(false);
   const bool connected = g_wm->autoConnect(g_apSsid, g_apPassword);
   if (!connected) {
     Serial.println(F("Wi-Fi configuration did not complete, restarting"));
@@ -385,8 +388,9 @@ void setupNetwork() {
   warpui::hideSetup();
   setupMdns();
   updateNetworkInfo();
-  Serial.printf("Wi-Fi: %s   endpoint: %s\n", WiFi.localIP().toString().c_str(),
-                g_url);
+  Serial.printf("Wi-Fi: %s   RSSI: %d dBm   heap: %u   PSRAM: %u   endpoint: %s\n",
+                WiFi.localIP().toString().c_str(), WiFi.RSSI(),
+                ESP.getFreeHeap(), ESP.getPsramSize(), g_url);
 
   // Keep the same configuration page reachable on the local network. The AP
   // is only used for the first boot; afterwards this is a normal HTTP server
@@ -401,7 +405,7 @@ void setupNetwork() {
 void setup() {
   Serial.begin(115200);
   delay(200);
-  Serial.println(F("\nWARP Energy Manager panel"));
+  Serial.println(F("\nHome Energy Manager panel"));
 
   if (!displayInit()) {
     Serial.println(F("FATAL: display init failed"));
@@ -424,7 +428,7 @@ void setup() {
 
   setupNetwork();
 
-  ArduinoOTA.setHostname("warp-panel");
+  ArduinoOTA.setHostname("hems-panel");
   ArduinoOTA.begin();
 
   g_dataMutex = xSemaphoreCreateMutex();

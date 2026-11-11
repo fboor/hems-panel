@@ -1,4 +1,4 @@
-// WARP panel screen, built with LVGL. Shared by firmware and emulator.
+// Home Energy Manager panel screen, built with LVGL. Shared by firmware and emulator.
 //
 // SPDX-License-Identifier: MIT
 #pragma once

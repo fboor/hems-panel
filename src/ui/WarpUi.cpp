@@ -526,6 +526,14 @@ void updateHistoryBand(HistoryBand *band, const uint32_t *times,
     }
   }
   if (!changed) return;
+  if (band == w.priceBand) {
+    fprintf(stderr, "BANDDBG update segCount=%d seg0=%p x0=%d x1=%d state0=%d\n",
+            segCount, (void*)band->seg[0], segX0[0], segX1[0], segState[0]);
+    for (int i = 0; i < segCount; ++i) {
+      fprintf(stderr, "  seg[%d] obj=%p x=%d..%d state=%d\n", i, (void*)band->seg[i],
+              segX0[i], segX1[i], segState[i]);
+    }
+  }
   for (int i = 0; i < kBandMaxSegments; ++i) {
     if (i < segCount) {
       const int w = std::max(1, segX1[i] - segX0[i]);
@@ -1445,7 +1453,7 @@ void create(lv_obj_t *parent) {
   lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
 
   // Header ---------------------------------------------------------------
-  label(parent, 16, 8, 0, F_TITLE, C_TEXT, TR("WARP Energy Manager", "WARP Energy Manager"));
+  label(parent, 16, 8, 0, F_TITLE, C_TEXT, TR("Home Energy Manager", "Home Energy Manager"));
   // Page captions
   w.caption1 = label(parent, 16, 40, 0, F_BODY, C_MUTED, TR("Energie", "Energy"));
   w.caption2 = label(parent, 16, 40, 0, F_BODY, C_MUTED, TR("Energiebilanz", "Energy balance"));
@@ -1465,16 +1473,16 @@ void create(lv_obj_t *parent) {
   w.statusChip = lv_obj_create(parent);
   lv_obj_remove_style_all(w.statusChip);
   lv_obj_set_pos(w.statusChip, 670, 14);
-  lv_obj_set_size(w.statusChip, 110, 32);
-  lv_obj_set_style_radius(w.statusChip, 16, 0);
+  lv_obj_set_size(w.statusChip, 115, 37);
+  lv_obj_set_style_radius(w.statusChip, 18, 0);
   lv_obj_set_style_bg_color(w.statusChip, lv_color_hex(C_CARD2), 0);
   lv_obj_set_style_bg_opa(w.statusChip, LV_OPA_COVER, 0);
   lv_obj_set_style_border_width(w.statusChip, 1, 0);
   lv_obj_set_style_border_color(w.statusChip, lv_color_hex(C_LINE), 0);
   lv_obj_clear_flag(w.statusChip, LV_OBJ_FLAG_SCROLLABLE);
 
-  w.statusWifi = label(w.statusChip, 10, 5, 24, F_BODY, C_MUTED, LV_SYMBOL_WIFI);
-  w.statusText = label(w.statusChip, 40, 7, 92, F_SMALL, C_MUTED, TR("WLAN?", "WLAN?"));
+  w.statusWifi = label(w.statusChip, 10, 7, 24, F_BODY, C_MUTED, LV_SYMBOL_WIFI);
+  w.statusText = label(w.statusChip, 40, 10, 92, F_SMALL, C_MUTED, TR("WLAN?", "WLAN?"));
 
   lv_obj_t *page1 = lv_obj_create(parent);
   lv_obj_remove_style_all(page1);
@@ -1640,16 +1648,18 @@ void create(lv_obj_t *parent) {
   // shown only when the dynamic tariff is enabled. Colours: grey = no
   // data, blue = medium, green = low, red = high.
   w.priceCard = card(w.page2, 12, 289, 776, 64);
-  lv_obj_t *priceCard = w.priceCard;
   {
+    // Band and stats are children of page2 (not of the card): the card's
+    // flex layout treats children as flow items and the band segments were
+    // not rendered inside it.
     const char *const priceTicks[5] = {"0h", "6h", "12h", "18h", "24h"};
-    w.priceBand = createHistoryBand(priceCard, 17, TR("Börsenpreis", "Exchange price"),
+    w.priceBand = createHistoryBand(w.page2, 306, TR("Börsenpreis", "Exchange price"),
                                     0x999999, 0x007BFF, 0x2CA02C, 0xD62728, 0x999999,
-                                    160, priceTicks);
+                                    172, priceTicks);
   }
   setBandVisible(w.priceBand, false);
   w.priceStats =
-      label(priceCard, 160, 41, 560, F_SMALL, C_MUTED, "--");
+      label(w.page2, 172, 332, 560, F_SMALL, C_MUTED, "--");
   lv_obj_add_flag(w.priceStats, LV_OBJ_FLAG_HIDDEN);
 
   // Time labels at bottom (reversed: new values on right)
@@ -2065,7 +2075,7 @@ void showSetup(const char *ssid, const char *password, const char *url) {
 
     label(overlay, 40, 22, 0, F_BIG, C_TEXT, TR("WLAN einrichten", "Set up WLAN"));
     label(overlay, 40, 66, 0, F_BODY, C_MUTED,
-          TR("Mit dem WARP-Panel verbinden", "Connect to the WARP panel"));
+          TR("Mit dem HEMS-Panel verbinden", "Connect to the HEMS panel"));
 
     // White quiet zone around the QR code; the code itself is 260 px so the
     // camera can lock on from a normal arm's length.
@@ -2476,6 +2486,7 @@ void update(const WarpData &d) {
       }
       if (show) {
         const int64_t windowStartMin = (int64_t)d.nowMin;
+
         static uint32_t times[200];
         static int8_t state[200];
         static int32_t win[200];
@@ -2526,6 +2537,7 @@ void update(const WarpData &d) {
                                                  : (int8_t)0;
           }
           updateHistoryBand(w.priceBand, times, state, n, windowStartMin, 1440);
+
         }
       }
     }
