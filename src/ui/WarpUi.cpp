@@ -526,6 +526,9 @@ void updateHistoryBand(HistoryBand *band, const uint32_t *times,
     }
   }
   if (!changed) return;
+#ifdef HEMS_UI_DEBUG_BAND
+  // Geometry dump for tuning the price band. Enable with
+  // -DHEMS_UI_DEBUG_BAND=1 (see platformio.ini and sim/run.sh).
   if (band == w.priceBand) {
     fprintf(stderr, "BANDDBG update segCount=%d seg0=%p x0=%d x1=%d state0=%d\n",
             segCount, (void*)band->seg[0], segX0[0], segX1[0], segState[0]);
@@ -534,6 +537,7 @@ void updateHistoryBand(HistoryBand *band, const uint32_t *times,
               segX0[i], segX1[i], segState[i]);
     }
   }
+#endif
   for (int i = 0; i < kBandMaxSegments; ++i) {
     if (i < segCount) {
       const int w = std::max(1, segX1[i] - segX0[i]);

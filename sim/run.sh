@@ -8,6 +8,8 @@ set -euo pipefail
 #   sim/run.sh --shot out.png --page 4          a specific page (1..6)
 #   sim/run.sh --probe                          raw JSON to stdout
 #
+# Set HEMS_UI_DEBUG_BAND=1 to log the price-band segment geometry.
+#
 # LVGL comes from the project's PlatformIO library directory. Set LVGL_DIR if it
 # lives somewhere else; the default is the build environment of the 7" board.
 
@@ -27,6 +29,7 @@ mkdir -p "$build/lvgl"
 
 cflags="-O2 -DLV_CONF_INCLUDE_SIMPLE -I$here/lvconf -I$repo/include -I$repo/src -I$lvgl"
 [ -n "${WARP_LANG_EN:-}" ] && cflags="$cflags -DWARP_LANG_EN=1"
+[ -n "${HEMS_UI_DEBUG_BAND:-}" ] && cflags="$cflags -DHEMS_UI_DEBUG_BAND=1"
 
 # LVGL once, keyed by source path.
 neu=0

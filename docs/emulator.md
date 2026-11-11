@@ -38,6 +38,10 @@ The page numbers are 1–6, in the same order as the on-screen pages
 ([ui.md](ui.md#page-order)). `--after N` waits N seconds before the shot. The
 default is 2 seconds; use a larger value when a real device is slow to answer.
 
+Set `HEMS_UI_DEBUG_BAND=1` to log the price-band segment geometry while tuning
+the history chart. The firmware build uses the same flag as
+`-DHEMS_UI_DEBUG_BAND=1` (see `platformio.ini`).
+
 The mock serves the module API and also keeps a flat `/json` endpoint for the
 fallback parser. Its values drift in `--live` mode, so the page visibly updates
 every 10 seconds.
