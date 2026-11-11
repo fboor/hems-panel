@@ -6,6 +6,9 @@ how self-sufficient the house is, and what the wallboxes and heating are doing.
 The panel talks to the WARP device over the local network and needs no cloud
 account of its own.
 
+**Design goals:** easy to set up and use, as local as possible, and no
+additional infrastructure beyond the panel and the WARP Energy Manager.
+
 ![Energy flow page](screenshots/flow.png)
 
 ## Features
@@ -94,7 +97,7 @@ Scenarios, mock commands and checks are in
 The panel has been verified against a real WARP Energy Manager V2 and by
 rendered frames. The firmware compiles for the 7" board; hardware bring-up is
 still the open item. Details are in the
-[documentation index](docs/README.md#status) and [`TODO.md`](TODO.md).
+[documentation index](docs/README.md#status).
 
 ## License
 
@@ -107,3 +110,8 @@ underlying libraries), Montserrat (SIL OFL 1.1), Font Awesome Free
 (Bitstream Vera). The background photograph in `src/chart_bg.c`
 (solar panel with a leaf) is (c) 2026 Florian Boor, Creative Commons
 CC BY 3.0 or later.
+
+## History
+
+This project was started as part of a research study about the abilities of AI
+and was implemented by machine workers completely.

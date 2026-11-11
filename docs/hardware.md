@@ -111,5 +111,3 @@ the bench, in this order:
 - The board profile, the display timings and the expander bring-up carry their
   measurements and open questions in the source headers. Read those before
   changing a pin.
-
-The current hardware tasks are tracked in [`TODO.md`](../TODO.md).

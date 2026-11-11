@@ -67,8 +67,7 @@ include/          lv_conf.h and the firmware version used by both builds
   a real WARP Energy Manager V2 and by rendered frames.
 - The firmware compiles for the 7" board. Hardware bring-up — backlight,
   display, touch, Wi-Fi setup and the native-USB log — is still the open item;
-  the checklist is in [hardware.md](hardware.md#bring-up-checklist) and the
-  current tasks are in [`TODO.md`](../TODO.md).
+  the checklist is in [hardware.md](hardware.md#bring-up-checklist).
 - The browser installer and the German quick guide live in
   [`install/`](install/); the top-level [`LICENSE`](../LICENSE) covers the
   project code.
