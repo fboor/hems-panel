@@ -7,5 +7,5 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#define WARP_FW_VERSION "0.1"
+#define WARP_FW_VERSION "0.5"
 #define WARP_FW_VERSION_MON "2026-11"
