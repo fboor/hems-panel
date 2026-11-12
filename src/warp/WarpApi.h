@@ -674,6 +674,15 @@ class Reader {
               roleFound = true;
             }
           }
+          // A wallbox meter reports the charged energy as an import counter.
+          // Some meters only expose the import-minus-export counter (215),
+          // which is the same value for a charger with no feed-in.
+          if (value(slot, VID_GRID_IMPORT, v) ||
+              value(slot, VID_HOUSE_ENERGY, v)) {
+            d.chargerEnergyWh += kwhToWh(v);
+            d.hasChargerEnergy = true;
+            roleFound = true;
+          }
           break;
         }
 
@@ -896,6 +905,10 @@ class Reader {
         dailyDayDraw_ = d.dayGridDrawWh;
         dailyDayFeed_ = d.dayFeedInWh;
       }
+      if (d.hasDayCharger) {
+        dailyHasCharger_ = true;
+        dailyCharger_ = d.dayChargerWh;
+      }
       dailyTtl_ = 6;
     } else {
       --dailyTtl_;
@@ -907,6 +920,8 @@ class Reader {
     d.dayLoadWh = dailyDayLoad_;
     d.dayGridDrawWh = dailyDayDraw_;
     d.dayFeedInWh = dailyDayFeed_;
+    d.hasDayCharger = dailyHasCharger_;
+    d.dayChargerWh = dailyCharger_;
 
     // Slow-changing state (heating, temperatures, IO): fetch every 6th poll
     // (~60 s) and serve the cache in between. Fewer HTTP round trips means
@@ -1304,6 +1319,7 @@ class Reader {
     int loadSlot = -1;
     int gridSlot = -1;
     int pvSlot = -1;
+    std::vector<int> chargerSlots;
     for (const Slot &slot : slots_) {
       if (slot.role == ROLE_LOAD && loadSlot < 0) {
         loadSlot = slot.slot;
@@ -1313,6 +1329,9 @@ class Reader {
       }
       if (slot.role == ROLE_PV && pvSlot < 0) {
         pvSlot = slot.slot;
+      }
+      if (slot.role == ROLE_CHARGER) {
+        chargerSlots.push_back(slot.slot);
       }
     }
     if (loadSlot < 0 || gridSlot < 0) {
@@ -1351,6 +1370,7 @@ class Reader {
     double previousGrid = NAN;
     double previousPvExport = NAN;
     double previousGridExport = NAN;
+    std::vector<double> previousChargerImport(chargerSlots.size(), NAN);
     if (today > 0) {
       const int previous =
           dailyLastValid(values, count, loadSlot, gridSlot, today);
@@ -1363,6 +1383,10 @@ class Reader {
         previousPvExport = dailyExport(values, count, previous, pvSlot);
       }
       previousGridExport = dailyExport(values, count, previous, gridSlot);
+      for (size_t i = 0; i < chargerSlots.size(); ++i) {
+        previousChargerImport[i] =
+            dailyGridImport(values, count, previous, chargerSlots[i]);
+      }
     } else {
       // The first of the month: yesterday lives in the previous month.
       int previousYear = year;
@@ -1393,6 +1417,10 @@ class Reader {
       }
       previousGridExport =
           dailyExport(previousValues, previousCount, previous, gridSlot);
+      for (size_t i = 0; i < chargerSlots.size(); ++i) {
+        previousChargerImport[i] = dailyGridImport(
+            previousValues, previousCount, previous, chargerSlots[i]);
+      }
     }
 
     const double todayLoad = dailyLoadNet(values, count, today, loadSlot);
@@ -1426,6 +1454,25 @@ class Reader {
           dailyExport(values, count, today, gridSlot) - previousGridExport;
       if (!std::isnan(feedDelta)) {
         d.dayFeedInWh = (float)(std::max(0.0, feedDelta) * 1000.0);
+        anySum = true;
+      }
+    }
+    if (!chargerSlots.empty()) {
+      double chargerDelta = 0.0;
+      bool anyCharger = false;
+      for (size_t i = 0; i < chargerSlots.size(); ++i) {
+        const double nowImport =
+            dailyGridImport(values, count, today, chargerSlots[i]);
+        if (std::isnan(nowImport) ||
+            std::isnan(previousChargerImport[i])) {
+          continue;
+        }
+        chargerDelta += std::max(0.0, nowImport - previousChargerImport[i]);
+        anyCharger = true;
+      }
+      if (anyCharger) {
+        d.dayChargerWh = (float)(chargerDelta * 1000.0);
+        d.hasDayCharger = true;
         anySum = true;
       }
     }
@@ -1463,6 +1510,8 @@ class Reader {
   float dailyDayLoad_ = 0.0f;
   float dailyDayDraw_ = 0.0f;
   float dailyDayFeed_ = 0.0f;
+  bool dailyHasCharger_ = false;
+  float dailyCharger_ = 0.0f;
   int slowTtl_ = 0;
   WarpData slowCache_;
 };

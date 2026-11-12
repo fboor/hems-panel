@@ -120,6 +120,15 @@ struct WarpData {
   float batteryChargeWh = 0.0f;
   float batteryDischargeWh = 0.0f;
 
+  // Wallbox energy counters, Wh. Sum of every meter slot with location
+  // Charger/Vehicle that reports an energy counter. `hasChargerEnergy` is set
+  // when at least one such meter exists, so the UI can show a dash instead of
+  // a misleading zero.
+  bool hasChargerEnergy = false;
+  float chargerEnergyWh = 0.0f;  // since commissioning
+  bool hasDayCharger = false;
+  float dayChargerWh = 0.0f;     // today, from the daily history
+
   // Day counters, Wh (flat JSON only).
   // Dynamic tariff (day-ahead) prices, ct/kWh/1000. prices[0] is valid
   // from priceFirstMin (unix minutes), entries are priceResMin apart.

@@ -92,6 +92,10 @@ inline bool parse(const char *json, size_t len, WarpData &d) {
             "today_feed_in_wh");
   WARP_KEYS(kDayDraw, "day_grid_draw_wh", "day_grid_draw", "day_import_wh",
             "today_grid_draw_wh");
+  WARP_KEYS(kDayCharger, "day_charger_wh", "day_wallbox_wh",
+            "today_wallbox_wh");
+  WARP_KEYS(kChargerEnergy, "charger_energy_wh", "wallbox_energy_wh",
+            "wallbox_total_wh", "charger_total_wh");
   WARP_KEYS(kPvEnergy, "pv_energy_wh", "pv_generation_wh", "pv_total_wh");
   WARP_KEYS(kHouseEnergy, "house_energy_wh", "household_energy_wh",
             "house_total_wh");
@@ -134,6 +138,10 @@ inline bool parse(const char *json, size_t len, WarpData &d) {
   found |= numAny(json, len, kDayLoad, kDayLoadCount, d.dayLoadWh);
   found |= numAny(json, len, kDayFeedIn, kDayFeedInCount, d.dayFeedInWh);
   found |= numAny(json, len, kDayDraw, kDayDrawCount, d.dayGridDrawWh);
+  if (numAny(json, len, kDayCharger, kDayChargerCount, d.dayChargerWh)) {
+    d.hasDayCharger = true;
+    found = true;
+  }
   found |= numAny(json, len, kPvEnergy, kPvEnergyCount, d.pvEnergyWh);
   found |= numAny(json, len, kHouseEnergy, kHouseEnergyCount, d.houseEnergyWh);
   found |= numAny(json, len, kGridImport, kGridImportCount, d.gridImportWh);
@@ -141,6 +149,11 @@ inline bool parse(const char *json, size_t len, WarpData &d) {
   found |= numAny(json, len, kBatCharge, kBatChargeCount, d.batteryChargeWh);
   found |= numAny(json, len, kBatDischarge, kBatDischargeCount,
                   d.batteryDischargeWh);
+  if (numAny(json, len, kChargerEnergy, kChargerEnergyCount,
+             d.chargerEnergyWh)) {
+    d.hasChargerEnergy = true;
+    found = true;
+  }
   found |= numAny(json, len, kGridVoltageL1, kGridVoltageL1Count,
                   d.gridVoltageL1);
   found |= numAny(json, len, kGridVoltageL2, kGridVoltageL2Count,
