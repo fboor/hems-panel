@@ -12,8 +12,11 @@
 #include <Preferences.h>
 #include <WiFi.h>
 #include <WiFiManager.h>
+#include <esp_heap_caps.h>
 #include <esp_system.h>
 #include <lvgl.h>
+#include <sys/time.h>
+#include <time.h>
 
 #include <memory>
 #include <atomic>
@@ -21,6 +24,7 @@
 #include "display/Backlight.h"
 #include "display/Display.h"
 #include "display/Touch.h"
+#include "storage/SdLog.h"
 #include "ui/WarpUi.h"
 #include "warp/WarpApi.h"
 #include "warp/WarpData.h"
@@ -120,6 +124,89 @@ std::unique_ptr<warpapi::Reader> g_reader;
 
 uint32_t g_lastUi = 0;
 uint32_t g_lastTick = 0;
+
+// SD history logging. The UI ring holds 24 h at one sample per minute; the
+// restore buffers are allocated in PSRAM in setup().
+constexpr int kHistoryRows = 24 * 60 + 2;
+SdHistSample *g_histSamples = nullptr;
+warpui::HistoryPoint *g_histPoints = nullptr;
+uint32_t g_lastLogEpoch = 0;
+bool g_historyRequested = false;
+bool g_historySeeded = false;
+uint32_t g_historyRequestMs = 0;
+
+// The WARP reports its RTC time as unix minutes. The panel has no other wall
+// clock, so the first valid reading becomes the system clock - the CSV rows and
+// the monthly file names need it.
+void syncClockFromWarp(const WarpData &d) {
+  if (d.nowMin == 0 || time(nullptr) >= 1000000000) {
+    return;
+  }
+  struct timeval tv {};
+  tv.tv_sec = (time_t)d.nowMin * 60;
+  tv.tv_usec = 0;
+  if (settimeofday(&tv, nullptr) == 0) {
+    Serial.printf("Uhrzeit von WARP uebernommen: %lu min\n",
+                  (unsigned long)d.nowMin);
+  }
+}
+
+// One CSV row per minute. Only called when a fresh dataset arrived, so a
+// disconnected WARP leaves a gap in the log instead of repeating stale values.
+void logSampleIfDue(const WarpData &d) {
+  const time_t now = time(nullptr);
+  if (now < 1000000000 || !d.valid) {
+    return;
+  }
+  if (g_lastLogEpoch != 0 &&
+      (uint32_t)now - g_lastLogEpoch < 60u) {
+    return;
+  }
+  g_lastLogEpoch = (uint32_t)now;
+  sdLogSample(d);
+}
+
+// Seed the 24 h chart once from the newest CSV rows. The worker scans the card
+// asynchronously; this only asks and collects.
+void restoreHistoryIfReady() {
+  if (g_historySeeded || g_histSamples == nullptr || g_histPoints == nullptr) {
+    return;
+  }
+  const time_t now = time(nullptr);
+  if (now < 1000000000 || !sdMounted()) {
+    return;
+  }
+
+  if (!g_historyRequested) {
+    sdRequestHistory(kHistoryRows, true);
+    g_historyRequested = true;
+    g_historyRequestMs = millis();
+    return;
+  }
+
+  const int n = sdTakeHistory(g_histSamples, kHistoryRows);
+  if (n == -2) {
+    // Still running, or the request never reached the worker (queue full,
+    // remount). Ask again after a while instead of waiting forever.
+    if ((uint32_t)(millis() - g_historyRequestMs) > 15000u) {
+      g_historyRequested = false;
+    }
+    return;
+  }
+  if (n == -1) {
+    g_historyRequested = false;  // clock was not valid yet; retry
+    return;
+  }
+
+  for (int i = 0; i < n; ++i) {
+    const SdHistSample &s = g_histSamples[i];
+    g_histPoints[i] = {s.ts, s.grid, s.pv, s.house, s.battery,
+                       s.wb1, s.wb2, s.soc, s.heat};
+  }
+  warpui::seedHistory(g_histPoints, n, (uint32_t)now);
+  g_historySeeded = true;
+  Serial.printf("SD: %d Verlaufszeilen geladen\n", n);
+}
 
 void loadUrl() {
   Preferences prefs;
@@ -426,6 +513,16 @@ void setup() {
   g_lastTick = millis();
   displayLooper();
 
+  sdInit();
+  g_histSamples = (SdHistSample *)heap_caps_malloc(
+      sizeof(SdHistSample) * kHistoryRows, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  g_histPoints = (warpui::HistoryPoint *)heap_caps_malloc(
+      sizeof(warpui::HistoryPoint) * kHistoryRows,
+      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (g_histSamples == nullptr || g_histPoints == nullptr) {
+    Serial.println(F("SD: kein PSRAM fuer den 24-h-Verlauf, Restore aus"));
+  }
+
   setupNetwork();
 
   ArduinoOTA.setHostname("hems-panel");
@@ -456,6 +553,8 @@ void loop() {
       xSemaphoreGive(g_dataMutex);
     }
     g_haveData = true;
+    syncClockFromWarp(g_data);
+    logSampleIfDue(g_data);
     warpui::update(g_data);
   }
   const int connState = g_nextConnState.exchange(-1);
@@ -467,6 +566,8 @@ void loop() {
   if (now - g_lastUi >= UI_MS) {
     g_lastUi = now;
     updateNetworkInfo();
+    warpui::setSdStatus(sdStatusText());
+    restoreHistoryIfReady();
     if (g_haveData) {
       warpui::update(g_data);
     }
