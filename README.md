@@ -19,6 +19,8 @@ additional infrastructure beyond the panel and the WARP Energy Manager.
   generation, consumption, import and export.
 - **24-hour energy balance** — power history, wallbox series and the exchange
   price band, with sample values on tap.
+- **History on the SD card** — one CSV row per minute, restored into the
+  24-hour chart on boot, so an update or power loss does not start from empty.
 - **Wallbox control** — see every charger and change its charge mode directly
   on the panel.
 - **Heating and SG-Ready** — operating state, temperatures and a temporary
@@ -74,6 +76,7 @@ installation to development:
 | [First-time setup](docs/setup.md) | setup access point, QR code, portal, mDNS, OTA |
 | [Pages and UI](docs/ui.md) | the six pages, navigation, flow view, header and service page |
 | [Energy values](docs/energy.md) | counters, autarky, solar forecast, exchange prices |
+| [SD-card history log](docs/sd-log.md) | CSV log, 24-hour restore, card wiring |
 | [Wallboxes](docs/wallbox.md) | measured and calculated power, charge modes |
 | [Emulator and mock](docs/emulator.md) | desktop build, scenarios, real device, checks |
 | [WARP module API](docs/warp-api.md) | endpoints, meter mapping, flat JSON fallback |

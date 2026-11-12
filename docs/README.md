@@ -23,11 +23,13 @@ API.
    service page.
 6. [Energy values](energy.md) — counters, autarky, solar forecast and day-ahead
    exchange prices.
-7. [Wallboxes](wallbox.md) — measured and calculated charging power, and the
+7. [SD-card history log](sd-log.md) — the CSV log, the 24-hour restore on boot
+   and the card's SPI wiring.
+8. [Wallboxes](wallbox.md) — measured and calculated charging power, and the
    charge-mode page.
-8. [Emulator and mock](emulator.md) — run the same UI on a desktop, select
+9. [Emulator and mock](emulator.md) — run the same UI on a desktop, select
    scenarios and talk to a real WARP device.
-9. [WARP module API](warp-api.md) — the HTTP endpoints, meter mapping and the
+10. [WARP module API](warp-api.md) — the HTTP endpoints, meter mapping and the
    flat JSON fallback.
 
 ## Find it quickly
@@ -40,6 +42,7 @@ API.
 | join the panel to a WLAN and set the WARP address | [setup.md](setup.md) |
 | know what a page or a header chip means | [ui.md](ui.md) |
 | understand autarky, forecast or exchange prices | [energy.md](energy.md) |
+| read the CSV log or understand the 24 h restore | [sd-log.md](sd-log.md) |
 | change a wallbox charge mode | [wallbox.md](wallbox.md) |
 | develop without the panel | [emulator.md](emulator.md) |
 | find the WARP value behind a number | [warp-api.md](warp-api.md) |
@@ -51,6 +54,7 @@ src/warp/         data model, WARP module-API adapter, JSON scanner, flat fallba
 src/ui/           LVGL screen, shared by the emulator and the firmware
 src/display/      RGB panel, touch and backlight drivers
 src/board/        board pins and the CH422G I/O expander
+src/storage/      SD-card log: CSV format, parked-row queue and card worker
 sim/              SDL2 emulator, POSIX HTTP client, lv_conf override
 tools/warp_mock/  module-API mock with scenarios
 boards/           PlatformIO board definitions

@@ -106,8 +106,10 @@ the bench, in this order:
   as a jumping picture; the colours stay right, which is how a late line is told
   from a panel that is out of sync.
 - The SD card's chip select is on the expander and the Arduino SD class wants a
-  GPIO. The card therefore stays unused until the mount goes through the IDF's
-  SD/MMC driver, which accepts `gpio_cs = -1`.
+  GPIO. The panel therefore drives EXIO4 low once through the CH422G and passes
+  the dummy GPIO 15 to `SD.begin()`; the bus carries no other device, so the card
+  stays selected. The card is used for the history log, see
+  [sd-log.md](sd-log.md).
 - The board profile, the display timings and the expander bring-up carry their
   measurements and open questions in the source headers. Read those before
   changing a pin.

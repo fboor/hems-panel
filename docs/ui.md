@@ -117,7 +117,8 @@ The service page contains:
 
 - **HINTERGRUND** — cycles the page background between black, grey and white, and
   switches the flow-page background image on and off,
-- **NETZWERK** — WLAN, panel IP, WARP endpoint and the local web setup URL,
+- **NETZWERK** — WLAN, panel IP, WARP endpoint, the local web setup URL and the
+  SD-card status line (see [sd-log.md](sd-log.md)),
 - **ZÄHLER** — generation, consumption, grid import, feed-in and battery energy
   since commissioning,
 - **I/O STATUS** — one dot each for four inputs, two relays and two SG-Ready
