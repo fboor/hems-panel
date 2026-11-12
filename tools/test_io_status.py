@@ -61,6 +61,7 @@ def main():
         env = dict(os.environ, SDL_VIDEODRIVER="dummy")
         r = subprocess.run(
             ["./run.sh", "--shot", SHOT, "--page", "6", "--after", "6",
+             "--no-sd",
              "--url", "http://localhost:%d" % MOCK_PORT],
             cwd=ROOT, env=env, capture_output=True, text=True, timeout=240)
         if r.returncode != 0 or not os.path.isfile(SHOT):

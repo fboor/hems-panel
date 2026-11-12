@@ -18,15 +18,18 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <ctime>
 #include <mutex>
 #include <string>
 #include <thread>
+#include <vector>
 
 #include "ui/WarpUi.h"
 #include "warp/WarpApi.h"
 #include "warp/WarpData.h"
 #include "warp/WarpParse.h"
 
+#include "SimSdLog.h"
 #include "WarpHttpPosix.h"
 
 namespace {
@@ -89,6 +92,8 @@ struct Options {
   bool probe = false;
   bool setup = false;
   bool verbose = false;
+  std::string sdDir = "/tmp/hems-panel-sd";
+  bool sdEnabled = true;
 };
 
 struct Shared {
@@ -174,6 +179,50 @@ void advanceTick(uint32_t now) {
     lv_tick_inc(delta);
     g_lastTick = now;
   }
+}
+
+// SD log in the emulator ------------------------------------------------
+
+constexpr int kSimHistoryRows = 24 * 60 + 2;
+uint32_t g_lastSdEpoch = 0;
+
+// One CSV row per minute, like the firmware. Only fresh poll results are
+// logged, so an unreachable mock leaves a gap instead of repeating values.
+void maybeLogSample(const WarpData &d) {
+  if (!simsd::enabled() || !d.valid) {
+    return;
+  }
+  const time_t now = time(nullptr);
+  if (now < 1000000000) {
+    return;
+  }
+  if (g_lastSdEpoch != 0 &&
+      static_cast<uint32_t>(now) - g_lastSdEpoch < 60u) {
+    return;
+  }
+  g_lastSdEpoch = static_cast<uint32_t>(now);
+  simsd::logSample(d);
+}
+
+// Load the newest rows into the chart before the first poll result arrives.
+void restoreSimHistory() {
+  if (!simsd::enabled()) {
+    return;
+  }
+  std::vector<simsd::Sample> rows(kSimHistoryRows);
+  std::vector<warpui::HistoryPoint> points(kSimHistoryRows);
+  const int n = simsd::restore(rows.data(), kSimHistoryRows);
+  if (n <= 0) {
+    return;
+  }
+  const uint32_t now = static_cast<uint32_t>(time(nullptr));
+  for (int i = 0; i < n; ++i) {
+    const simsd::Sample &s = rows[i];
+    points[i] = {s.ts,    s.grid, s.pv,  s.house, s.battery,
+                 s.wb1,   s.wb2,  s.soc, s.heat};
+  }
+  warpui::seedHistory(points.data(), n, now);
+  fprintf(stderr, "SD (Emulator): %d Verlaufszeilen geladen\n", n);
 }
 
 int SDLCALL quitWatch(void *, SDL_Event *ev) {
@@ -389,6 +438,9 @@ void usage() {
       "  --page N         page to show, 1..6 (default 1)\n"
       "  --setup          show the first-boot Wi-Fi setup screen\n"
       "  --probe          read once, print the mapped values, exit\n"
+      "  --sd DIR         write the history CSV to DIR\n"
+      "                   (default /tmp/hems-panel-sd, 'none' disables)\n"
+      "  --no-sd          do not write or restore a history log\n"
       "  -v, --verbose    log every HTTP request\n"
       "  --help           this text\n");
 }
@@ -424,6 +476,12 @@ int main(int argc, char **argv) {
       opt.setup = true;
     } else if (a == "--probe") {
       opt.probe = true;
+    } else if (a == "--sd") {
+      opt.sdDir = value(opt.sdDir.c_str());
+      opt.sdEnabled = !opt.sdDir.empty() && opt.sdDir != "none" &&
+                      opt.sdDir != "off";
+    } else if (a == "--no-sd") {
+      opt.sdEnabled = false;
     } else if (a == "--verbose" || a == "-v") {
       opt.verbose = true;
     } else if (a == "--help" || a == "-h") {
@@ -508,12 +566,23 @@ int main(int argc, char **argv) {
     warpui::showSetup("HEMS-Panel-A1B2", nullptr, "http://192.168.4.1");
   }
 
+  // The emulator writes the same CSV rows into a host directory and restores
+  // them into the chart, so the SD log can be exercised without a card.
+  if (opt.sdEnabled) {
+    simsd::init(opt.sdDir);
+  } else {
+    simsd::init("");
+  }
+  restoreSimHistory();
+  warpui::setSdStatus(simsd::statusText());
+
   g_lastTick = SDL_GetTicks();
   std::thread worker(fetchLoop, opt);
 
   const uint32_t startMs = SDL_GetTicks();
   unsigned seenSeq = 0;
   uint32_t lastUiMs = 0;
+  uint32_t lastSdStatusMs = 0;
   bool shotDone = false;
 
   bool tapPushed = false;
@@ -561,8 +630,15 @@ int main(int argc, char **argv) {
     /* Update data on every pass through the main loop */
     if (seq != seenSeq) {
       warpui::update(data);
+      maybeLogSample(data);
       seenSeq = seq;
       lastUiMs = now;
+    }
+
+    simsd::tick();
+    if (now - lastSdStatusMs >= 1000) {
+      lastSdStatusMs = now;
+      warpui::setSdStatus(simsd::statusText());
     }
 
     uint32_t wait = lv_timer_handler();

@@ -7,6 +7,10 @@ set -euo pipefail
 #   sim/run.sh --shot out.png --after 3         one frame, then exit
 #   sim/run.sh --shot out.png --page 4          a specific page (1..6)
 #   sim/run.sh --probe                          raw JSON to stdout
+#   sim/run.sh --sd /tmp/my-log                 history CSV directory
+#
+# The emulator writes the SD history log to /tmp/hems-panel-sd by default;
+# --no-sd turns it off.
 #
 # Set HEMS_UI_DEBUG_BAND=1 to log the price-band segment geometry.
 #
@@ -59,6 +63,7 @@ done
 
 c++ $cflags -std=c++17 \
   "$here/sim_main.cpp" \
+  "$here/SimSdLog.cpp" \
   "$repo/src/ui/WarpUi.cpp" \
   "$build"/lvgl/*.o \
   "$build"/chart_bg.o \
