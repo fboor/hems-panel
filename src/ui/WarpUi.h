@@ -30,6 +30,29 @@ void setConnectionState(ConnectionState state);
 // page for screenshots; the on-screen navigation calls the same helper.
 void setPage(int page);
 
+// One point restored from the SD log into the 24 h history. `ts` is the unix
+// timestamp of the row; `heat` is -1 no data, 0 none, 1 SG1, 2 SG2, 3 both.
+struct HistoryPoint {
+  uint32_t ts;
+  float grid;
+  float pv;
+  float house;
+  float battery;
+  float wb1;
+  float wb2;
+  float soc;
+  int8_t heat;
+};
+
+// Replace the in-RAM 24 h history with rows read back from the SD log. The
+// timestamps are anchored to the panel's own history clock, so the chart and
+// the SG band can continue seamlessly with live samples. `nowEpoch` is the
+// current wall clock in unix seconds (0 leaves the history untouched).
+void seedHistory(const HistoryPoint *points, int count, uint32_t nowEpoch);
+
+// Service page: SD-card status line (see storage/SdLog.h).
+void setSdStatus(const char *text);
+
 // Called when the user picks a charge mode on the wallbox page. `charger` is
 // the index into WarpData::chargers, or -1 to apply the mode to every charger
 // through the power manager. `mode` is a WARP ConfigChargeMode value.

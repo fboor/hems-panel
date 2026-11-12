@@ -80,6 +80,13 @@ constexpr uint32_t kSampleIntervalMs = 60u * 1000u;
 constexpr uint32_t kHistoryMs = 24u * 60u * 60u * 1000u;
 constexpr int kMaxSamples = 24 * 60 + 2;
 
+// The history clock is deliberately not lv_tick_get() alone. Restored rows are
+// up to 24 h old, and their timestamps are derived by subtracting that age from
+// "now" - with a bare tick count the oldest rows would underflow uint32_t and
+// land in the future. A base of two history windows leaves enough room for the
+// full 24 h and keeps every live sample in the same timeline.
+uint32_t histNowMs() { return 2u * kHistoryMs + lv_tick_get(); }
+
 // The wallbox configuration page shows one mode button per supported mode.
 // WARP currently offers at most four (Off + two configurable + Fast); the
 // extra slots keep the renderer safe if a future firmware adds more.
@@ -263,6 +270,7 @@ struct Widgets {
   lv_obj_t *netIp = nullptr;
   lv_obj_t *netWarp = nullptr;
   lv_obj_t *netWeb = nullptr;
+  lv_obj_t *netSd = nullptr;
 
   // First-boot Wi-Fi setup overlay.
   lv_obj_t *setupOverlay = nullptr;
@@ -1198,6 +1206,8 @@ void chartTapEvent(lv_event_t *e) {
   }
 }
 
+void rebuildPowerChart();
+
 void recordPowerSample(uint32_t now, const WarpData &d) {
   if (g_sampleCount == kMaxSamples) {
     g_sampleHead = (g_sampleHead + 1) % kMaxSamples;
@@ -1450,6 +1460,66 @@ void showPage(int page) {
 }
 
 }  // namespace
+
+// Replace the live ring with the rows read back from the SD log. The restored
+// timestamps are placed relative to the same history clock live samples use, so
+// the chart's window and the SG band need no special case. The first live
+// update after seeding records the current values immediately
+// (g_lastSampleMs = 0), which also closes the gap between the newest restored
+// row and "now".
+void seedHistory(const HistoryPoint *points, int count, uint32_t nowEpoch) {
+  g_sampleHead = 0;
+  g_sampleCount = 0;
+  g_sgHead = 0;
+  g_sgCount = 0;
+  g_haveSample = false;
+  g_lastSampleMs = 0;
+  g_lastDataUpdateMs = 0;
+
+  if (points == nullptr || count <= 0 || nowEpoch == 0) {
+    return;
+  }
+
+  const uint32_t base = histNowMs();
+  uint32_t lastMs = 0;
+  for (int i = 0; i < count; ++i) {
+    const HistoryPoint &p = points[i];
+    if (p.ts == 0 || p.ts > nowEpoch + 60u) {
+      continue;
+    }
+    const uint32_t ageSec = nowEpoch - p.ts;
+    if (ageSec > kHistoryMs / 1000u) {
+      continue;
+    }
+    const uint32_t timeMs = base - ageSec * 1000u;
+    if (lastMs != 0 && (int32_t)(timeMs - lastMs) <= 0) {
+      continue;  // duplicate or out-of-order row
+    }
+    lastMs = timeMs;
+
+    if (g_sampleCount == kMaxSamples) {
+      g_sampleHead = (g_sampleHead + 1) % kMaxSamples;
+      --g_sampleCount;
+    }
+    const int index = (g_sampleHead + g_sampleCount) % kMaxSamples;
+    g_samples[index] = {timeMs, p.grid, p.pv, p.house, p.battery, p.wb1,
+                        p.wb2, p.soc};
+    ++g_sampleCount;
+
+    if (g_sgCount == kMaxSamples) {
+      g_sgHead = (g_sgHead + 1) % kMaxSamples;
+      --g_sgCount;
+    }
+    const int sgIndex = (g_sgHead + g_sgCount) % kMaxSamples;
+    g_sgSamples[sgIndex] = {timeMs, p.heat};
+    ++g_sgCount;
+  }
+
+  g_haveSample = g_sampleCount > 0;
+  if (g_sampleCount > 0) {
+    rebuildPowerChart();
+  }
+}
 
 void create(lv_obj_t *parent) {
   lv_obj_set_style_bg_color(parent, lv_color_hex(C_BG), 0);
@@ -1910,7 +1980,8 @@ void create(lv_obj_t *parent) {
   w.netIp = label(net, 16, 58, 338, F_BODY, C_TEXT, "IP: --");
   w.netWarp = label(net, 16, 82, 338, F_BODY, C_TEXT, "WARP EM: --");
   w.netWeb = label(net, 16, 106, 338, F_BODY, C_BLUE, "Webinterface: --");
-  label(net, 16, 142, 338, F_SMALL, C_MUTED,
+  w.netSd = label(net, 16, 130, 338, F_SMALL, C_MUTED, "SD: --");
+  label(net, 16, 152, 338, F_SMALL, C_MUTED,
         TR("Zum Ändern die Web-Adresse im Browser öffnen.", "Open the web address in your browser to change it."));
 
   // Energy counters since commissioning, next to the network card.
@@ -2166,6 +2237,10 @@ void setNetworkInfo(const char *ssid, const char *ip, const char *warpUrl,
   snprintf(buf, sizeof(buf), "Webinterface: %s",
            (webUrl != nullptr && webUrl[0] != '\0') ? webUrl : "--");
   setTextIfChanged(w.netWeb, buf);
+}
+
+void setSdStatus(const char *text) {
+  setTextIfChanged(w.netSd, text != nullptr ? text : "SD: --");
 }
 
 void setConnectionState(ConnectionState state) {
@@ -2456,7 +2531,7 @@ void update(const WarpData &d) {
 
   // Power chart --------------------------------------------------------
   if (w.powerChart != nullptr) {
-    const uint32_t now = lv_tick_get();
+    const uint32_t now = histNowMs();
     const bool fresh = !g_haveSample || d.lastUpdateMs == 0 ||
                        d.lastUpdateMs != g_lastDataUpdateMs;
     const bool due = !g_haveSample ||
