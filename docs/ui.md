@@ -80,7 +80,7 @@ The energy page shows the current state as cards:
 - battery SOC, power, voltage and current,
 - PV strings and PV total,
 - wallbox power, state, mode and phase count,
-- cumulative energy counters since commissioning.
+- today's energy sums (`ENERGIE HEUTE`), including the wallbox meters.
 
 The wallbox card marks calculated power as `geschätzt`; see
 [wallbox.md](wallbox.md).

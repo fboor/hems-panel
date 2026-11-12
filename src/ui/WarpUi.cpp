@@ -259,10 +259,12 @@ struct Widgets {
   lv_obj_t *zHouse = nullptr;
   lv_obj_t *zImport = nullptr;
   lv_obj_t *zExport = nullptr;
+  lv_obj_t *zCharger = nullptr;
   lv_obj_t *zBattery = nullptr;
   lv_obj_t *energyHouse = nullptr;
   lv_obj_t *energyImport = nullptr;
   lv_obj_t *energyExport = nullptr;
+  lv_obj_t *energyCharger = nullptr;
   lv_obj_t *energyBattery = nullptr;
 
   // Service page network card.
@@ -1632,13 +1634,13 @@ void create(lv_obj_t *parent) {
 
   // Energy totals for today --------------------------------------------
   lv_obj_t *energy = card(page1, 536, 256, 250, 166);
-  title(energy, TR("ENERGIE", "ENERGY"));
+  title(energy, TR("ENERGIE HEUTE", "ENERGY TODAY"));
   row(energy, 16, 30, 218, TR("Erzeugung", "Generation"), &w.energyPv, F_SMALL);
   row(energy, 16, 52, 218, TR("Verbrauch", "Consumption"), &w.energyHouse, F_SMALL);
   row(energy, 16, 74, 218, TR("Netzbezug", "Grid import"), &w.energyImport, F_SMALL);
   row(energy, 16, 96, 218, TR("Einspeisung", "Feed-in"), &w.energyExport, F_SMALL);
-  row(energy, 16, 118, 218, TR("Akku", "Battery"), &w.energyBattery, F_SMALL);
-  label(energy, 16, 142, 218, F_SMALL, C_MUTED, TR("heute", "today"), LV_TEXT_ALIGN_RIGHT);
+  row(energy, 16, 118, 218, TR("Wallbox", "Wallbox"), &w.energyCharger, F_SMALL);
+  row(energy, 16, 140, 218, TR("Akku", "Battery"), &w.energyBattery, F_SMALL);
 
   // Footer -------------------------------------------------------------
   // Second page (power graph) -----------------------------------------
@@ -1991,8 +1993,9 @@ void create(lv_obj_t *parent) {
   row(z, 16, 52, 340, TR("Verbrauch", "Consumption"), &w.zHouse, F_SMALL);
   row(z, 16, 74, 340, TR("Netzbezug", "Grid import"), &w.zImport, F_SMALL);
   row(z, 16, 96, 340, TR("Einspeisung", "Feed-in"), &w.zExport, F_SMALL);
-  row(z, 16, 118, 340, TR("Akku", "Battery"), &w.zBattery, F_SMALL);
-  label(z, 16, 142, 340, F_SMALL, C_MUTED, TR("seit Inbetriebnahme", "since commissioning"),
+  row(z, 16, 118, 340, TR("Wallbox", "Wallbox"), &w.zCharger, F_SMALL);
+  row(z, 16, 140, 340, TR("Akku", "Battery"), &w.zBattery, F_SMALL);
+  label(z, 16, 164, 340, F_SMALL, C_MUTED, TR("seit Inbetriebnahme", "since commissioning"),
         LV_TEXT_ALIGN_RIGHT);
 
   // Digital IO states: 4 inputs, 2 relays, 2 SG-Ready outputs, each with a
@@ -2503,6 +2506,12 @@ void update(const WarpData &d) {
     setTextIfChanged(w.energyImport, "--");
     setTextIfChanged(w.energyExport, "--");
   }
+  if (d.hasDayCharger) {
+    fmtEnergy(buf, sizeof(buf), d.dayChargerWh);
+    setTextIfChanged(w.energyCharger, buf);
+  } else {
+    setTextIfChanged(w.energyCharger, "--");
+  }
   setTextIfChanged(w.energyBattery, "--");
 
   // Energy counters since commissioning (ZÄHLER card, service page) -----
@@ -2514,6 +2523,12 @@ void update(const WarpData &d) {
   setTextIfChanged(w.zImport, buf);
   fmtEnergy(buf, sizeof(buf), d.gridExportWh);
   setTextIfChanged(w.zExport, buf);
+  if (d.hasChargerEnergy) {
+    fmtEnergy(buf, sizeof(buf), d.chargerEnergyWh);
+    setTextIfChanged(w.zCharger, buf);
+  } else {
+    setTextIfChanged(w.zCharger, "--");
+  }
 
   {
     char charge[24];

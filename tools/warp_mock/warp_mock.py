@@ -75,6 +75,8 @@ BASE = {
     "charge_supported_phases": 1,  # 1/3, bit 2 set when switchable
     "charge_name": "WARP Wallbox",
     "charge_meter_power": None,   # W when the wallbox has its own meter
+    "charge_meter_energy_wh": None,  # cumulative counter of that meter
+    "charge_meter_day_wh": None,     # today's part, for the daily history
     # Global and per-charger charge modes (ConfigChargeMode).
     "charge_mode": 2,             # PV, like the WARP default
     "charge_modes": None,         # per-charger list; None = use charge_mode
@@ -201,6 +203,8 @@ def scenario(name):
             charge_phases=3,
             charge_supported_phases=7,
             charge_meter_power=11100.0,
+            charge_meter_energy_wh=234567.0,
+            charge_meter_day_wh=4567.0,
             forecast_today_wh=20500.0,
             forecast_today_remaining_wh=9000.0,
         )
@@ -216,6 +220,8 @@ def scenario(name):
                     "phases": 3,
                     "supported": 7,
                     "meter_power": 11100.0,
+                    "meter_energy_wh": 120000.0,
+                    "meter_day_wh": 2000.0,
                 },
                 {
                     "name": "Garage",
@@ -223,7 +229,9 @@ def scenario(name):
                     "current": 0.0,
                     "phases": 1,
                     "supported": 1,
-                    "meter_power": None,
+                    "meter_power": 0.0,
+                    "meter_energy_wh": 45000.0,
+                    "meter_day_wh": 800.0,
                 },
                 {
                     "name": "Stellplatz",
@@ -231,7 +239,9 @@ def scenario(name):
                     "current": 0.0,
                     "phases": 1,
                     "supported": 1,
-                    "meter_power": None,
+                    "meter_power": 0.0,
+                    "meter_energy_wh": 8000.0,
+                    "meter_day_wh": 0.0,
                 },
             ],
             charge_mode=2,
@@ -296,7 +306,15 @@ def chargers_for(d):
         "phases": d.get("charge_phases") or 0,
         "supported": d.get("charge_supported_phases") or 1,
         "meter_power": d.get("charge_meter_power"),
+        "meter_energy_wh": d.get("charge_meter_energy_wh"),
+        "meter_day_wh": d.get("charge_meter_day_wh"),
     }]
+
+
+def metered_chargers(d):
+    """Chargers with their own meter, in slot order after the four base meters."""
+    return [spec for spec in chargers_for(d)
+            if spec.get("meter_power") is not None]
 
 
 def charger_phase_count(spec):
@@ -456,27 +474,32 @@ def meter_payloads(d):
             ],
         ),
     ]
-    metered = [
-        spec for spec in chargers_for(d) if spec.get("meter_power") is not None
-    ]
-    if metered:
-        wallbox_w = sum(float(spec["meter_power"]) for spec in metered)
-        if wallbox_phase_count(d) == 3:
+    # One meter slot per metered wallbox, so the panel has to sum several
+    # energy counters in the `wallboxes` scenario.
+    for spec in metered_chargers(d):
+        wallbox_w = charger_power(spec, d)
+        if charger_phase_count(spec) == 3:
             phases = [wallbox_w / 3.0] * 3
         else:
             phases = [wallbox_w, 0.0, 0.0]
+        ids = [39, 48, 57, 74]
+        values = [round(phases[0], 1), round(phases[1], 1),
+                  round(phases[2], 1), round(wallbox_w, 1)]
+        energy = spec.get("meter_energy_wh")
+        if energy is not None:
+            ids.append(209)
+            values.append(wh_to_kwh(energy))
         slots.append((
             [8, {
-                "display_name": "WARP Wallbox",
+                "display_name": spec.get("name") or "WARP Wallbox",
                 "location": 2,
                 "excluded": False,
                 "host": "127.0.0.1",
                 "port": 8899,
                 "virtual_meter": 0,
             }],
-            [39, 48, 57, 74],
-            [round(phases[0], 1), round(phases[1], 1), round(phases[2], 1),
-             round(wallbox_w, 1)],
+            ids,
+            values,
         ))
     while len(slots) < 7:
         slots.append(([0, None], [], []))
@@ -861,6 +884,12 @@ class Handler(BaseHTTPRequestHandler):
                 data[base + 8] = round(pv_energy, 3)
                 data[base + 9] = round(d["grid_export_wh"] / 1000.0, 3)
                 data[base + 10] = round(d["battery_discharge_wh"] / 1000.0, 3)
+                # Wallbox meters use the slots after the four base meters.
+                for offset, spec in enumerate(metered_chargers(d)):
+                    energy = spec.get("meter_energy_wh")
+                    if energy is None or 4 + offset >= 7:
+                        continue
+                    data[base + 4 + offset] = wh_to_kwh(energy)
 
                 if today > 0:
                     # Yesterday's cumulative counters, so the panel can
@@ -880,6 +909,13 @@ class Handler(BaseHTTPRequestHandler):
                         (d["grid_export_wh"] - d["day_feed_in_wh"]) / 1000.0, 3)
                     data[yesterday + 10] = round(
                         d["battery_discharge_wh"] / 1000.0, 3)
+                    for offset, spec in enumerate(metered_chargers(d)):
+                        energy = spec.get("meter_energy_wh")
+                        if energy is None or 4 + offset >= 7:
+                            continue
+                        day = float(spec.get("meter_day_wh") or 0.0)
+                        data[yesterday + 4 + offset] = wh_to_kwh(
+                            max(0.0, energy - day))
             self._send(data)
             return
         if (path.startswith("/power_manager/charge_mode_update") or

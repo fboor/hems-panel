@@ -57,11 +57,13 @@ the UI needs:
 | battery | 5 | voltage `10`, current `396`, power `404`, charge `413`, discharge `415`, SOC `387` |
 | household | 6 | power L1/L2/L3 `39/48/57`, total `74`, energy `215` |
 | PV | 7 | string power `442/443`, total `452`, string energy `454/456`, total `472` |
-| wallbox | 2 or 8 | power L1/L2/L3 `39/48/57`, total `74` |
+| wallbox | 2 or 8 | power L1/L2/L3 `39/48/57`, total `74`, energy import `209` (fallback `215`) |
 | external / S0 | other | total `74` |
 
 The energy value IDs (`209/211/215/413/415/454/456/472`) are reported in **kWh**
 by WARP. The panel converts them to Wh on ingest; see [energy.md](energy.md).
+Several wallbox meters are summed into one energy value; today's part is the
+day-over-day difference of their import counters in the daily history.
 
 A meter is matched by its WARP location first. If the location is unknown, the
 adapter tries `virtual_meter`, then keywords in `display_name` ("Netz", "Akku",
@@ -95,8 +97,8 @@ a few aliases; the first match wins.
 | household total | `household_power`, `house_power` (else sum) |
 | battery | `battery_soc`, `battery_power`, `battery_voltage`, `battery_current` |
 | island | `island_flag`, `island`, `island_mode` |
-| energy totals | `pv_energy_wh`, `house_energy_wh`, `grid_import_wh`, `grid_export_wh`, `battery_charge_wh`, `battery_discharge_wh` |
-| today (legacy) | `day_generation_wh`, `day_load_wh`, `day_feed_in_wh`, `day_grid_draw_wh` |
+| energy totals | `pv_energy_wh`, `house_energy_wh`, `grid_import_wh`, `grid_export_wh`, `battery_charge_wh`, `battery_discharge_wh`, `charger_energy_wh` / `wallbox_energy_wh` |
+| today (legacy) | `day_generation_wh`, `day_load_wh`, `day_feed_in_wh`, `day_grid_draw_wh`, `day_charger_wh` / `day_wallbox_wh` |
 | autarky | `autarky`, `autarkie`, `self_sufficiency` (otherwise calculated from the energy totals) |
 | forecast | `wh_today`, `forecast_today_wh`, `solar_forecast_today_wh`; remaining from `wh_today_remaining`, `forecast_today_remaining_wh` |
 | identity | `device_name`, `firmware_version` |

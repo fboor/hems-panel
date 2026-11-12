@@ -30,6 +30,24 @@ from metered values.
 
 ![Wallbox card on the energy page](../screenshots/wallbox.png)
 
+## Energy
+
+A wallbox meter also supplies an energy counter. The panel reads the import
+counter (`209`) and falls back to the import-minus-export counter (`215`) when
+that is all the meter provides. WARP reports both in kWh, so they are converted
+to Wh on ingest.
+
+Every meter with location `Charger` (2) or `Vehicle` (8) contributes to one
+combined value:
+
+- the `ZÄHLER` card on the service page shows the sum since commissioning,
+- the `ENERGIE HEUTE` card on the energy page shows today's sum, taken from the
+  day-over-day difference of the same slots in the device's daily history.
+
+If no wallbox meter reports energy, both rows show `--`. A wallbox without its
+own meter still appears with its calculated power, but contributes no energy
+counter.
+
 ## Charge-mode page
 
 Page 4 (`Wallboxen`) shows one card per charger reported by

@@ -10,14 +10,30 @@ used for the price band. The raw value IDs are in
 WARP reports the meter energy value IDs in **kWh**. The panel converts them to Wh
 on ingest and prints them as kWh below 1 MWh and as MWh above.
 
-The energy card and the `ZÄHLER` card show the cumulative counters since
+The `ENERGIE HEUTE` card on the energy page shows today's sums from the device's
+daily history:
+
+- generation (PV),
+- household consumption,
+- grid import,
+- feed-in,
+- wallbox charging,
+- battery.
+
+The `ZÄHLER` card on the service page shows the cumulative counters since
 commissioning:
 
 - generation (PV),
 - household consumption,
 - grid import,
 - feed-in,
+- wallbox charging, summed over every wallbox meter,
 - battery charge and discharge.
+
+The wallbox counters come from meter slots with location `Charger` (2) or
+`Vehicle` (8). If several wallboxes have their own meter, the panel adds their
+energy counters together. Today's wallbox value is the day-over-day difference of
+the same meter slots in the daily history; see [wallbox.md](wallbox.md#energy).
 
 On this installation the load meter normally covers the whole house connection,
 including a wallbox. The displayed household power has the wallbox power
