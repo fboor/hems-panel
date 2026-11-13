@@ -308,8 +308,8 @@ FetchResult fetchWarp(WarpData &out) {
   if (g_reader->poll(out, error)) {
     return FetchResult::Ok;
   }
-  Serial.printf("WARP module API: %s (%s)\n", error.c_str(),
-                g_reader->base().c_str());
+  Serial.printf("WARP module API: %s (%s) heap %u\n", error.c_str(),
+                g_reader->base().c_str(), ESP.getFreeHeap());
 
   // A flat JSON bridge is still accepted for development, but the real device
   // uses the module API above.
@@ -427,6 +427,27 @@ void pollTask(void *) {
   }
 }
 
+// Wi-Fi-Ereignisse, damit im Log steht, ob die Verbindung laeuft oder
+// abgebaut wird - "kein WARP-Modul" bedeutet WL_CONNECTED und eine fallende
+// HTTP-Anfrage, was beides getrennt nachvollziehbar sein muss.
+void onWifiEvent(arduino_event_t *ev) {
+  if (ev == nullptr) {
+    return;
+  }
+  if (ev->event_id == ARDUINO_EVENT_WIFI_STA_GOT_IP) {
+    Serial.printf("Wi-Fi: IP %s, heap %u\n",
+                  WiFi.localIP().toString().c_str(), ESP.getFreeHeap());
+  } else if (ev->event_id == ARDUINO_EVENT_WIFI_STA_CONNECTED) {
+    Serial.println(F("Wi-Fi: verbunden"));
+  } else if (ev->event_id == ARDUINO_EVENT_WIFI_STA_DISCONNECTED) {
+    Serial.printf("Wi-Fi: getrennt, Grund %u (%s), heap %u\n",
+                  ev->event_info.wifi_sta_disconnected.reason,
+                  WiFi.disconnectReasonName(
+                      (wifi_err_reason_t)ev->event_info.wifi_sta_disconnected.reason),
+                  ESP.getFreeHeap());
+  }
+}
+
 void setupNetwork() {
   loadUrl();
   char normalized[sizeof(g_url)];
@@ -461,6 +482,9 @@ void setupNetwork() {
   g_wm->setSaveParamsCallback(onParamsSaved);
 
   warpui::setConnectionState(warpui::ConnectionState::NoNet);
+  WiFi.onEvent(onWifiEvent, ARDUINO_EVENT_WIFI_STA_GOT_IP);
+  WiFi.onEvent(onWifiEvent, ARDUINO_EVENT_WIFI_STA_CONNECTED);
+  WiFi.onEvent(onWifiEvent, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
   // No modem sleep: on the Waveshare board's weak onboard antenna, modem
   // sleep makes beacons/packets get missed and TCP sessions drop.
   WiFi.setSleep(false);
@@ -493,6 +517,7 @@ void setup() {
   Serial.begin(115200);
   delay(200);
   Serial.println(F("\nHome Energy Manager panel"));
+  Serial.printf("Reset-Grund: %d\n", (int)esp_reset_reason());
 
   if (!displayInit()) {
     Serial.println(F("FATAL: display init failed"));
