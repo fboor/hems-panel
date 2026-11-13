@@ -96,10 +96,13 @@ Available scenarios:
 | `wallbox_3p` | three-phase charging, calculated power |
 | `wallbox_meter` | wallbox with its own meter |
 | `wallboxes` | three chargers with different states and modes |
+| `negative_prices` | day-ahead curve with a negative midday window |
 
 `wallbox` and `wallbox_3p` exercise the calculated power (1 and 3 phases);
 `wallbox_meter` adds a meter with location `Charger`; `wallboxes` configures
-three boxes for the configuration page.
+three boxes for the configuration page. `negative_prices` keeps the midsummer
+source values and only changes the day-ahead curve, so the price band shows its
+bright-green negative state around noon.
 
 The mock also accepts the charge-mode commands and remembers the result, so the
 mode buttons can be exercised without a real device:
@@ -140,4 +143,12 @@ Pillow, and it is a useful smoke test after changing the service page:
 
 ```sh
 python3 tools/test_io_status.py
+```
+
+`tools/test_price_band.py` renders the energy balance page for the normal and
+negative-price scenarios and checks the band colours, including the bright-green
+negative state:
+
+```sh
+python3 tools/test_price_band.py
 ```

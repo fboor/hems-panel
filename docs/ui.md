@@ -96,6 +96,8 @@ the sample values in the legend for 30 seconds.
 Below the chart, the day-ahead exchange-price band is shown when the dynamic
 tariff is enabled; see [energy.md](energy.md#day-ahead-exchange-prices).
 
+![Energy balance page with a negative midday price window](../screenshots/balance.png)
+
 ## Heating page
 
 The heating page is for a heat pump controlled through SG-Ready:

@@ -421,9 +421,9 @@ lv_obj_t *label(lv_obj_t *parent, int x, int y, int width,
   return l;
 }
 // Timeline band: a 5 px high strip over 24 h with discrete colour-coded
-// states (no data / inactive / active / extra). The caption sits left of the
-// band, the band itself reaches almost to the right edge. One segment object
-// per run of equal states, reused across updates.
+// states (no data / inactive / active / extra / negative). The caption sits
+// left of the band, the band itself reaches almost to the right edge. One
+// segment object per run of equal states, reused across updates.
 constexpr int kBandMaxSegments = 32;
 constexpr int kBandX0 = 90;
 constexpr int kBandX1 = 720;
@@ -435,7 +435,7 @@ struct HistoryBand {
   int y = 0;
   int x0 = kBandX0;
   lv_obj_t *seg[kBandMaxSegments] = {};
-  uint32_t colors[5] = {};  // index: state + 1 (-1 no data, 0, 1, 2, 3)
+  uint32_t colors[6] = {};  // index: state + 1 (-1 no data, 0..4)
   int lastCount = -1;
   int lastState[kBandMaxSegments] = {};
   int lastX0[kBandMaxSegments] = {};
@@ -446,7 +446,8 @@ HistoryBand *createHistoryBand(lv_obj_t *parent, int y, const char *caption,
                                uint32_t noData, uint32_t inactive,
                                uint32_t active, uint32_t extra,
                                uint32_t both, int x0 = kBandX0,
-                               const char *const *tickLabels = nullptr) {
+                               const char *const *tickLabels = nullptr,
+                               uint32_t negative = 0) {
   HistoryBand *band = new HistoryBand();
   band->y = y;
   band->x0 = x0;
@@ -455,6 +456,7 @@ HistoryBand *createHistoryBand(lv_obj_t *parent, int y, const char *caption,
   band->colors[2] = active;
   band->colors[3] = extra;
   band->colors[4] = both;
+  band->colors[5] = negative;
   band->label = label(parent, 16, y - 8, x0 - 26, F_BODY, C_MUTED, caption);
   if (tickLabels != nullptr) {
     for (int k = 0; k < 5; ++k) {
@@ -1722,7 +1724,7 @@ void create(lv_obj_t *parent) {
 
   // Day-ahead exchange price band over the next 24 h in its own card,
   // shown only when the dynamic tariff is enabled. Colours: grey = no
-  // data, blue = medium, green = low, red = high.
+  // data, blue = medium, green = low, red = high, bright green = negative.
   w.priceCard = card(w.page2, 12, 289, 776, 64);
   {
     // Band and stats are children of page2 (not of the card): the card's
@@ -1731,7 +1733,7 @@ void create(lv_obj_t *parent) {
     const char *const priceTicks[5] = {"0h", "6h", "12h", "18h", "24h"};
     w.priceBand = createHistoryBand(w.page2, 306, TR("Börsenpreis", "Exchange price"),
                                     0x999999, 0x007BFF, 0x2CA02C, 0xD62728, 0x999999,
-                                    172, priceTicks);
+                                    172, priceTicks, 0x00FF00);
   }
   setBandVisible(w.priceBand, false);
   w.priceStats =
@@ -2568,8 +2570,9 @@ void update(const WarpData &d) {
       rebuildPowerChart();
     }
     // Day-ahead exchange price band: next 24 h from now, one state per
-    // price slot. Low = below the midpoint between median and minimum,
-    // high = above the midpoint between median and maximum.
+    // price slot. Negative = below zero, low = below the midpoint between
+    // median and minimum, high = above the midpoint between median and
+    // maximum.
     if (w.priceBand != nullptr) {
       const bool show = d.pricesEnabled && d.hasPrices && d.nowMin > 0;
       setBandVisible(w.priceBand, show);
@@ -2635,8 +2638,11 @@ void update(const WarpData &d) {
           const int32_t lowThresh = (mid + mn) / 2;
           const int32_t highThresh = (mid + mx) / 2;
           for (int i = 0; i < n; ++i) {
-            state[i] = (win[i] < lowThresh) ? (int8_t)1
-                         : (win[i] > highThresh) ? (int8_t)2
+            // Negative prices get their own bright-green state and are not
+            // folded into the low bucket.
+            state[i] = (win[i] < 0)              ? (int8_t)4
+                       : (win[i] < lowThresh)    ? (int8_t)1
+                       : (win[i] > highThresh)   ? (int8_t)2
                                                  : (int8_t)0;
           }
           updateHistoryBand(w.priceBand, times, state, n, windowStartMin, 1440);

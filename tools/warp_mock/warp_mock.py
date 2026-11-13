@@ -251,6 +251,10 @@ def scenario(name):
             forecast_today_wh=20500.0,
             forecast_today_remaining_wh=9000.0,
         )
+    elif name == "negative_prices":
+        # Same source values as midsummer; only the day-ahead price curve
+        # differs (see the /day_ahead_prices/prices handler).
+        pass
     return d
 
 
@@ -264,6 +268,7 @@ SCENARIOS = (
     "wallbox_3p",
     "wallbox_meter",
     "wallboxes",
+    "negative_prices",
 )
 
 
@@ -754,7 +759,11 @@ class Handler(BaseHTTPRequestHandler):
 
         if path == "/day_ahead_prices/prices":
             # Synthetic day-ahead curve in 15-min steps for two days:
-            # cheap at night, peak in the evening (ct/kWh/1000).
+            # cheap at night, peak in the evening (ct/kWh/1000). The
+            # negative_prices scenario subtracts a midday dip so the band
+            # exercises its bright-green negative state.
+            q = self._query()
+            name = q.get("scenario", self.scenario_name)
             now = datetime.datetime.now()
             midnight = now.replace(hour=0, minute=0, second=0, microsecond=0)
             first_min = int(midnight.timestamp()) // 60
@@ -763,7 +772,15 @@ class Handler(BaseHTTPRequestHandler):
                 t = midnight + datetime.timedelta(minutes=15 * i)
                 hour = t.hour + t.minute / 60.0
                 base = 22000 + int(14000 * ((hour - 14.0) / 10.0) ** 2)
-                prices.append(max(8000, base))
+                if name == "negative_prices":
+                    # Strong solar around noon pushes the exchange price
+                    # below zero even after the tariff adders; the rest of
+                    # the day stays positive.
+                    dip = max(0.0, 1.0 - abs(hour - 13.0) / 6.0)
+                    base -= int(90000 * dip)
+                else:
+                    base = max(8000, base)
+                prices.append(base)
             self._send({"first_date": first_min, "resolution": 0,
                         "prices": prices})
             return

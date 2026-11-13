@@ -109,11 +109,14 @@ final = (spot + grid costs and taxes + supplier markup) * (1 + VAT)
 selects 15-minute or 60-minute slots. Prices are refreshed about every 15
 minutes, not on every 10-second poll.
 
-The band uses three states: low, medium and high. Low is below the midpoint
-between the median and the minimum of the visible window; high is above the
-midpoint between the median and the maximum. Grey means no data. The line below
-the band shows the minimum, average and maximum in ct/kWh for the visible 24
-hours.
+The band uses four states: low, medium, high and negative. Low is below the
+midpoint between the median and the minimum of the visible window; high is
+above the midpoint between the median and the maximum. Negative prices are
+below zero and use a bright-green colour, so they are not folded into the low
+bucket. Grey means no data. The line below the band shows the minimum, average
+and maximum in ct/kWh for the visible 24 hours.
 
 The price band is only shown when the tariff is enabled, prices are available
 and the device clock is set.
+
+![Price band with a bright-green negative midday window](../screenshots/balance.png)
