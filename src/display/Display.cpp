@@ -641,17 +641,41 @@ bool displayInit() {
   const size_t pxBytes =
       (LV_COLOR_FORMAT_GET_BPP(lv_display_get_color_format(s_lv_disp)) + 7) / 8;
   const uint32_t buf_rows = BOARD_LCD_BUF_ROWS;
-  const size_t bufBytes = (size_t)LCD_H_RES * buf_rows * pxBytes;
-  // SRAM first for fast DMA flushes, but only 28 rows (44.8 kB): the old
-  // 48-row buffer (76.8 kB in internal heap) left just ~32 kB for
-  // Wi-Fi/HTTPClient, whose TCP allocations then failed on the device
-  // (emulator uses POSIX sockets, so it never showed this). A PSRAM buffer
-  // fixed the heap but flickered during Wi-Fi traffic (shared PSRAM bus),
-  // so: small SRAM buffer, PSRAM only as fallback.
-  lv_color_t *buf1 =
-      (lv_color_t *)heap_caps_malloc(bufBytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+  // Der Zeichenpuffer soll im SRAM liegen: er ist der einzige Teil des
+  // Neuzeichens, der nicht im PSRAM liegt, aus dem der Panel-Scan 29 MB/s
+  // liest und in dem der Netzwerkstack arbeitet. Aber nur solange der
+  // interne Heap fuer Wi-Fi/HTTPClient Luft laesst - mit dem alten
+  // 48-Zeilen-Puffer (76.8 kB) blieben ~32 kB und die HTTP-Verbindung
+  // scheiterte, mit demselben Puffer im PSRAM blieben ~109 kB und sie ging.
+  // Die Zeilenahl wird also so lange reduziert, bis diese Schonfrist
+  // frei ist; eine PSRAM-Variante bleibt der Ausweg, wenn selbst das nicht
+  // reicht. (Der Emulator nutzt POSIX-Sockets und zeigt das nie.)
+  const uint32_t kHeapHeadroom = 64000;
+  const uint32_t kMinRows = 8;
+  uint32_t rows = buf_rows;
+  size_t bufBytes = 0;
+  lv_color_t *buf1 = nullptr;
+  for (;;) {
+    const size_t bytes = (size_t)LCD_H_RES * rows * pxBytes;
+    lv_color_t *cand =
+        (lv_color_t *)heap_caps_malloc(bytes, MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (cand == nullptr) {
+      break;  // kein zusammenhaengender SRAM-Block mehr
+    }
+    if (ESP.getFreeHeap() >= kHeapHeadroom || rows <= kMinRows) {
+      buf1 = cand;
+      bufBytes = bytes;
+      break;
+    }
+    free(cand);  // zu gross fuer den Heap, kuerzer probieren
+    if (rows <= kMinRows) {
+      break;
+    }
+    rows -= 4;
+  }
   bool imSram = buf1 != nullptr;
   if (!buf1) {
+    bufBytes = (size_t)LCD_H_RES * buf_rows * pxBytes;
     buf1 = (lv_color_t *)heap_caps_malloc(bufBytes, MALLOC_CAP_SPIRAM);
   }
   if (!buf1) {
@@ -662,9 +686,10 @@ bool displayInit() {
   lv_display_set_buffers(s_lv_disp, buf1, nullptr, bufBytes,
                          LV_DISPLAY_RENDER_MODE_PARTIAL);
   lv_display_set_flush_cb(s_lv_disp, lcdFlushCb);
-  Serial.printf("LCD: LVGL-Puffer %u Zeilen, %u B (%u B je Pixel), %s\n",
-                (unsigned)buf_rows, (unsigned)bufBytes, (unsigned)pxBytes,
-                imSram ? "im SRAM" : "im PSRAM");
+  Serial.printf("LCD: LVGL-Puffer %u Zeilen, %u B (%u B je Pixel), %s, heap %u\n",
+                (unsigned)(bufBytes / ((size_t)LCD_H_RES * pxBytes)),
+                (unsigned)bufBytes, (unsigned)pxBytes,
+                imSram ? "im SRAM" : "im PSRAM", ESP.getFreeHeap());
 
   Serial.println("LCD: display ready");
   delay(1500);

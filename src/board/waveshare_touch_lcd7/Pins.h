@@ -115,13 +115,18 @@
 #ifndef BOARD_LCD_VSYNC_IDLE_LOW
 #define BOARD_LCD_VSYNC_IDLE_LOW 0
 #endif
-// LVGL's draw buffer, in lines of the panel. 24 lines are 38 kB on this board at
-// RGB565, and that buffer is the one piece of the redraw that does not have to
-// live in the PSRAM: the driver copies every strip into the frame buffer itself,
-// so LVGL rendering into SRAM saves one of the three passes a page switch makes
-// over the memory the scan reads 29 MB/s out of. 24 and not more because the
-// internal heap has to keep room for the network stack - 40 lines left 11 kB.
-#define BOARD_LCD_BUF_ROWS 28
+// LVGL's draw buffer, in lines of the panel. 16 lines are 25.6 kB on this board
+// at RGB565, and that buffer is the one piece of the redraw that does not have
+// to live in the PSRAM: the driver copies every strip into the frame buffer
+// itself, so LVGL rendering into SRAM saves one of the three passes a page
+// switch makes over the memory the scan reads 29 MB/s out of.
+//
+// So viele wie moeglich, aber nur solange der interne Heap fuer Wi-Fi und
+// HTTPClient Luft laesst: 48 Zeilen (76.8 kB) ließen ~32 kB uebrig, und die
+// HTTP-Verbindung zum WARP scheiterte; im PSRAM blieben ~109 kB und sie ging.
+// Display.cpp reduziert die Zeilenahl deshalb zur Laufzeit, bis 64 kB Heap
+// frei sind, und faellt sonst auf PSRAM zurueck.
+#define BOARD_LCD_BUF_ROWS 16
 // No bounce buffer. The vendor's demo asks for one (ten lines of the panel, in
 // PSRAM) and the field it goes into does not exist in the esp_lcd this project
 // builds against: bounce_buffer_size_px came with a later esp_lcd than the
