@@ -2026,7 +2026,7 @@ void create(lv_obj_t *parent) {
 #ifdef WARP_LANG_EN
   w.autarkyValue = label(parent, 150, 439, 160, F_TITLE, C_TEXT, "--");
   label(parent, 295, 443, 0, F_SMALL, C_MUTED, TR("Prognose", "Forecast"));
-  w.forecastValue = label(parent, 379, 439, 160, F_TITLE, C_TEXT, "--");
+  w.forecastValue = label(parent, 375, 439, 150, F_TITLE, C_TEXT, "--");
 #else
   w.autarkyValue = label(parent, 84, 439, 160, F_TITLE, C_TEXT, "--");
   label(parent, 234, 443, 0, F_SMALL, C_MUTED, TR("Prognose", "Forecast"));
