@@ -78,7 +78,10 @@ char s_status[64] = "SD: --";
 // keeps its original timestamp, and it remembers the file it belongs to - a
 // month rollover during the outage then still splits correctly.
 // --------------------------------------------------------------------------
-hemsrow::Slot s_queueSlots[kQueueCapNoPsram];
+// Die kleine Fallback-Warteschlange wird erst angelegt, wenn kein PSRAM
+// da ist: 60 Zeilen x 360 B waeren 21,6 kB internen RAM umsonst, und gerade
+// die braucht der Heap fuer Wi-Fi und HTTPClient.
+hemsrow::Slot *s_queueSlots = nullptr;
 hemsrow::Queue s_queue;
 uint32_t s_nextQueueRetryMs = 0;
 uint32_t s_nextProbeMs = 0;
@@ -687,7 +690,6 @@ void sdInit() {
   s_reqQ = xQueueCreate(kReqQueueLen, sizeof(SdReq));
   s_lock = xSemaphoreCreateMutex();
 
-  s_queue.attach(s_queueSlots, kQueueCapNoPsram);
   hemsrow::Slot *bigSlots = (hemsrow::Slot *)heap_caps_malloc(
       sizeof(hemsrow::Slot) * kQueueCap, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   if (bigSlots != nullptr) {
@@ -695,8 +697,16 @@ void sdInit() {
     Serial.printf("SD: Puffer %d Zeilen / 24 h (%u bytes, PSRAM)\n", kQueueCap,
                   (unsigned)(sizeof(hemsrow::Slot) * kQueueCap));
   } else {
-    Serial.printf("SD: Puffer nur %d Zeilen / 1 h (kein PSRAM)\n",
-                  kQueueCapNoPsram);
+    s_queueSlots = (hemsrow::Slot *)heap_caps_malloc(
+        sizeof(hemsrow::Slot) * kQueueCapNoPsram,
+        MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+    if (s_queueSlots != nullptr) {
+      s_queue.attach(s_queueSlots, kQueueCapNoPsram);
+      Serial.printf("SD: Puffer nur %d Zeilen / 1 h (kein PSRAM)\n",
+                    kQueueCapNoPsram);
+    } else {
+      Serial.println(F("SD: kein Puffer, geparkte Zeilen gehen verloren"));
+    }
   }
 
   // Three history buffers: result, current-month ring, previous-month ring.
