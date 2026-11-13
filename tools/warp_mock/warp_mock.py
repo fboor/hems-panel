@@ -38,7 +38,7 @@ BASE = {
     "grid_voltage_l2": 231.0,
     "grid_voltage_l3": 229.0,
     "grid_frequency": 50.0,
-    "grid_import_wh": 18000.0,
+    "grid_import_wh": 2560.0,
     "grid_export_wh": 4000.0,
     "pv_power_a": 1234.5,
     "pv_power_b": 0.0,
@@ -67,7 +67,7 @@ BASE = {
     "day_generation_wh": 12500.0,
     "day_load_wh": 8300.0,
     "day_feed_in_wh": 3100.0,
-    "day_grid_draw_wh": 5700.0,
+    "day_grid_draw_wh": 1328.0,
     "forecast_today_wh": 24100.0,
     "forecast_today_remaining_wh": 12000.0,
     # Charge manager. BASE has no vehicle; the wallbox scenarios set these.
