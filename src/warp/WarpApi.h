@@ -245,7 +245,10 @@ class Reader {
   // Reads /info/name, /info/version and the configuration of all seven meter
   // slots. Returns false when this is not a WARP module API. The result is
   // cached; poll() calls discover() itself if necessary.
-  bool discover() {
+  // errorOut erhaelt den fallenden Endpoint und den Transportfehler, damit im
+  // Serienlog steht, warum die Entdeckung gescheitert ist - "kein WARP-Modul"
+  // allein sagt nicht, ob /info/name oder die Meter-Abfragen Antworten.
+  bool discover(std::string &errorOut) {
     slots_.clear();
     deviceName_[0] = '\0';
     firmware_[0] = '\0';
@@ -253,6 +256,7 @@ class Reader {
     std::string body;
     std::string error;
     if (!get("/info/name", body, error)) {
+      errorOut = "/info/name: " + (error.empty() ? "keine Antwort" : error);
       return false;
     }
     if (!warpjson::string(body.data(), body.size(), "name", deviceName_,
@@ -268,6 +272,9 @@ class Reader {
     for (int i = 0; i < 7; ++i) {
       const std::string path = "/meters/" + std::to_string(i);
       if (!get(path + "/config", body, error)) {
+        if (slots_.empty() && errorOut.empty()) {
+          errorOut = path + "/config: " + (error.empty() ? "keine Antwort" : error);
+        }
         continue;
       }
 
@@ -318,6 +325,9 @@ class Reader {
       slots_.push_back(std::move(slot));
     }
 
+    if (slots_.empty() && errorOut.empty()) {
+      errorOut = "keine Messstellen in /meters/0..6";
+    }
     return !slots_.empty();
   }
 
@@ -325,8 +335,10 @@ class Reader {
   // state. Returns false if no endpoint produced usable data.
   bool poll(WarpData &d, std::string &errorOut) {
     errorOut.clear();
-    if (slots_.empty() && !discover()) {
-      errorOut = "kein WARP-Modul (info/name oder meters)";
+    if (slots_.empty() && !discover(errorOut)) {
+      if (errorOut.empty()) {
+        errorOut = "kein WARP-Modul (info/name oder meters)";
+      }
       return false;
     }
 
