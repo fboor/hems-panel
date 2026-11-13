@@ -150,6 +150,14 @@ struct WarpData {
   float dayFeedInWh = 0.0f;
   float dayGridDrawWh = 0.0f;
 
+  // Battery energy today, from the daily-history battery slot. Charge is the
+  // import counter and discharge the export counter. `hasDayBattery` is set
+  // when the device has a battery meter, so the UI can show a dash instead of
+  // a misleading zero when there is no battery.
+  bool hasDayBattery = false;
+  float dayBatteryChargeWh = 0.0f;
+  float dayBatteryDischargeWh = 0.0f;
+
   // Grid voltage / frequency, V / Hz.
   float gridVoltageL1 = 0.0f;
   float gridVoltageL2 = 0.0f;

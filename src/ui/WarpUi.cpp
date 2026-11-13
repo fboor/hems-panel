@@ -2512,7 +2512,16 @@ void update(const WarpData &d) {
   } else {
     setTextIfChanged(w.energyCharger, "--");
   }
-  setTextIfChanged(w.energyBattery, "--");
+  if (d.hasDayBattery) {
+    char charge[24];
+    char discharge[24];
+    fmtEnergy(charge, sizeof(charge), d.dayBatteryChargeWh);
+    fmtEnergy(discharge, sizeof(discharge), d.dayBatteryDischargeWh);
+    snprintf(buf2, sizeof(buf2), "%s / %s", charge, discharge);
+    setTextIfChanged(w.energyBattery, buf2);
+  } else {
+    setTextIfChanged(w.energyBattery, "--");
+  }
 
   // Energy counters since commissioning (ZÄHLER card, service page) -----
   fmtEnergy(buf, sizeof(buf), d.pvEnergyWh);

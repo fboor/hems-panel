@@ -909,6 +909,11 @@ class Reader {
         dailyHasCharger_ = true;
         dailyCharger_ = d.dayChargerWh;
       }
+      if (d.hasDayBattery) {
+        dailyHasBattery_ = true;
+        dailyBatteryCharge_ = d.dayBatteryChargeWh;
+        dailyBatteryDischarge_ = d.dayBatteryDischargeWh;
+      }
       dailyTtl_ = 6;
     } else {
       --dailyTtl_;
@@ -922,6 +927,9 @@ class Reader {
     d.dayFeedInWh = dailyDayFeed_;
     d.hasDayCharger = dailyHasCharger_;
     d.dayChargerWh = dailyCharger_;
+    d.hasDayBattery = dailyHasBattery_;
+    d.dayBatteryChargeWh = dailyBatteryCharge_;
+    d.dayBatteryDischargeWh = dailyBatteryDischarge_;
 
     // Slow-changing state (heating, temperatures, IO): fetch every 6th poll
     // (~60 s) and serve the cache in between. Fewer HTTP round trips means
@@ -1038,10 +1046,48 @@ class Reader {
     return false;
   }
 
-  // Fetches one month of the daily history. The device stores 17 values per
-  // day: import counters for meter slots 0..6, export counters for 0..6, then
-  // three price values. Counters are cumulative kWh, so a day's energy is the
-  // difference to the previous day's row.
+  // One day of the daily history holds the import counters for every recorded
+  // meter slot, then the export counters for the same slots, then three price
+  // values. The number of recorded slots depends on the device: a WARP4 keeps
+  // five, a WEM2 seven. The stride therefore comes from the response length
+  // and the number of days in the requested month instead of being hardcoded.
+  struct DailyLayout {
+    int stride = 0;  // values per day
+    int slots = 0;   // recorded meter slots per direction
+  };
+
+  static int daysInMonth(int year, int month) {
+    static const int kDays[12] = {31, 28, 31, 30, 31, 30,
+                                  31, 31, 30, 31, 30, 31};
+    if (month < 1 || month > 12) {
+      return 0;
+    }
+    int days = kDays[month - 1];
+    if (month == 2 && ((year % 4 == 0 && year % 100 != 0) || year % 400 == 0)) {
+      days = 29;
+    }
+    return days;
+  }
+
+  static bool dailyLayout(size_t count, int year, int month,
+                          DailyLayout &layout) {
+    const int days = daysInMonth(year, month);
+    if (days <= 0 || count < static_cast<size_t>(days) ||
+        count % static_cast<size_t>(days) != 0) {
+      return false;
+    }
+    const int stride = static_cast<int>(count / static_cast<size_t>(days));
+    // import slots + export slots + three prices
+    if (stride < 5 || stride > 17 || (stride - 3) % 2 != 0) {
+      return false;
+    }
+    layout.stride = stride;
+    layout.slots = (stride - 3) / 2;
+    return true;
+  }
+
+  // Fetches one month of the daily history. The largest layout (17 values/day
+  // for seven slots over 31 days) sets the buffer size.
   bool fetchDaily(int year, int month, std::vector<double> &values,
                   size_t &count) {
     char request[48];
@@ -1057,26 +1103,33 @@ class Reader {
     values.assign(17 * 31, NAN);
     return warpjson::topNumbers(response.data(), response.size(), values.data(),
                                 values.size(), count) &&
-           count >= 17;
+           count >= 5;
   }
 
   static bool dailyDayValid(const std::vector<double> &values, size_t count,
-                            int day, int loadSlot, int gridSlot) {
-    if (day < 0) {
+                            const DailyLayout &layout, int day, int loadSlot,
+                            int gridSlot) {
+    if (day < 0 || layout.stride <= 0 || gridSlot < 0 ||
+        gridSlot >= layout.slots) {
       return false;
     }
-    const size_t base = static_cast<size_t>(day) * 17;
-    if (base + 17 > count) {
+    const size_t base = static_cast<size_t>(day) * layout.stride;
+    if (base + layout.stride > count ||
+        std::isnan(values[base + gridSlot])) {
       return false;
     }
-    return !std::isnan(values[base + loadSlot]) &&
-           !std::isnan(values[base + gridSlot]);
+    if (loadSlot >= 0 &&
+        (loadSlot >= layout.slots || std::isnan(values[base + loadSlot]))) {
+      return false;
+    }
+    return true;
   }
 
   static int dailyLastValid(const std::vector<double> &values, size_t count,
-                            int loadSlot, int gridSlot, int before) {
+                            const DailyLayout &layout, int loadSlot,
+                            int gridSlot, int before) {
     for (int day = before - 1; day >= 0; --day) {
-      if (dailyDayValid(values, count, day, loadSlot, gridSlot)) {
+      if (dailyDayValid(values, count, layout, day, loadSlot, gridSlot)) {
         return day;
       }
     }
@@ -1084,28 +1137,39 @@ class Reader {
   }
 
   static double dailyLoadNet(const std::vector<double> &values, size_t count,
-                             int day, int slot) {
-    const size_t base = static_cast<size_t>(day) * 17;
-    if (base + 17 > count || std::isnan(values[base + slot])) {
+                             const DailyLayout &layout, int day, int slot) {
+    if (slot < 0 || slot >= layout.slots) {
       return NAN;
     }
-    const double exported = values[base + 7 + slot];
+    const size_t base = static_cast<size_t>(day) * layout.stride;
+    if (base + layout.stride > count || std::isnan(values[base + slot])) {
+      return NAN;
+    }
+    const double exported = values[base + layout.slots + slot];
     return values[base + slot] - (std::isnan(exported) ? 0.0 : exported);
   }
 
   static double dailyExport(const std::vector<double> &values, size_t count,
-                            int day, int slot) {
-    const size_t base = static_cast<size_t>(day) * 17;
-    if (base + 17 > count || std::isnan(values[base + 7 + slot])) {
+                            const DailyLayout &layout, int day, int slot) {
+    if (slot < 0 || slot >= layout.slots) {
       return NAN;
     }
-    return values[base + 7 + slot];
+    const size_t base = static_cast<size_t>(day) * layout.stride;
+    if (base + layout.stride > count ||
+        std::isnan(values[base + layout.slots + slot])) {
+      return NAN;
+    }
+    return values[base + layout.slots + slot];
   }
 
   static double dailyGridImport(const std::vector<double> &values,
-                                size_t count, int day, int slot) {
-    const size_t base = static_cast<size_t>(day) * 17;
-    if (base + 17 > count) {
+                                size_t count, const DailyLayout &layout,
+                                int day, int slot) {
+    if (slot < 0 || slot >= layout.slots) {
+      return NAN;
+    }
+    const size_t base = static_cast<size_t>(day) * layout.stride;
+    if (base + layout.stride > count) {
       return NAN;
     }
     return values[base + slot];
@@ -1319,6 +1383,7 @@ class Reader {
     int loadSlot = -1;
     int gridSlot = -1;
     int pvSlot = -1;
+    int batterySlot = -1;
     std::vector<int> chargerSlots;
     for (const Slot &slot : slots_) {
       if (slot.role == ROLE_LOAD && loadSlot < 0) {
@@ -1330,12 +1395,15 @@ class Reader {
       if (slot.role == ROLE_PV && pvSlot < 0) {
         pvSlot = slot.slot;
       }
+      if (slot.role == ROLE_BATTERY && batterySlot < 0) {
+        batterySlot = slot.slot;
+      }
       if (slot.role == ROLE_CHARGER) {
         chargerSlots.push_back(slot.slot);
       }
     }
-    if (loadSlot < 0 || gridSlot < 0) {
-      return false;  // no consumption or no grid import to compare
+    if (gridSlot < 0) {
+      return false;  // without grid import there is no autarky to compute
     }
 
     int year = 0;
@@ -1355,135 +1423,190 @@ class Reader {
 
     std::vector<double> values;
     size_t count = 0;
-    if (!fetchDaily(year, month, values, count)) {
+    DailyLayout layout;
+    if (!fetchDaily(year, month, values, count) ||
+        !dailyLayout(count, year, month, layout)) {
       return false;
     }
 
-    const int today =
-        dailyLastValid(values, count, loadSlot, gridSlot,
-                       static_cast<int>(count / 17));
+    const int today = dailyLastValid(
+        values, count, layout, loadSlot, gridSlot,
+        static_cast<int>(count / static_cast<size_t>(layout.stride)));
     if (today < 0) {
       return false;
     }
 
-    double previousLoad = NAN;
-    double previousGrid = NAN;
-    double previousPvExport = NAN;
-    double previousGridExport = NAN;
-    std::vector<double> previousChargerImport(chargerSlots.size(), NAN);
+    // The baseline is the previous valid day in this month, or the last day
+    // of the previous month on the first.
+    std::vector<double> previousMonthValues;
+    size_t previousMonthCount = 0;
+    DailyLayout previousMonthLayout;
+    const std::vector<double> *previousValues = &values;
+    size_t previousCount = count;
+    DailyLayout previousLayout = layout;
+    int previous = -1;
     if (today > 0) {
-      const int previous =
-          dailyLastValid(values, count, loadSlot, gridSlot, today);
-      if (previous < 0) {
-        return false;
-      }
-      previousLoad = dailyLoadNet(values, count, previous, loadSlot);
-      previousGrid = dailyGridImport(values, count, previous, gridSlot);
-      if (pvSlot >= 0) {
-        previousPvExport = dailyExport(values, count, previous, pvSlot);
-      }
-      previousGridExport = dailyExport(values, count, previous, gridSlot);
-      for (size_t i = 0; i < chargerSlots.size(); ++i) {
-        previousChargerImport[i] =
-            dailyGridImport(values, count, previous, chargerSlots[i]);
-      }
+      previous = dailyLastValid(values, count, layout, loadSlot, gridSlot,
+                                today);
     } else {
-      // The first of the month: yesterday lives in the previous month.
       int previousYear = year;
       int previousMonth = month - 1;
       if (previousMonth < 1) {
         previousMonth = 12;
         --previousYear;
       }
-      std::vector<double> previousValues;
-      size_t previousCount = 0;
-      if (!fetchDaily(previousYear, previousMonth, previousValues,
-                      previousCount)) {
+      if (!fetchDaily(previousYear, previousMonth, previousMonthValues,
+                      previousMonthCount) ||
+          !dailyLayout(previousMonthCount, previousYear, previousMonth,
+                       previousMonthLayout)) {
         return false;
       }
-      const int previous = dailyLastValid(
-          previousValues, previousCount, loadSlot, gridSlot,
-          static_cast<int>(previousCount / 17));
-      if (previous < 0) {
-        return false;
-      }
-      previousLoad =
-          dailyLoadNet(previousValues, previousCount, previous, loadSlot);
-      previousGrid =
-          dailyGridImport(previousValues, previousCount, previous, gridSlot);
-      if (pvSlot >= 0) {
-        previousPvExport =
-            dailyExport(previousValues, previousCount, previous, pvSlot);
-      }
-      previousGridExport =
-          dailyExport(previousValues, previousCount, previous, gridSlot);
-      for (size_t i = 0; i < chargerSlots.size(); ++i) {
-        previousChargerImport[i] = dailyGridImport(
-            previousValues, previousCount, previous, chargerSlots[i]);
-      }
+      previousValues = &previousMonthValues;
+      previousCount = previousMonthCount;
+      previousLayout = previousMonthLayout;
+      previous = dailyLastValid(
+          previousMonthValues, previousMonthCount, previousMonthLayout,
+          loadSlot, gridSlot,
+          static_cast<int>(previousMonthCount /
+                           static_cast<size_t>(previousMonthLayout.stride)));
+    }
+    if (previous < 0) {
+      return false;
     }
 
-    const double todayLoad = dailyLoadNet(values, count, today, loadSlot);
-    const double todayGrid = dailyGridImport(values, count, today, gridSlot);
-    const double loadDelta = todayLoad - previousLoad;
-    const double gridDelta = todayGrid - previousGrid;
+    const double loadDelta =
+        dailyLoadNet(values, count, layout, today, loadSlot) -
+        dailyLoadNet(*previousValues, previousCount, previousLayout, previous,
+                     loadSlot);
+    const double gridDelta =
+        dailyGridImport(values, count, layout, today, gridSlot) -
+        dailyGridImport(*previousValues, previousCount, previousLayout,
+                        previous, gridSlot);
+    const double pvDelta =
+        dailyExport(values, count, layout, today, pvSlot) -
+        dailyExport(*previousValues, previousCount, previousLayout, previous,
+                    pvSlot);
+    const double feedDelta =
+        dailyExport(values, count, layout, today, gridSlot) -
+        dailyExport(*previousValues, previousCount, previousLayout, previous,
+                    gridSlot);
+    const double chargeDelta =
+        dailyGridImport(values, count, layout, today, batterySlot) -
+        dailyGridImport(*previousValues, previousCount, previousLayout,
+                        previous, batterySlot);
+    const double dischargeDelta =
+        dailyExport(values, count, layout, today, batterySlot) -
+        dailyExport(*previousValues, previousCount, previousLayout, previous,
+                    batterySlot);
+
+    // The daily history stores the battery charge counter as import and the
+    // discharge counter as export. Their deltas are today's battery energy.
+    if (batterySlot >= 0 && batterySlot < layout.slots &&
+        (!std::isnan(chargeDelta) || !std::isnan(dischargeDelta))) {
+      d.hasDayBattery = true;
+      d.dayBatteryChargeWh = static_cast<float>(
+          std::isnan(chargeDelta) ? 0.0 : std::max(0.0, chargeDelta) * 1000.0);
+      d.dayBatteryDischargeWh = static_cast<float>(
+          std::isnan(dischargeDelta) ? 0.0
+                                     : std::max(0.0, dischargeDelta) * 1000.0);
+    }
 
     // Today's sums from the same day-over-day deltas (kWh -> Wh). Set before
     // the autarky guard below: a near-empty day still has sums. PV generation
     // is the export counter of the PV slot, feed-in the export counter of
     // the grid slot.
+    const bool loadUsable = !std::isnan(loadDelta) && loadDelta > 0.01 &&
+                            !std::isnan(gridDelta) &&
+                            gridDelta <= loadDelta + 0.01;
     bool anySum = false;
-    if (!std::isnan(loadDelta)) {
-      d.dayLoadWh = (float)(std::max(0.0, loadDelta) * 1000.0);
+    if (loadUsable) {
+      d.dayLoadWh = static_cast<float>(loadDelta * 1000.0);
       anySum = true;
     }
     if (!std::isnan(gridDelta)) {
-      d.dayGridDrawWh = (float)(std::max(0.0, gridDelta) * 1000.0);
+      d.dayGridDrawWh = static_cast<float>(std::max(0.0, gridDelta) * 1000.0);
       anySum = true;
     }
-    if (pvSlot >= 0) {
-      const double pvDelta =
-          dailyExport(values, count, today, pvSlot) - previousPvExport;
-      if (!std::isnan(pvDelta)) {
-        d.dayGenerationWh = (float)(std::max(0.0, pvDelta) * 1000.0);
-        anySum = true;
-      }
+    if (!std::isnan(pvDelta)) {
+      d.dayGenerationWh = static_cast<float>(std::max(0.0, pvDelta) * 1000.0);
+      anySum = true;
     }
-    {
-      const double feedDelta =
-          dailyExport(values, count, today, gridSlot) - previousGridExport;
-      if (!std::isnan(feedDelta)) {
-        d.dayFeedInWh = (float)(std::max(0.0, feedDelta) * 1000.0);
-        anySum = true;
-      }
+    if (!std::isnan(feedDelta)) {
+      d.dayFeedInWh = static_cast<float>(std::max(0.0, feedDelta) * 1000.0);
+      anySum = true;
     }
     if (!chargerSlots.empty()) {
       double chargerDelta = 0.0;
       bool anyCharger = false;
-      for (size_t i = 0; i < chargerSlots.size(); ++i) {
+      for (int slot : chargerSlots) {
         const double nowImport =
-            dailyGridImport(values, count, today, chargerSlots[i]);
-        if (std::isnan(nowImport) ||
-            std::isnan(previousChargerImport[i])) {
+            dailyGridImport(values, count, layout, today, slot);
+        const double previousImport = dailyGridImport(
+            *previousValues, previousCount, previousLayout, previous, slot);
+        if (std::isnan(nowImport) || std::isnan(previousImport)) {
           continue;
         }
-        chargerDelta += std::max(0.0, nowImport - previousChargerImport[i]);
+        chargerDelta += std::max(0.0, nowImport - previousImport);
         anyCharger = true;
       }
       if (anyCharger) {
-        d.dayChargerWh = (float)(chargerDelta * 1000.0);
+        d.dayChargerWh = static_cast<float>(chargerDelta * 1000.0);
         d.hasDayCharger = true;
         anySum = true;
       }
     }
+
+    // Prefer the load counter because it measures the house directly. It can
+    // be unusable when the device has no load meter, when its counter did not
+    // advance, or when it excludes a load that the grid meter sees (for
+    // example a wallbox). Then derive consumption from the energy balance:
+    //   PV + grid import + battery discharge
+    //     = load + battery charge + feed-in
+    double consumption = NAN;
+    if (loadUsable) {
+      consumption = loadDelta;
+    } else {
+      double derived = 0.0;
+      bool any = false;
+      if (!std::isnan(pvDelta)) {
+        derived += pvDelta;
+        any = true;
+      }
+      if (!std::isnan(gridDelta)) {
+        derived += gridDelta;
+        any = true;
+      }
+      if (!std::isnan(dischargeDelta)) {
+        derived += dischargeDelta;
+        any = true;
+      }
+      if (!std::isnan(chargeDelta)) {
+        derived -= chargeDelta;
+        any = true;
+      }
+      if (!std::isnan(feedDelta)) {
+        derived -= feedDelta;
+        any = true;
+      }
+      if (any && derived > 0.01) {
+        consumption = derived;
+      }
+    }
+    if (!loadUsable && !std::isnan(consumption)) {
+      d.dayLoadWh = static_cast<float>(consumption * 1000.0);
+      anySum = true;
+    }
     d.hasDaySums = anySum;
 
-    if (!(loadDelta > 0.01) || std::isnan(gridDelta)) {
+    // Without a plausible consumption figure a zero would be misleading, so
+    // leave today's autarky unset and let the UI show only the overall value.
+    if (std::isnan(consumption) || consumption <= 0.01 ||
+        std::isnan(gridDelta)) {
       return false;
     }
 
-    float autarky =
-        static_cast<float>((loadDelta - gridDelta) / loadDelta * 100.0);
+    float autarky = static_cast<float>(
+        (consumption - gridDelta) / consumption * 100.0);
     if (autarky < 0.0f) {
       autarky = 0.0f;
     }
@@ -1512,6 +1635,9 @@ class Reader {
   float dailyDayFeed_ = 0.0f;
   bool dailyHasCharger_ = false;
   float dailyCharger_ = 0.0f;
+  bool dailyHasBattery_ = false;
+  float dailyBatteryCharge_ = 0.0f;
+  float dailyBatteryDischarge_ = 0.0f;
   int slowTtl_ = 0;
   WarpData slowCache_;
 };

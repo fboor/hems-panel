@@ -59,6 +59,8 @@ BASE = {
     "battery_temperature": 22.0,
     "battery_charge_wh": 5000.0,
     "battery_discharge_wh": 4200.0,
+    "day_battery_charge_wh": 1800.0,
+    "day_battery_discharge_wh": 1200.0,
     "island_flag": 0,
     "core_temperature": 45.2,
     "heat_sink_temperature": 55.3,
@@ -901,14 +903,16 @@ class Handler(BaseHTTPRequestHandler):
                     data[yesterday + 2] = round(
                         (d["grid_import_wh"] - d["day_grid_draw_wh"]) / 1000.0, 3)
                     data[yesterday + 3] = round(
-                        d["battery_charge_wh"] / 1000.0, 3)
+                        (d["battery_charge_wh"] - d["day_battery_charge_wh"])
+                        / 1000.0, 3)
                     data[yesterday + 7] = 0.0
                     data[yesterday + 8] = round(
                         pv_energy - d["day_generation_wh"] / 1000.0, 3)
                     data[yesterday + 9] = round(
                         (d["grid_export_wh"] - d["day_feed_in_wh"]) / 1000.0, 3)
                     data[yesterday + 10] = round(
-                        d["battery_discharge_wh"] / 1000.0, 3)
+                        (d["battery_discharge_wh"] - d["day_battery_discharge_wh"])
+                        / 1000.0, 3)
                     for offset, spec in enumerate(metered_chargers(d)):
                         energy = spec.get("meter_energy_wh")
                         if energy is None or 4 + offset >= 7:

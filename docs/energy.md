@@ -18,7 +18,7 @@ daily history:
 - grid import,
 - feed-in,
 - wallbox charging,
-- battery.
+- battery charge and discharge, as `charge / discharge`.
 
 The `ZÄHLER` card on the service page shows the cumulative counters since
 commissioning:
@@ -52,18 +52,28 @@ The result is clamped to 0–100 %. The flat JSON fallback also accepts an
 `autarky` / `autarkie` / `self_sufficiency` field from the backend and uses it
 when present.
 
-Today's autarky uses the device's daily energy history. The load and grid
-counters of today and the previous day are differenced, so no panel-side baseline
-is needed:
+Today's autarky uses the device's daily energy history. The counters of today
+and the previous day are differenced, so no panel-side baseline is needed:
 
 ```
-autarky today = (load delta - grid-import delta) / load delta * 100 %
+autarky today = (consumption delta - grid-import delta) / consumption delta * 100 %
 ```
 
-This requires a load meter, a grid meter, the device RTC and two consecutive
-daily rows. If any of these is missing, the panel shows only the overall value.
-The bottom bar prints today's value first and the overall value second, for
-example `82 % / 77 %`.
+The load counter is preferred for the consumption delta. When it is missing,
+did not advance, or is smaller than the grid-import delta (for example because
+it excludes a wallbox that the grid meter sees), the panel derives consumption
+from the energy balance instead:
+
+```
+consumption = PV + grid import + battery discharge - battery charge - feed-in
+```
+
+If no plausible consumption figure remains, today's value stays unset and the
+panel shows only the overall value rather than a misleading `0 %`. This needs a
+grid meter, the device RTC and two consecutive daily rows. The daily-history
+stride is derived from the response, so devices that record five meter slots
+(WARP4) and seven (WEM2) both work. The bottom bar prints today's value first
+and the overall value second, for example `82 % / 77 %`.
 
 ## Solar forecast
 
