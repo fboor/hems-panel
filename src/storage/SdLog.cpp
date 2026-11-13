@@ -251,6 +251,9 @@ void reportForeignHeader(const char *path) {
   }
   strlcpy(lastPath, path, sizeof(lastPath));
 
+  if (!SD.exists(path)) {
+    return;
+  }
   File f = SD.open(path, FILE_READ);
   if (!f) {
     return;
@@ -406,6 +409,12 @@ constexpr size_t kScanBlock = 8192;
 // min(total, ringCap) rows survive in the ring.
 int scanFile(const char *path, SdHistSample *ring, int ringCap) {
   if (ring == nullptr || ringCap <= 0) {
+    return 0;
+  }
+  // exists() statt direkten Open: die VFS schreibt fuer jedes fehlende File
+  // einen ERROR-Eintrag ("does not exist, no permits for creation"), und dass
+  // die Vormonatsdatei auf einer frischen Karte fehlt, ist Normalzustand.
+  if (!SD.exists(path)) {
     return 0;
   }
   File f = SD.open(path, FILE_READ);
