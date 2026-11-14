@@ -60,7 +60,7 @@ def holen(name):
         sys.exit("Version not found in %s: %s" % (header, name))
     return m.group(1)
 
-version, monat = holen("WARP_FW_VERSION"), holen("WARP_FW_VERSION_MON")
+version, monat = holen("HEMS_FW_VERSION"), holen("HEMS_FW_VERSION_MON")
 release = "v" + version
 print("VERSION=%s" % shlex.quote(version))
 print("RELEASE=%s" % shlex.quote(release))
