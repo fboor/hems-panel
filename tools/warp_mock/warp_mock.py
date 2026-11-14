@@ -68,6 +68,9 @@ BASE = {
     "day_load_wh": 8300.0,
     "day_feed_in_wh": 3100.0,
     "day_grid_draw_wh": 1328.0,
+    # Simulate a day the WARP did not record (null counters), so the panel
+    # has to fall back to the 5-minute history for today's totals.
+    "daily_gap": False,
     "forecast_today_wh": 24100.0,
     "forecast_today_remaining_wh": 12000.0,
     # Charge manager. BASE has no vehicle; the wallbox scenarios set these.
@@ -255,6 +258,10 @@ def scenario(name):
         # Same source values as midsummer; only the day-ahead price curve
         # differs (see the /day_ahead_prices/prices handler).
         pass
+    elif name == "daily_gap":
+        # Yesterday's grid/PV/battery counters are missing, like a day the
+        # WARP spent without a network connection.
+        d["daily_gap"] = True
     return d
 
 
@@ -269,6 +276,7 @@ SCENARIOS = (
     "wallbox_meter",
     "wallboxes",
     "negative_prices",
+    "daily_gap",
 )
 
 
@@ -937,6 +945,67 @@ class Handler(BaseHTTPRequestHandler):
                         day = float(spec.get("meter_day_wh") or 0.0)
                         data[yesterday + 4 + offset] = wh_to_kwh(
                             max(0.0, energy - day))
+                if d.get("daily_gap") and today > 1:
+                    # The WARP missed yesterday's grid, PV and battery
+                    # counters. Keep the load counter, drop the rest, and
+                    # leave the day before as the last complete row so the
+                    # old "last valid day" baseline would span two days.
+                    yesterday = (today - 1) * 17
+                    for idx in (2, 3, 8, 9, 10):
+                        data[yesterday + idx] = None
+                    before = (today - 2) * 17
+                    data[before + 0] = round(
+                        (d["household_energy_wh"] - 2 * d["day_load_wh"])
+                        / 1000.0, 3)
+                    data[before + 1] = 0.0
+                    data[before + 2] = round(
+                        (d["grid_import_wh"] - 2 * d["day_grid_draw_wh"])
+                        / 1000.0, 3)
+                    data[before + 3] = round(
+                        (d["battery_charge_wh"]
+                         - 2 * d["day_battery_charge_wh"]) / 1000.0, 3)
+                    data[before + 7] = 0.0
+                    data[before + 8] = round(
+                        pv_energy - 2 * d["day_generation_wh"] / 1000.0, 3)
+                    data[before + 9] = round(
+                        (d["grid_export_wh"] - 2 * d["day_feed_in_wh"])
+                        / 1000.0, 3)
+                    data[before + 10] = round(
+                        (d["battery_discharge_wh"]
+                         - 2 * d["day_battery_discharge_wh"]) / 1000.0, 3)
+            self._send(data)
+            return
+        if path == "/energy_manager/history_energy_manager_5min":
+            length = int(self.headers.get("Content-Length", "0"))
+            if length > 0:
+                self.rfile.read(length)
+            d = self._data()
+            slots = 288
+            stride = 9
+            half = slots // 2
+            data = [None] * (slots * stride)
+            # Spread the day's energy evenly over the slots. Grid and battery
+            # split into an import/charge half and an export/discharge half so
+            # the signed integration matches the day totals exactly.
+            load_w = d["day_load_wh"] / (slots * 5.0 / 60.0)
+            pv_w = -d["day_generation_wh"] / (slots * 5.0 / 60.0)
+            grid_in_w = (d["day_grid_draw_wh"] / (half * 5.0 / 60.0)
+                         if d["day_grid_draw_wh"] > 0 else 0.0)
+            grid_out_w = (-d["day_feed_in_wh"] / ((slots - half) * 5.0 / 60.0)
+                          if d["day_feed_in_wh"] > 0 else 0.0)
+            charge_w = (d["day_battery_charge_wh"] / (half * 5.0 / 60.0)
+                        if d["day_battery_charge_wh"] > 0 else 0.0)
+            discharge_w = (-d["day_battery_discharge_wh"]
+                           / ((slots - half) * 5.0 / 60.0)
+                           if d["day_battery_discharge_wh"] > 0 else 0.0)
+            for i in range(slots):
+                base = i * stride
+                data[base + 0] = 0
+                data[base + 1] = load_w
+                data[base + 2] = pv_w
+                data[base + 3] = grid_in_w if i < half else grid_out_w
+                data[base + 4] = charge_w if i < half else discharge_w
+                data[base + 8] = 20.0
             self._send(data)
             return
         if (path.startswith("/power_manager/charge_mode_update") or

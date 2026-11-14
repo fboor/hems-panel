@@ -20,6 +20,18 @@ daily history:
 - wallbox charging,
 - battery charge and discharge, as `charge / discharge`.
 
+Today's sums are day-over-day differences of the cumulative meter counters in
+the daily history. The baseline must be exactly the previous day: when the WARP
+did not record that day, the difference would span two days and roughly double
+the generation and consumption. In that case the panel leaves the counter delta
+unset and fills the value from today's 5-minute power history instead, which
+never reaches beyond the current day. The card shows `--` unless every row has a
+value, so a missing day never reads as a misleading zero.
+
+The load meter measures the house side, so its counter is the house's usage and
+does not contain battery charging. The `Verbrauch` row therefore shows the load
+counter directly.
+
 The `ZÄHLER` card on the service page shows the cumulative counters since
 commissioning:
 

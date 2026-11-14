@@ -362,6 +362,18 @@ void printData(const WarpData &d) {
   } else {
     printf("autarky today: -- (no daily history for load and grid)\n");
   }
+  if (d.hasDaySums) {
+    printf("day sums: gen %.0f Wh  load %.0f Wh  draw %.0f Wh  feed %.0f Wh\n",
+           d.dayGenerationWh, d.dayLoadWh, d.dayGridDrawWh, d.dayFeedInWh);
+  } else {
+    printf("day sums: --\n");
+  }
+  if (d.hasDayBattery) {
+    printf("day battery: charge %.0f Wh  discharge %.0f Wh\n",
+           d.dayBatteryChargeWh, d.dayBatteryDischargeWh);
+  } else {
+    printf("day battery: --\n");
+  }
   printf("wallbox: %.1f W  %.1f A  %d ph  state %d  power %s%s\n",
          d.charge_power, d.charge_current / 1000.0, d.charge_phases,
          d.charge_state, d.chargeMeter ? "meter" : "calculated",

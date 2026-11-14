@@ -18,6 +18,7 @@
 #include <stddef.h>
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 
 #include <cmath>
@@ -1068,6 +1069,21 @@ class Reader {
     int slots = 0;   // recorded meter slots per direction
   };
 
+  // Today's energy from the 5-minute power history, in Wh. Only the roles the
+  // panel needs are accumulated.
+  struct DaySums5 {
+    bool hasLoad = false;
+    bool hasPv = false;
+    bool hasGrid = false;
+    bool hasBattery = false;
+    double loadWh = 0.0;
+    double pvWh = 0.0;
+    double gridImportWh = 0.0;
+    double feedInWh = 0.0;
+    double chargeWh = 0.0;
+    double dischargeWh = 0.0;
+  };
+
   static int daysInMonth(int year, int month) {
     static const int kDays[12] = {31, 28, 31, 30, 31, 30,
                                   31, 31, 30, 31, 30, 31};
@@ -1118,6 +1134,113 @@ class Reader {
            count >= 5;
   }
 
+  // Reads the next value of a flat JSON array. Returns false at the end.
+  static bool flatToken(const char *&p, double &value, bool &isNull) {
+    while (*p == ' ' || *p == '\t' || *p == '\n' || *p == '\r' || *p == ',') {
+      ++p;
+    }
+    if (*p == ']' || *p == '\0') {
+      return false;
+    }
+    if (strncmp(p, "null", 4) == 0) {
+      p += 4;
+      isNull = true;
+      return true;
+    }
+    char *end = nullptr;
+    value = strtod(p, &end);
+    if (end == p) {
+      return false;
+    }
+    p = end;
+    isNull = false;
+    return true;
+  }
+
+  // Integrates today's 5-minute power history to energy. The response is a
+  // flat array of 288 five-minute slots, each [flags, power per meter slot,
+  // price]. It is only used to fill a counter delta that would otherwise
+  // span more than one day; it never reaches beyond the current day.
+  bool fetchToday5Min(int year, int month, int day, int loadSlot, int gridSlot,
+                      int pvSlot, int batterySlot, DaySums5 &out) {
+    char request[48];
+    snprintf(request, sizeof(request), "{\"year\":%d,\"month\":%d,\"day\":%d}",
+             year, month, day);
+    std::string response;
+    std::string error;
+    if (!transport_.post(base_ +
+                             "/energy_manager/history_energy_manager_5min" +
+                             query_,
+                         request, response, error)) {
+      return false;
+    }
+
+    const char *start = response.c_str();
+    while (*start != '\0' && *start != '[') {
+      ++start;
+    }
+    if (*start != '[') {
+      return false;
+    }
+    ++start;
+
+    size_t count = 0;
+    {
+      const char *p = start;
+      double value = 0.0;
+      bool isNull = false;
+      while (flatToken(p, value, isNull)) {
+        ++count;
+      }
+    }
+    if (count < 288 || count % 288 != 0) {
+      return false;
+    }
+    const int stride = static_cast<int>(count / 288);
+    const int slots = stride - 2;  // flags + slots + price
+    if (slots <= 0) {
+      return false;
+    }
+
+    const char *p = start;
+    double value = 0.0;
+    bool isNull = false;
+    size_t index = 0;
+    while (flatToken(p, value, isNull)) {
+      const int slot = static_cast<int>(index % static_cast<size_t>(stride));
+      ++index;
+      if (isNull || slot < 1 || slot > slots) {
+        continue;
+      }
+      const int meter = slot - 1;
+      const double wh = value * 5.0 / 60.0;
+      if (meter == loadSlot) {
+        out.hasLoad = true;
+        if (value > 0.0) {
+          out.loadWh += wh;
+        }
+      } else if (meter == pvSlot) {
+        out.hasPv = true;
+        out.pvWh += std::fabs(wh);
+      } else if (meter == gridSlot) {
+        out.hasGrid = true;
+        if (value > 0.0) {
+          out.gridImportWh += wh;
+        } else {
+          out.feedInWh -= wh;
+        }
+      } else if (meter == batterySlot) {
+        out.hasBattery = true;
+        if (value > 0.0) {
+          out.chargeWh += wh;
+        } else {
+          out.dischargeWh -= wh;
+        }
+      }
+    }
+    return true;
+  }
+
   static bool dailyDayValid(const std::vector<double> &values, size_t count,
                             const DailyLayout &layout, int day, int loadSlot,
                             int gridSlot) {
@@ -1150,7 +1273,7 @@ class Reader {
 
   static double dailyLoadNet(const std::vector<double> &values, size_t count,
                              const DailyLayout &layout, int day, int slot) {
-    if (slot < 0 || slot >= layout.slots) {
+    if (day < 0 || slot < 0 || slot >= layout.slots) {
       return NAN;
     }
     const size_t base = static_cast<size_t>(day) * layout.stride;
@@ -1163,7 +1286,7 @@ class Reader {
 
   static double dailyExport(const std::vector<double> &values, size_t count,
                             const DailyLayout &layout, int day, int slot) {
-    if (slot < 0 || slot >= layout.slots) {
+    if (day < 0 || slot < 0 || slot >= layout.slots) {
       return NAN;
     }
     const size_t base = static_cast<size_t>(day) * layout.stride;
@@ -1177,7 +1300,7 @@ class Reader {
   static double dailyGridImport(const std::vector<double> &values,
                                 size_t count, const DailyLayout &layout,
                                 int day, int slot) {
-    if (slot < 0 || slot >= layout.slots) {
+    if (day < 0 || slot < 0 || slot >= layout.slots) {
       return NAN;
     }
     const size_t base = static_cast<size_t>(day) * layout.stride;
@@ -1448,8 +1571,10 @@ class Reader {
       return false;
     }
 
-    // The baseline is the previous valid day in this month, or the last day
-    // of the previous month on the first.
+    // The baseline must be the immediately preceding day. A day the WARP did
+    // not record (a gap in the history) would make the delta span several
+    // days and inflate today's totals, so leave the delta unset and let the
+    // 5-minute history below fill it in.
     std::vector<double> previousMonthValues;
     size_t previousMonthCount = 0;
     DailyLayout previousMonthLayout;
@@ -1458,8 +1583,9 @@ class Reader {
     DailyLayout previousLayout = layout;
     int previous = -1;
     if (today > 0) {
-      previous = dailyLastValid(values, count, layout, loadSlot, gridSlot,
-                                today);
+      if (dailyDayValid(values, count, layout, today - 1, loadSlot, gridSlot)) {
+        previous = today - 1;
+      }
     } else {
       int previousYear = year;
       int previousMonth = month - 1;
@@ -1476,40 +1602,100 @@ class Reader {
       previousValues = &previousMonthValues;
       previousCount = previousMonthCount;
       previousLayout = previousMonthLayout;
-      previous = dailyLastValid(
-          previousMonthValues, previousMonthCount, previousMonthLayout,
-          loadSlot, gridSlot,
-          static_cast<int>(previousMonthCount /
-                           static_cast<size_t>(previousMonthLayout.stride)));
-    }
-    if (previous < 0) {
-      return false;
+      const int lastDay = static_cast<int>(
+          previousMonthCount /
+          static_cast<size_t>(previousMonthLayout.stride));
+      if (lastDay > 0 &&
+          dailyDayValid(previousMonthValues, previousMonthCount,
+                        previousMonthLayout, lastDay - 1, loadSlot,
+                        gridSlot)) {
+        previous = lastDay - 1;
+      }
     }
 
-    const double loadDelta =
-        dailyLoadNet(values, count, layout, today, loadSlot) -
-        dailyLoadNet(*previousValues, previousCount, previousLayout, previous,
-                     loadSlot);
-    const double gridDelta =
-        dailyGridImport(values, count, layout, today, gridSlot) -
-        dailyGridImport(*previousValues, previousCount, previousLayout,
-                        previous, gridSlot);
-    const double pvDelta =
-        dailyExport(values, count, layout, today, pvSlot) -
-        dailyExport(*previousValues, previousCount, previousLayout, previous,
-                    pvSlot);
-    const double feedDelta =
-        dailyExport(values, count, layout, today, gridSlot) -
-        dailyExport(*previousValues, previousCount, previousLayout, previous,
-                    gridSlot);
-    const double chargeDelta =
-        dailyGridImport(values, count, layout, today, batterySlot) -
-        dailyGridImport(*previousValues, previousCount, previousLayout,
-                        previous, batterySlot);
-    const double dischargeDelta =
-        dailyExport(values, count, layout, today, batterySlot) -
-        dailyExport(*previousValues, previousCount, previousLayout, previous,
-                    batterySlot);
+    double loadDelta = NAN;
+    double gridDelta = NAN;
+    double pvDelta = NAN;
+    double feedDelta = NAN;
+    double chargeDelta = NAN;
+    double dischargeDelta = NAN;
+    if (previous >= 0) {
+      loadDelta =
+          dailyLoadNet(values, count, layout, today, loadSlot) -
+          dailyLoadNet(*previousValues, previousCount, previousLayout,
+                       previous, loadSlot);
+      gridDelta =
+          dailyGridImport(values, count, layout, today, gridSlot) -
+          dailyGridImport(*previousValues, previousCount, previousLayout,
+                          previous, gridSlot);
+      pvDelta = dailyExport(values, count, layout, today, pvSlot) -
+                dailyExport(*previousValues, previousCount, previousLayout,
+                            previous, pvSlot);
+      feedDelta = dailyExport(values, count, layout, today, gridSlot) -
+                  dailyExport(*previousValues, previousCount, previousLayout,
+                              previous, gridSlot);
+      chargeDelta =
+          dailyGridImport(values, count, layout, today, batterySlot) -
+          dailyGridImport(*previousValues, previousCount, previousLayout,
+                          previous, batterySlot);
+      dischargeDelta =
+          dailyExport(values, count, layout, today, batterySlot) -
+          dailyExport(*previousValues, previousCount, previousLayout,
+                      previous, batterySlot);
+    }
+
+    // Fill a missing delta from today's 5-minute power history. It covers only
+    // the current day, so it cannot inflate a total the way a multi-day
+    // counter delta would. The day is the daily-history row after the last
+    // recorded one, which also handles the month boundary.
+    DaySums5 today5;
+    bool today5Loaded = false;
+    bool today5Ok = false;
+    auto loadToday5 = [&]() {
+      if (!today5Loaded) {
+        today5Loaded = true;
+        int fiveYear = year;
+        int fiveMonth = month;
+        int fiveDay = today + 1;
+        if (fiveDay > daysInMonth(fiveYear, fiveMonth)) {
+          fiveDay = 1;
+          if (++fiveMonth > 12) {
+            fiveMonth = 1;
+            ++fiveYear;
+          }
+        }
+        today5Ok = fetchToday5Min(fiveYear, fiveMonth, fiveDay, loadSlot,
+                                  gridSlot, pvSlot, batterySlot, today5);
+      }
+      return today5Ok;
+    };
+    const bool needToday5 =
+        (loadSlot >= 0 && std::isnan(loadDelta)) ||
+        std::isnan(gridDelta) ||
+        (pvSlot >= 0 && std::isnan(pvDelta)) ||
+        std::isnan(feedDelta) ||
+        (batterySlot >= 0 &&
+         (std::isnan(chargeDelta) || std::isnan(dischargeDelta)));
+    if (needToday5 && loadToday5()) {
+      if (std::isnan(loadDelta) && today5.hasLoad) {
+        loadDelta = today5.loadWh / 1000.0;
+      }
+      if (std::isnan(gridDelta) && today5.hasGrid) {
+        gridDelta = today5.gridImportWh / 1000.0;
+      }
+      if (std::isnan(pvDelta) && today5.hasPv) {
+        pvDelta = today5.pvWh / 1000.0;
+      }
+      if (std::isnan(feedDelta) && today5.hasGrid) {
+        feedDelta = today5.feedInWh / 1000.0;
+      }
+      if (std::isnan(chargeDelta) && today5.hasBattery) {
+        chargeDelta = today5.chargeWh / 1000.0;
+      }
+      if (std::isnan(dischargeDelta) && today5.hasBattery) {
+        dischargeDelta = today5.dischargeWh / 1000.0;
+      }
+    }
 
     // The daily history stores the battery charge counter as import and the
     // discharge counter as export. Their deltas are today's battery energy.
@@ -1526,26 +1712,22 @@ class Reader {
     // Today's sums from the same day-over-day deltas (kWh -> Wh). Set before
     // the autarky guard below: a near-empty day still has sums. PV generation
     // is the export counter of the PV slot, feed-in the export counter of
-    // the grid slot.
+    // the grid slot. The load meter sits on the house side, so its counter is
+    // the house's usage and does not contain battery charging.
     const bool loadUsable = !std::isnan(loadDelta) && loadDelta > 0.01 &&
                             !std::isnan(gridDelta) &&
                             gridDelta <= loadDelta + 0.01;
-    bool anySum = false;
     if (loadUsable) {
       d.dayLoadWh = static_cast<float>(loadDelta * 1000.0);
-      anySum = true;
     }
     if (!std::isnan(gridDelta)) {
       d.dayGridDrawWh = static_cast<float>(std::max(0.0, gridDelta) * 1000.0);
-      anySum = true;
     }
     if (!std::isnan(pvDelta)) {
       d.dayGenerationWh = static_cast<float>(std::max(0.0, pvDelta) * 1000.0);
-      anySum = true;
     }
     if (!std::isnan(feedDelta)) {
       d.dayFeedInWh = static_cast<float>(std::max(0.0, feedDelta) * 1000.0);
-      anySum = true;
     }
     if (!chargerSlots.empty()) {
       double chargerDelta = 0.0;
@@ -1564,7 +1746,6 @@ class Reader {
       if (anyCharger) {
         d.dayChargerWh = static_cast<float>(chargerDelta * 1000.0);
         d.hasDayCharger = true;
-        anySum = true;
       }
     }
 
@@ -1606,9 +1787,14 @@ class Reader {
     }
     if (!loadUsable && !std::isnan(consumption)) {
       d.dayLoadWh = static_cast<float>(consumption * 1000.0);
-      anySum = true;
     }
-    d.hasDaySums = anySum;
+
+    // Show the card only when every row has a value, so a missing day reads
+    // as a dash instead of a misleading zero.
+    d.hasDaySums = (loadUsable || !std::isnan(consumption)) &&
+                   !std::isnan(gridDelta) &&
+                   (pvSlot < 0 || !std::isnan(pvDelta)) &&
+                   !std::isnan(feedDelta);
 
     // Without a plausible consumption figure a zero would be misleading, so
     // leave today's autarky unset and let the UI show only the overall value.
