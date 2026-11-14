@@ -1895,7 +1895,7 @@ void create(lv_obj_t *parent) {
   w.gridValue = gridFlow.value;
   w.gridState = gridFlow.state;
 
-  FlowNode batFlow = flowNode(w.page4, 600, 16, "AKKU",
+  FlowNode batFlow = flowNode(w.page4, 600, 16, TR("AKKU", "BATTERY"),
                               LV_SYMBOL_BATTERY_FULL, C_BAT, C_BAT_DIM);
   w.batNode = batFlow.card;
   w.batValue = batFlow.value;
@@ -2071,7 +2071,7 @@ void create(lv_obj_t *parent) {
                       LV_EVENT_CLICKED, nullptr);
   showPage(1);
 
-  // Particle animation. 10 fps on purpose: small 12 px objects, no opacity
+  // Particle animation. 5 fps on purpose: small 12 px objects, no opacity
   // layers and no full-page invalidation. Speed scales with power, so a strong
   // flow visibly moves faster without ever exceeding the CPU budget.
   lv_timer_create([](lv_timer_t *) {
@@ -2121,7 +2121,7 @@ void create(lv_obj_t *parent) {
         lv_obj_set_pos(dot, x, y);
       }
     }
-  }, 100, nullptr);
+  }, 200, nullptr);
 }
 
 void setPage(int page) {

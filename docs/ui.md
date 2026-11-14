@@ -66,7 +66,7 @@ The first page is a live energy-flow view:
   `Inselbetrieb`.
 - A missing meter shows `--` / `kein Messwert` instead of hiding the card.
 
-The animation is deliberately cheap: one LVGL timer at 12.5 fps, two small
+The animation is deliberately cheap: one LVGL timer at 5 fps, two small
 particles per active link, and invalidation only of the particle rectangles. The
 timer returns immediately while the flow page is hidden, and the line width is
 updated only when new data arrives.
