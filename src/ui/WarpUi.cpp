@@ -146,6 +146,44 @@ int32_t *g_chartSoc = nullptr;  // raw SOC %, mapped into the power range
 uint32_t *g_sgBandTimes = nullptr;
 int8_t *g_sgBandState = nullptr;
 
+// The flow page's background photograph is stored as an I8 image with a
+// 256-entry palette. LVGL decodes an I8 image per row and per redraw: it looks
+// up every pixel and expands the row to ARGB8888 before blending it into the
+// RGB565 layer (LV_BIN_DECODER_RAM_LOAD is off). Converting it once at startup
+// into an RGB565 copy in PSRAM turns each redraw into a straight 2-byte blit.
+// 800 x 356 x 2 B = 570 kB; if that allocation fails the original image is
+// used unchanged.
+lv_image_dsc_t g_chartBg565{};
+bool g_chartBg565Ready = false;
+
+void prepareChartBackground() {
+  const lv_image_header_t &hdr = chart_bg.header;
+  if (hdr.cf != LV_COLOR_FORMAT_I8 || hdr.w == 0 || hdr.h == 0) {
+    return;
+  }
+  const size_t px = (size_t)hdr.w * (size_t)hdr.h;
+  uint16_t *dst = (uint16_t *)allocLarge(px * sizeof(uint16_t));
+  if (dst == nullptr) {
+    return;
+  }
+  const lv_color32_t *palette = (const lv_color32_t *)chart_bg.data;
+  const uint8_t *indices = chart_bg.data + sizeof(lv_color32_t) * 256;
+  for (size_t i = 0; i < px; ++i) {
+    const lv_color32_t &c = palette[indices[i]];
+    // Same rounding as LVGL's lv_color_to_u16, which the ARGB8888-to-RGB565
+    // blend uses for fully opaque pixels.
+    dst[i] = (uint16_t)(((c.red & 0xF8) << 8) + ((c.green & 0xFC) << 3) +
+                        ((c.blue & 0xF8) >> 3));
+  }
+  g_chartBg565.header = hdr;
+  g_chartBg565.header.cf = LV_COLOR_FORMAT_RGB565;
+  g_chartBg565.header.stride = (uint16_t)(hdr.w * sizeof(uint16_t));
+  g_chartBg565.data_size = (uint32_t)(px * sizeof(uint16_t));
+  g_chartBg565.data = (const uint8_t *)dst;
+  g_chartBg565.reserved = nullptr;
+  g_chartBg565Ready = true;
+}
+
 // Tapped chart position: the tapped sample is shown in the legend as
 // "Label [value]" and the legend resets after 30 s.
 bool g_tapActive = false;
@@ -1557,6 +1595,8 @@ void create(lv_obj_t *parent) {
       g_chartSoc = g_chartData + 6 * kChartPoints;
     }
   }
+  prepareChartBackground();
+
   lv_obj_set_style_bg_color(parent, lv_color_hex(C_BG), 0);
   lv_obj_set_style_bg_opa(parent, LV_OPA_COVER, 0);
   lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
@@ -1828,8 +1868,10 @@ void create(lv_obj_t *parent) {
   lv_obj_set_pos(w.page4, 0, 68);
   lv_obj_set_size(w.page4, 800, 356);
   // Background image from the history chart (page 3), darkened at build
-  // time so it can be drawn opaque without per-pixel blending.
-  lv_obj_set_style_bg_image_src(w.page4, &chart_bg, 0);
+  // time so it can be drawn opaque without per-pixel blending. The RGB565
+  // copy is used when prepareChartBackground() could allocate it.
+  lv_obj_set_style_bg_image_src(
+      w.page4, g_chartBg565Ready ? &g_chartBg565 : &chart_bg, 0);
   lv_obj_set_style_bg_image_opa(w.page4, LV_OPA_COVER, 0);
   lv_obj_add_flag(w.page4, LV_OBJ_FLAG_HIDDEN);
 
