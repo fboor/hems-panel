@@ -2683,12 +2683,18 @@ void update(const WarpData &d) {
     char pbuf[24];
 
     // PV ---------------------------------------------------------------
+    // 10 W already counts as generating: in low light a string reports a few
+    // watts of diffuse light, which is real generation even though no flow is
+    // visible. The flow links keep their own 25 W/10 W hysteresis below.
+    constexpr float kPvGeneratingW = 10.0f;
     if (d.hasPv) {
+      const bool generating = d.pvPower > kPvGeneratingW;
       fmtPower(buf, sizeof(buf), d.pvPower);
       setTextIfChanged(w.pvValue, buf);
-      setColorIfChanged(w.pvValue, d.pvPower > 25.0f ? C_SOLAR : C_MUTED);
-      setTextIfChanged(w.pvState, d.pvPower > 25.0f ? TR("Erzeugung", "Generation") : TR("Keine Erzeugung", "No generation"));
-      setColorIfChanged(w.pvState, d.pvPower > 25.0f ? C_SOLAR : C_MUTED);
+      setColorIfChanged(w.pvValue, generating ? C_SOLAR : C_MUTED);
+      setTextIfChanged(w.pvState, generating ? TR("Erzeugung", "Generation")
+                                             : TR("Keine Erzeugung", "No generation"));
+      setColorIfChanged(w.pvState, generating ? C_SOLAR : C_MUTED);
     } else {
       setTextIfChanged(w.pvValue, "--");
       setColorIfChanged(w.pvValue, C_MUTED);
