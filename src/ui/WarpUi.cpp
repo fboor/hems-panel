@@ -22,6 +22,8 @@ LV_IMG_DECLARE(chart_bg);
 #include <cstdio>
 #include <cstring>
 
+#include "Mem.h"
+
 namespace warpui {
 namespace {
 
@@ -104,7 +106,10 @@ struct PowerSample {
   float soc;  // battery state of charge in %, -1 = no battery
 };
 
-PowerSample g_samples[kMaxSamples];
+// The history and chart buffers are allocated once in create(), in PSRAM
+// where possible (see Mem.h). They are too large to keep in internal DRAM
+// next to the LVGL draw buffer and the network stack.
+PowerSample *g_samples = nullptr;
 int g_sampleHead = 0;
 int g_sampleCount = 0;
 
@@ -117,7 +122,7 @@ struct SgSample {
   int8_t state;
 };
 
-SgSample g_sgSamples[kMaxSamples];
+SgSample *g_sgSamples = nullptr;
 int g_sgHead = 0;
 int g_sgCount = 0;
 bool g_haveSample = false;
@@ -125,14 +130,21 @@ uint32_t g_lastSampleMs = 0;
 uint32_t g_lastDataUpdateMs = 0;
 
 // The chart draws these arrays directly (external buffers), so rebuilding a
-// frame only means overwriting the values and refreshing the chart once.
-int32_t g_chartGrid[kChartPoints];
-int32_t g_chartPv[kChartPoints];
-int32_t g_chartHouse[kChartPoints];
-int32_t g_chartBattery[kChartPoints];
-int32_t g_chartWb1[kChartPoints];
-int32_t g_chartWb2[kChartPoints];
-int32_t g_chartSoc[kChartPoints];  // raw SOC %, mapped into the power range
+// frame only means overwriting the values and refreshing the chart once. All
+// seven series share one allocation; the named pointers below index into it.
+int32_t *g_chartData = nullptr;
+int32_t *g_chartGrid = nullptr;
+int32_t *g_chartPv = nullptr;
+int32_t *g_chartHouse = nullptr;
+int32_t *g_chartBattery = nullptr;
+int32_t *g_chartWb1 = nullptr;
+int32_t *g_chartWb2 = nullptr;
+int32_t *g_chartSoc = nullptr;  // raw SOC %, mapped into the power range
+
+// Scratch copy of the SG ring for the timeline band, filled on every redraw
+// of the heating page.
+uint32_t *g_sgBandTimes = nullptr;
+int8_t *g_sgBandState = nullptr;
 
 // Tapped chart position: the tapped sample is shown in the legend as
 // "Label [value]" and the legend resets after 30 s.
@@ -1039,6 +1051,10 @@ void updateModeCard(ModeCard &mc, const WarpData &d, int index, bool global) {
 // Power-history helpers -------------------------------------------------
 
 const PowerSample &sampleAt(int index) {
+  static const PowerSample empty{};
+  if (g_samples == nullptr) {
+    return empty;
+  }
   return g_samples[(g_sampleHead + index) % kMaxSamples];
 }
 
@@ -1193,6 +1209,9 @@ void chartTapEvent(lv_event_t *e) {
 void rebuildPowerChart();
 
 void recordPowerSample(uint32_t now, const WarpData &d) {
+  if (g_samples == nullptr || g_sgSamples == nullptr) {
+    return;
+  }
   if (g_sampleCount == kMaxSamples) {
     g_sampleHead = (g_sampleHead + 1) % kMaxSamples;
     --g_sampleCount;
@@ -1235,7 +1254,7 @@ void recordPowerSample(uint32_t now, const WarpData &d) {
 // the next one arrives, so the newest value sits at the right edge and the
 // left side stays empty until the window has actually been covered.
 void rebuildPowerChart() {
-  if (w.powerChart == nullptr || g_sampleCount == 0) {
+  if (w.powerChart == nullptr || g_chartData == nullptr || g_sampleCount == 0) {
     return;
   }
 
@@ -1463,6 +1482,9 @@ void seedHistory(const HistoryPoint *points, int count, uint32_t nowEpoch) {
   if (points == nullptr || count <= 0 || nowEpoch == 0) {
     return;
   }
+  if (g_samples == nullptr || g_sgSamples == nullptr) {
+    return;
+  }
 
   const uint32_t base = histNowMs();
   uint32_t lastMs = 0;
@@ -1506,6 +1528,35 @@ void seedHistory(const HistoryPoint *points, int count, uint32_t nowEpoch) {
 }
 
 void create(lv_obj_t *parent) {
+  // The 24 h history and chart buffers go to PSRAM before any widget exists.
+  // Sizes: 1442 samples x 32 B, 1442 SG states, seven 240-point series and
+  // the SG band scratch copy. If an allocation fails the history stays empty
+  // and the chart falls back to LVGL's own (smaller) series buffers.
+  if (g_samples == nullptr) {
+    g_samples = (PowerSample *)allocLarge(sizeof(PowerSample) * kMaxSamples);
+  }
+  if (g_sgSamples == nullptr) {
+    g_sgSamples = (SgSample *)allocLarge(sizeof(SgSample) * kMaxSamples);
+  }
+  if (g_sgBandTimes == nullptr) {
+    g_sgBandTimes = (uint32_t *)allocLarge(sizeof(uint32_t) * kMaxSamples);
+  }
+  if (g_sgBandState == nullptr) {
+    g_sgBandState = (int8_t *)allocLarge(sizeof(int8_t) * kMaxSamples);
+  }
+  if (g_chartData == nullptr) {
+    g_chartData =
+        (int32_t *)allocLarge(sizeof(int32_t) * kChartPoints * 7);
+    if (g_chartData != nullptr) {
+      g_chartGrid = g_chartData + 0 * kChartPoints;
+      g_chartPv = g_chartData + 1 * kChartPoints;
+      g_chartHouse = g_chartData + 2 * kChartPoints;
+      g_chartBattery = g_chartData + 3 * kChartPoints;
+      g_chartWb1 = g_chartData + 4 * kChartPoints;
+      g_chartWb2 = g_chartData + 5 * kChartPoints;
+      g_chartSoc = g_chartData + 6 * kChartPoints;
+    }
+  }
   lv_obj_set_style_bg_color(parent, lv_color_hex(C_BG), 0);
   lv_obj_set_style_bg_opa(parent, LV_OPA_COVER, 0);
   lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
@@ -1660,20 +1711,22 @@ void create(lv_obj_t *parent) {
   w.seriesBat = lv_chart_add_series(w.powerChart, lv_color_hex(0xD62728), LV_CHART_AXIS_PRIMARY_Y);
   w.seriesWb1 = lv_chart_add_series(w.powerChart, lv_color_hex(0x9467BD), LV_CHART_AXIS_PRIMARY_Y);
   w.seriesWb2 = lv_chart_add_series(w.powerChart, lv_color_hex(0x8C564B), LV_CHART_AXIS_PRIMARY_Y);
-  for (int i = 0; i < kChartPoints; ++i) {
-    g_chartGrid[i] = LV_CHART_POINT_NONE;
-    g_chartPv[i] = LV_CHART_POINT_NONE;
-    g_chartHouse[i] = LV_CHART_POINT_NONE;
-    g_chartBattery[i] = LV_CHART_POINT_NONE;
-    g_chartWb1[i] = LV_CHART_POINT_NONE;
-    g_chartWb2[i] = LV_CHART_POINT_NONE;
+  if (g_chartData != nullptr) {
+    for (int i = 0; i < kChartPoints; ++i) {
+      g_chartGrid[i] = LV_CHART_POINT_NONE;
+      g_chartPv[i] = LV_CHART_POINT_NONE;
+      g_chartHouse[i] = LV_CHART_POINT_NONE;
+      g_chartBattery[i] = LV_CHART_POINT_NONE;
+      g_chartWb1[i] = LV_CHART_POINT_NONE;
+      g_chartWb2[i] = LV_CHART_POINT_NONE;
+    }
+    lv_chart_set_series_ext_y_array(w.powerChart, w.seriesGrid, g_chartGrid);
+    lv_chart_set_series_ext_y_array(w.powerChart, w.seriesPv, g_chartPv);
+    lv_chart_set_series_ext_y_array(w.powerChart, w.seriesHouse, g_chartHouse);
+    lv_chart_set_series_ext_y_array(w.powerChart, w.seriesBat, g_chartBattery);
+    lv_chart_set_series_ext_y_array(w.powerChart, w.seriesWb1, g_chartWb1);
+    lv_chart_set_series_ext_y_array(w.powerChart, w.seriesWb2, g_chartWb2);
   }
-  lv_chart_set_series_ext_y_array(w.powerChart, w.seriesGrid, g_chartGrid);
-  lv_chart_set_series_ext_y_array(w.powerChart, w.seriesPv, g_chartPv);
-  lv_chart_set_series_ext_y_array(w.powerChart, w.seriesHouse, g_chartHouse);
-  lv_chart_set_series_ext_y_array(w.powerChart, w.seriesBat, g_chartBattery);
-  lv_chart_set_series_ext_y_array(w.powerChart, w.seriesWb1, g_chartWb1);
-  lv_chart_set_series_ext_y_array(w.powerChart, w.seriesWb2, g_chartWb2);
 
   // Battery SOC on its own transparent overlay chart: same line width as the
   // power lines, but a light grey clearly lighter than the grid - it is a
@@ -1694,10 +1747,12 @@ void create(lv_obj_t *parent) {
   lv_obj_set_style_line_opa(w.socChart, LV_OPA_TRANSP, LV_PART_MAIN);
   lv_obj_set_style_pad_all(w.socChart, 0, 0);
   w.seriesSoc = lv_chart_add_series(w.socChart, lv_color_hex(0xC9CED4), LV_CHART_AXIS_PRIMARY_Y);
-  for (int i = 0; i < kChartPoints; ++i) {
-    g_chartSoc[i] = LV_CHART_POINT_NONE;
+  if (g_chartData != nullptr) {
+    for (int i = 0; i < kChartPoints; ++i) {
+      g_chartSoc[i] = LV_CHART_POINT_NONE;
+    }
+    lv_chart_set_series_ext_y_array(w.socChart, w.seriesSoc, g_chartSoc);
   }
-  lv_chart_set_series_ext_y_array(w.socChart, w.seriesSoc, g_chartSoc);
   // Tap on the chart shows the sample values in the legend for 30 s.
   lv_obj_clear_flag(w.socChart, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_add_event_cb(w.powerChart, chartTapEvent, LV_EVENT_CLICKED, nullptr);
@@ -2868,16 +2923,16 @@ void update(const WarpData &d) {
     // for a hidden page is pure work.
     const bool page6Visible =
         w.page6 != nullptr && !lv_obj_has_flag(w.page6, LV_OBJ_FLAG_HIDDEN);
-    if (w.sgBand != nullptr && g_sgCount > 0 && page6Visible) {
-      static uint32_t times[kMaxSamples];
-      static int8_t state[kMaxSamples];
+    if (w.sgBand != nullptr && g_sgCount > 0 && page6Visible &&
+        g_sgBandTimes != nullptr && g_sgBandState != nullptr) {
       for (int i = 0; i < g_sgCount; ++i) {
         const SgSample &e = g_sgSamples[(g_sgHead + i) % kMaxSamples];
-        times[i] = e.timeMs;
-        state[i] = e.state;
+        g_sgBandTimes[i] = e.timeMs;
+        g_sgBandState[i] = e.state;
       }
-      updateHistoryBand(w.sgBand, times, state, g_sgCount,
-                        (int64_t)times[g_sgCount - 1] - (int64_t)kHistoryMs,
+      updateHistoryBand(w.sgBand, g_sgBandTimes, g_sgBandState, g_sgCount,
+                        (int64_t)g_sgBandTimes[g_sgCount - 1] -
+                            (int64_t)kHistoryMs,
                         (int64_t)kHistoryMs);
     }
     if (w.heatPartyBtn != nullptr) {
