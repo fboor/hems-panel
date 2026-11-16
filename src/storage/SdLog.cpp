@@ -735,7 +735,10 @@ void sdInit() {
   }
 
   buildStatus();
-  xTaskCreate(sdTask, "sd", 4096, nullptr, 1, nullptr);
+  // Pinned to core 0, the same core as the network poll: flash/SPI work must
+  // not compete with LVGL on the core that draws. The history restore reads
+  // up to 1442 rows, and a CSV row is appended every minute.
+  xTaskCreatePinnedToCore(sdTask, "sd", 4096, nullptr, 1, nullptr, 0);
 }
 
 void sdLogSample(const WarpData &d) {

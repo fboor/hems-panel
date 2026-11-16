@@ -204,6 +204,7 @@ struct Widgets {
   float flowPower[4] = {};
   bool flowActive[4] = {};
   int flowPhase[4] = {};
+  int flowWidth[4] = {};  // last line width written to each link
   bool gridExporting = false;
   bool batCharging = false;
   lv_obj_t *powerChart = nullptr;
@@ -704,34 +705,31 @@ void setColor(lv_obj_t *l, uint32_t color) {
 // Like setColor, but only touches the object when the colour actually
 // changes. Static pages (heating) otherwise invalidate and redraw every
 // second for values that did not move - visible as flicker.
+//
+// The comparison asks the object for the colour it resolves right now instead
+// of keeping a side table. The old table had 32 slots for ~50 labels and
+// buttons (three mode cards alone contribute up to 36 background entries), so
+// everything past the limit was restyled and invalidated every second.
 void setColorIfChanged(lv_obj_t *l, uint32_t color) {
   if (l == nullptr) {
     return;
   }
-  struct Entry {
-    lv_obj_t *obj = nullptr;
-    uint32_t color = 0;
-  };
-  static Entry cache[32];
-  for (Entry &e : cache) {
-    if (e.obj == l) {
-      if (e.color == color) {
-        return;
-      }
-      e.color = color;
-      setColor(l, color);
+  BackgroundLabel *bg = backgroundLabelFor(l);
+  if (bg != nullptr) {
+    // Labels on the switchable background do not show the requested colour
+    // directly - setColor() maps it to a contrast variant. The registry holds
+    // the base colour that is currently shown, so it doubles as the cache.
+    if (bg->baseColor == color) {
       return;
     }
+    setColor(l, color);
+    return;
   }
-  for (Entry &e : cache) {
-    if (e.obj == nullptr) {
-      e.obj = l;
-      e.color = color;
-      setColor(l, color);
-      return;
-    }
+  const lv_color_t want = lv_color_hex(color);
+  if (lv_color_eq(lv_obj_get_style_text_color(l, LV_PART_MAIN), want)) {
+    return;
   }
-  setColor(l, color);
+  lv_obj_set_style_text_color(l, want, 0);
 }
 
 // Same idea for the background colour (mode buttons, IO dots, party button).
@@ -739,38 +737,18 @@ void setBgColorIfChanged(lv_obj_t *obj, uint32_t color, bool border = false) {
   if (obj == nullptr) {
     return;
   }
-  struct Entry {
-    lv_obj_t *obj = nullptr;
-    uint32_t color = 0;
-    bool border = false;
-  };
-  static Entry cache[32];
-  auto apply = [&](Entry &e) {
-    e.obj = obj;
-    e.color = color;
-    e.border = border;
-    if (border) {
-      lv_obj_set_style_border_color(obj, lv_color_hex(color), 0);
-    } else {
-      lv_obj_set_style_bg_color(obj, lv_color_hex(color), 0);
-    }
-  };
-  for (Entry &e : cache) {
-    if (e.obj == obj && e.border == border) {
-      if (e.color == color) {
-        return;
-      }
-      apply(e);
+  const lv_color_t want = lv_color_hex(color);
+  if (border) {
+    if (lv_color_eq(lv_obj_get_style_border_color(obj, LV_PART_MAIN), want)) {
       return;
     }
-  }
-  for (Entry &e : cache) {
-    if (e.obj == nullptr) {
-      apply(e);
+    lv_obj_set_style_border_color(obj, want, 0);
+  } else {
+    if (lv_color_eq(lv_obj_get_style_bg_color(obj, LV_PART_MAIN), want)) {
       return;
     }
+    lv_obj_set_style_bg_color(obj, want, 0);
   }
-  apply(cache[0]);
 }
 
 // Wallbox configuration page -------------------------------------------
@@ -826,8 +804,10 @@ void styleModeButton(lv_obj_t *button, bool selected) {
   if (button == nullptr) {
     return;
   }
+  // The opacity is set once when the button is created; setting it here again
+  // would invalidate every mode button on every update, even when the
+  // selection did not change.
   setBgColorIfChanged(button, selected ? C_BLUE : C_CARD2);
-  lv_obj_set_style_bg_opa(button, LV_OPA_COVER, 0);
   setBgColorIfChanged(button, selected ? C_BLUE : C_LINE, true);
   lv_obj_t *lbl = lv_obj_get_child(button, 0);
   if (lbl != nullptr) {
@@ -2573,6 +2553,8 @@ void update(const WarpData &d) {
     // price slot. Negative = below zero, low = below the midpoint between
     // median and minimum, high = above the midpoint between median and
     // maximum.
+    const bool page2Visible =
+        w.page2 != nullptr && !lv_obj_has_flag(w.page2, LV_OBJ_FLAG_HIDDEN);
     if (w.priceBand != nullptr) {
       const bool show = d.pricesEnabled && d.hasPrices && d.nowMin > 0;
       setBandVisible(w.priceBand, show);
@@ -2590,7 +2572,10 @@ void update(const WarpData &d) {
           lv_obj_add_flag(w.priceStats, LV_OBJ_FLAG_HIDDEN);
         }
       }
-      if (show) {
+      // The sort and the band update only matter while the balance page is on
+      // screen; the flags above stay unconditional so nothing is stale when
+      // the page is opened.
+      if (show && page2Visible) {
         const int64_t windowStartMin = (int64_t)d.nowMin;
 
         static uint32_t times[200];
@@ -2829,8 +2814,14 @@ void update(const WarpData &d) {
         if (norm > 1.0f) {
           norm = 1.0f;
         }
-        lv_obj_set_style_line_width(w.flowLine[i],
-                                    7 + static_cast<int>(5.0f * norm), 0);
+        const int width = 7 + static_cast<int>(5.0f * norm);
+        // Only restyle when the rounded width actually changes: the setter
+        // invalidates the line's bounding box, and on the flow page that means
+        // decoding the photo background again.
+        if (w.flowWidth[i] != width) {
+          w.flowWidth[i] = width;
+          lv_obj_set_style_line_width(w.flowLine[i], width, 0);
+        }
         lv_obj_clear_flag(w.flowLine[i], LV_OBJ_FLAG_HIDDEN);
       } else {
         lv_obj_add_flag(w.flowLine[i], LV_OBJ_FLAG_HIDDEN);
@@ -2866,8 +2857,12 @@ void update(const WarpData &d) {
       setTextIfChanged(w.heatStatus, "--");
       setTextIfChanged(w.heatP14, "--");
     }
-    // SG history band: redraw only when the segment picture changes.
-    if (w.sgBand != nullptr && g_sgCount > 0) {
+    // SG history band: redraw only when the segment picture changes, and only
+    // while the heating page is on screen. Copying 1442 entries every second
+    // for a hidden page is pure work.
+    const bool page6Visible =
+        w.page6 != nullptr && !lv_obj_has_flag(w.page6, LV_OBJ_FLAG_HIDDEN);
+    if (w.sgBand != nullptr && g_sgCount > 0 && page6Visible) {
       static uint32_t times[kMaxSamples];
       static int8_t state[kMaxSamples];
       for (int i = 0; i < g_sgCount; ++i) {

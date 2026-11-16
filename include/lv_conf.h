@@ -100,8 +100,11 @@
    HAL SETTINGS
  *====================*/
 
-/** Default display refresh, input device read and animation step period. */
-#define LV_DEF_REFR_PERIOD  33      /**< [ms] */
+/** Default display refresh, input device read and animation step period.
+ *  20 ms keeps touch-to-pixel well under the panel's 26.5 ms frame time; in
+ *  LVGL 9.3 the same value drives the display refresh and the indev read
+ *  timer, so this is also the touch polling period. */
+#define LV_DEF_REFR_PERIOD  20      /**< [ms] */
 
 /** Default Dots Per Inch. Used to initialize default sizes such as widgets sized, style paddings.
  * (Not so important, you can adjust it to modify default sizes and spaces.) */
@@ -491,7 +494,7 @@
 #define LV_COLOR_MIX_ROUND_OFS  0
 
 /** Add 2 x 32-bit variables to each `lv_obj_t` to speed up getting style properties */
-#define LV_OBJ_STYLE_CACHE      0
+#define LV_OBJ_STYLE_CACHE      1
 
 /** Add `id` field to `lv_obj_t` */
 #define LV_USE_OBJ_ID           0
@@ -1028,8 +1031,10 @@
  *==================*/
 /* Documentation for several of the below items can be found here: https://docs.lvgl.io/master/details/auxiliary-modules/index.html . */
 
-/** 1: Enable API to take snapshot for object */
-#define LV_USE_SNAPSHOT 1
+/** 1: Enable API to take snapshot for object.
+ *  Only the desktop emulator uses this (sim/lvconf/lv_conf.h overrides it);
+ *  the firmware has no caller, so keep the code out of the image. */
+#define LV_USE_SNAPSHOT 0
 
 /** 1: Enable system monitor component */
 #define LV_USE_SYSMON   0
