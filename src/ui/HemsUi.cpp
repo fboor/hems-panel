@@ -1733,8 +1733,13 @@ void create(lv_obj_t *parent) {
   lv_chart_set_range(w.powerChart, LV_CHART_AXIS_PRIMARY_Y, -5000, 5000);
   lv_obj_set_style_bg_color(w.powerChart, lv_color_hex(C_CARD), 0);
   lv_obj_set_style_line_width(w.powerChart, kChartLineWidth, LV_PART_ITEMS);
-  lv_obj_set_style_width(w.powerChart, kChartLineWidth, LV_PART_INDICATOR);
-  lv_obj_set_style_height(w.powerChart, kChartLineWidth, LV_PART_INDICATOR);
+  // No point markers. The theme draws one rounded 2x2 rect per sample - 240
+  // of them per series, seven series - and each is its own draw task with a
+  // radius mask. They sit inside the 2 px line and are invisible, but on a
+  // full redraw they cost more than the lines themselves. Zero size turns
+  // them off in draw_series_line().
+  lv_obj_set_style_width(w.powerChart, 0, LV_PART_INDICATOR);
+  lv_obj_set_style_height(w.powerChart, 0, LV_PART_INDICATOR);
   lv_obj_set_style_border_width(w.powerChart, 1, 0);
   lv_obj_set_style_border_color(w.powerChart, lv_color_hex(C_LINE), 0);
   lv_obj_set_style_line_color(w.powerChart, lv_color_hex(C_MUTED), 0);
@@ -1782,8 +1787,8 @@ void create(lv_obj_t *parent) {
   lv_obj_set_style_bg_opa(w.socChart, LV_OPA_TRANSP, 0);
   lv_obj_set_style_border_width(w.socChart, 0, 0);
   lv_obj_set_style_line_width(w.socChart, kChartLineWidth, LV_PART_ITEMS);
-  lv_obj_set_style_width(w.socChart, kChartLineWidth, LV_PART_INDICATOR);
-  lv_obj_set_style_height(w.socChart, kChartLineWidth, LV_PART_INDICATOR);
+  lv_obj_set_style_width(w.socChart, 0, LV_PART_INDICATOR);
+  lv_obj_set_style_height(w.socChart, 0, LV_PART_INDICATOR);
   lv_obj_set_style_line_opa(w.socChart, LV_OPA_TRANSP, LV_PART_MAIN);
   lv_obj_set_style_pad_all(w.socChart, 0, 0);
   w.seriesSoc = lv_chart_add_series(w.socChart, lv_color_hex(0xC9CED4), LV_CHART_AXIS_PRIMARY_Y);
