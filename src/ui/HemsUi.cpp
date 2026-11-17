@@ -275,6 +275,7 @@ struct Widgets {
   lv_obj_t *powerChart = nullptr;
   lv_obj_t *socChart = nullptr;
   lv_obj_t *chartImage = nullptr;
+  lv_obj_t *tapLine = nullptr;
   lv_chart_series_t *powerSeries = nullptr;
   lv_chart_series_t *seriesSoc = nullptr;
   lv_chart_series_t *seriesGrid = nullptr;
@@ -1369,6 +1370,12 @@ void chartTapEvent(lv_event_t *e) {
     g_tapSample = sample;
     g_tapMs = lv_tick_get();
     g_tapActive = true;
+    // Mark the sample the legend is showing: the cursor snaps to the sample
+    // position, not to the finger, so line and values belong together.
+    if (w.tapLine != nullptr) {
+      lv_obj_set_x(w.tapLine, 12 + chartX(pointIdx));
+      lv_obj_clear_flag(w.tapLine, LV_OBJ_FLAG_HIDDEN);
+    }
     applyTapLabels();
   }
 }
@@ -1963,6 +1970,19 @@ void create(lv_obj_t *parent) {
     lv_obj_clear_flag(w.socChart, LV_OBJ_FLAG_CLICKABLE);
     lv_obj_add_event_cb(w.powerChart, chartTapEvent, LV_EVENT_CLICKED, nullptr);
   }
+
+  // Cursor for a tapped sample: a vertical line at the tapped position, so
+  // the values in the legend can be matched to a spot on the chart. A widget
+  // of its own rather than part of the image, so showing and hiding it costs
+  // a 1 x 240 px redraw instead of a repaint of the whole chart.
+  w.tapLine = lv_obj_create(w.page2);
+  lv_obj_remove_style_all(w.tapLine);
+  lv_obj_set_pos(w.tapLine, 12, 0);
+  lv_obj_set_size(w.tapLine, 1, kChartH);
+  lv_obj_set_style_bg_color(w.tapLine, lv_color_hex(C_TEXT), 0);
+  lv_obj_set_style_bg_opa(w.tapLine, LV_OPA_70, 0);
+  lv_obj_clear_flag(w.tapLine, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_add_flag(w.tapLine, LV_OBJ_FLAG_HIDDEN);
 
   // Y-scale labels last, so they draw over the chart. They sit at the left
   // edge of the card, where the plot is empty.
@@ -2961,6 +2981,9 @@ void update(const WarpData &d) {
     if (g_tapActive && lv_tick_get() - g_tapMs > 30000) {
       g_tapActive = false;
       restoreLegendLabels(d);
+      if (w.tapLine != nullptr) {
+        lv_obj_add_flag(w.tapLine, LV_OBJ_FLAG_HIDDEN);
+      }
     }
     char pbuf[24];
 
