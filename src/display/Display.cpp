@@ -323,6 +323,11 @@ static uint32_t s_refreshMaxGapY = 0;
 static uint32_t s_refreshMaxTailUs = 0;
 static uint32_t s_pxTotal = 0;      // pixels drawn, since the last report
 static uint32_t s_drawBucket[4] = {0, 0, 0, 0};
+// Pass durations: <10 ms, <30, <100, >=100. The average says nothing when one
+// pass is 700 ms and fifty are 10 - this says how many long ones there are.
+static uint32_t s_refrBucket[4] = {0, 0, 0, 0};
+static uint32_t s_passFrames0 = 0; // scan frames when the pass started
+static uint32_t s_refreshMaxFrames = 0; // frames the panel scanned during it
 
 // Floor for the margin's basis. A slower draw raises it for one report window
 // (displayStats() drops it back to this floor), so one outlier does not make
@@ -400,6 +405,8 @@ void displayStats(DisplayStats *out) {
   out->refreshMaxTailUs = s_refreshMaxTailUs;
   out->pxTotal = s_pxTotal;
   memcpy(out->drawBucket, s_drawBucket, sizeof(out->drawBucket));
+  memcpy(out->refrBucket, s_refrBucket, sizeof(out->refrBucket));
+  out->refreshMaxFrames = s_refreshMaxFrames;
 
   // The margin keeps the floor, plus the worst draw of the window that just
   // ended: a page switch raises it for the next five seconds, and an idle
@@ -421,6 +428,8 @@ void displayStats(DisplayStats *out) {
   s_refreshMaxTailUs = 0;
   s_pxTotal = 0;
   memset(s_drawBucket, 0, sizeof(s_drawBucket));
+  memset(s_refrBucket, 0, sizeof(s_refrBucket));
+  s_refreshMaxFrames = 0;
 }
 
 // LVGL's own share of a refresh: everything between RENDER_START and
@@ -428,6 +437,7 @@ void displayStats(DisplayStats *out) {
 // and draw totals reported next to it leaves what the renderer itself spent.
 static void onRenderStart(lv_event_t *) {
   s_renderStartUs = (uint32_t)esp_timer_get_time();
+  s_passFrames0 = s_scanFrames;
   s_passPx = 0;
   s_passStrips = 0;
   s_lastFlushEndUs = 0;
@@ -447,6 +457,7 @@ static void onRenderReady(lv_event_t *) {
     s_passTailUs = now - s_lastFlushEndUs;
   }
   s_refreshTotalUs += t;
+  s_refrBucket[t < 10000 ? 0 : t < 30000 ? 1 : t < 100000 ? 2 : 3]++;
   if (t > s_refreshMaxUs) {
     s_refreshMaxUs = t;
     s_refreshMaxPx = s_passPx;
@@ -455,6 +466,7 @@ static void onRenderReady(lv_event_t *) {
     s_refreshMaxGapUs = s_passGapUs;
     s_refreshMaxGapY = s_passGapY;
     s_refreshMaxTailUs = s_passTailUs;
+    s_refreshMaxFrames = s_scanFrames - s_passFrames0;
   }
   s_refreshes++;
 }

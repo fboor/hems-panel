@@ -65,6 +65,11 @@ struct DisplayStats {
   uint32_t refreshMaxGapUs;
   uint32_t refreshMaxGapY;
   uint32_t refreshMaxTailUs;
+  // Panel frames that were scanned while the slowest pass ran. At 39 fps a
+  // 700 ms pass should see ~27; fewer means the scan itself was starved, which
+  // points at PSRAM/the driver rather than at the renderer.
+  uint32_t refreshMaxFrames;
+  uint32_t refrBucket[4];  // pass duration: <10 ms, <30, <100, >=100
   uint32_t pxTotal;        // pixels flushed, since the last call
   // Draw time distribution: below 0.5 ms, below 2 ms, below 5 ms, 5 ms or more.
   // The mean says little when a page switch and a moving dot are both "a draw".
