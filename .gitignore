@@ -1,5 +1,6 @@
 sim/build/
 .pio/
+include/BuildStamp.h
 __pycache__/
 *.pyc
 *.o

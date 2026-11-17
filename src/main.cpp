@@ -30,6 +30,14 @@
 #include "warp/WarpData.h"
 #include "warp/WarpParse.h"
 
+#if __has_include("BuildStamp.h")
+#include "BuildStamp.h"
+#else
+// Written by tools/build_stamp.py during the PlatformIO build. Editors and the
+// emulator do not run that script, so they get a placeholder.
+#define HEMS_BUILD_STAMP "unknown"
+#endif
+
 namespace {
 
 constexpr uint32_t POLL_MS = 10000;
@@ -461,6 +469,21 @@ void onWifiEvent(arduino_event_t *ev) {
   }
 }
 
+// The build stamp on every portal page, the Info page included. WiFiManager has
+// no hook for an extra row there, but it prints a custom head element on all
+// pages, so a ::after rule on .wrap does the job. The library keeps the pointer
+// it is given, which is why the HTML has to live in a static buffer.
+void setPortalBuildStamp() {
+  static char head[256];
+  snprintf(head, sizeof(head),
+           "<style>.wrap::after{content:'Home Energy Manager %s';"
+           "display:block;margin-top:1.5em;padding-top:.6em;"
+           "border-top:1px solid #888;font-size:.85em;text-align:center;"
+           "opacity:.65}</style>",
+           HEMS_BUILD_STAMP);
+  g_wm->setCustomHeadElement(head);
+}
+
 void setupNetwork() {
   loadUrl();
   char normalized[sizeof(g_url)];
@@ -486,6 +509,7 @@ void setupNetwork() {
   g_wm->setHostname("hems-panel");
   g_wm->setTitle("HEMS-Panel Setup");
   g_wm->setDarkMode(true);
+  setPortalBuildStamp();
   g_wm->setAPCallback([](WiFiManager *mgr) {
     const String ssid = mgr->getConfigPortalSSID();
     Serial.printf("Setup AP: %s (offen)\n", ssid.c_str());
@@ -586,6 +610,7 @@ void setup() {
   Serial.begin(115200);
   delay(200);
   Serial.println(F("\nHome Energy Manager panel"));
+  Serial.printf("Build: %s\n", HEMS_BUILD_STAMP);
   Serial.printf("Reset-Grund: %d\n", (int)esp_reset_reason());
 
   if (!displayInit()) {

@@ -39,6 +39,18 @@ The upload uses 460800 baud; the monitor uses 115200. The board profile is
 `boards/waveshare-esp32-s3-touch-lcd-7.json`, the partition table is
 `partitions/16mb_app.csv`.
 
+## Build stamp
+
+Every build writes `include/BuildStamp.h` through `tools/build_stamp.py` before
+compiling. The value is the tag when the checked-out commit carries one,
+otherwise the short commit, with `-dirty` appended when the working tree has
+uncommitted changes. The panel prints it at boot and shows it in the footer of
+its web portal, so a running panel can be matched to the source it came from.
+
+`tools/pack_web_install.sh` sets `HEMS_BUILD_STAMP` to the release number
+(`v0.7`), because the release commit and its tag are made after the binaries are
+packed. The generated header is ignored by git.
+
 ## Flash layout
 
 A normal upload writes four images:

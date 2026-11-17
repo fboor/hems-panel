@@ -35,7 +35,10 @@ The panel uses DHCP. Only the WARP address is configured manually.
 
 The same configuration page stays available on the local network, normally at
 <http://hems-panel.local/> (mDNS) or at the panel's IP address. It can be used
-to change the WARP address without wiping the WLAN credentials.
+to change the WARP address without wiping the WLAN credentials. The footer of
+every page shows the build stamp: the tag when the firmware came from a tagged
+commit, otherwise the short commit, with `-dirty` for a tree that had
+uncommitted changes.
 
 The service page (page 6) shows the current WLAN, the panel IP, the WARP endpoint
 and the web setup URL. The WARP endpoint is displayed without the `http://`

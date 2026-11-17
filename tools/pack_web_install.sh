@@ -141,6 +141,11 @@ PY
 
 PLAN=$(printf '%s\n' "$PLAN_LINES")
 
+# These binaries are built before the release commit and its tag exist, so git
+# cannot name the build. The release number is what the installer calls it, and
+# what the panel's web portal should show.
+export HEMS_BUILD_STAMP="$RELEASE"
+
 echo "=== Release $FULL ($RELEASE) ==="
 echo "Devices: $ANZAHL_AUFGABEN language variants, $(echo "$PLAN" | wc -l) entries"
 echo
