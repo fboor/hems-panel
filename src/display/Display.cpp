@@ -307,6 +307,7 @@ static uint32_t s_refreshTotalUs = 0; // LVGL pass, since the last report
 static uint32_t s_refreshMaxUs = 0;
 static uint32_t s_refreshes = 0;
 static uint32_t s_renderStartUs = 0;
+static uint32_t s_pxTotal = 0;      // pixels drawn, since the last report
 static uint32_t s_drawBucket[4] = {0, 0, 0, 0};
 
 // How many lines past the strip the write starts, and how long a flush waits for
@@ -372,6 +373,7 @@ void displayStats(DisplayStats *out) {
   out->drawMaxUs = s_drawWinMaxUs;
   out->refreshTotalUs = s_refreshTotalUs;
   out->refreshMaxUs = s_refreshMaxUs;
+  out->pxTotal = s_pxTotal;
   memcpy(out->drawBucket, s_drawBucket, sizeof(out->drawBucket));
 
   s_flushes = 0;
@@ -382,6 +384,7 @@ void displayStats(DisplayStats *out) {
   s_drawWinMaxUs = 0;
   s_refreshTotalUs = 0;
   s_refreshMaxUs = 0;
+  s_pxTotal = 0;
   memset(s_drawBucket, 0, sizeof(s_drawBucket));
 }
 
@@ -483,6 +486,7 @@ static void lcdFlushCb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_ma
     s_waitMaxUs = tWait;
   }
   s_drawBucket[tDraw < 500 ? 0 : tDraw < 2000 ? 1 : tDraw < 5000 ? 2 : 3]++;
+  s_pxTotal += (uint32_t)n;
   s_flushes++;
   lv_display_flush_ready(disp);
   diagPhase("lcd.ready");

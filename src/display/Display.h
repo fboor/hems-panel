@@ -53,6 +53,7 @@ struct DisplayStats {
   uint32_t drawMaxUs;
   uint32_t refreshTotalUs; // whole LVGL pass, flushes included
   uint32_t refreshMaxUs;
+  uint32_t pxTotal;        // pixels flushed, since the last call
   // Draw time distribution: below 0.5 ms, below 2 ms, below 5 ms, 5 ms or more.
   // The mean says little when a page switch and a moving dot are both "a draw".
   uint32_t drawBucket[4];

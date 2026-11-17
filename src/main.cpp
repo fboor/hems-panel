@@ -548,9 +548,10 @@ void printHeartbeat() {
       stripsPerS, drawAvg, (float)st.drawMaxUs / 1000.0f, waitAvg,
       (float)st.waitMaxUs / 1000.0f, renderAvg, ESP.getFreeHeap(),
       ESP.getFreePsram());
-  Serial.printf("[hb] draw ms: <0.5 %u  <2 %u  <5 %u  >=5 %u\n",
+  Serial.printf("[hb] draw ms: <0.5 %u  <2 %u  <5 %u  >=5 %u | px/refr %u\n",
                 (unsigned)st.drawBucket[0], (unsigned)st.drawBucket[1],
-                (unsigned)st.drawBucket[2], (unsigned)st.drawBucket[3]);
+                (unsigned)st.drawBucket[2], (unsigned)st.drawBucket[3],
+                (unsigned)(st.refreshes ? st.pxTotal / st.refreshes : 0));
 }
 
 }  // namespace
