@@ -3,11 +3,11 @@
 
 #include <algorithm>
 #include "fonts/lv_font_mdi_icons_28.h"
-#include "fonts/lv_font_warp.h"
+#include "fonts/lv_font_hems.h"
 
 // UI language, fixed at compile time. The panel ships in German by default;
 // define WARP_LANG_EN=1 (see platformio.ini, esp32-s3-touch-lcd-7-en) for
-// the English build. Both languages use the same warp fonts (umlauts are
+// the English build. Both languages use the same fonts (umlauts are
 // subsetted glyphs, plain ASCII in English).
 #ifdef WARP_LANG_EN
 #define TR(de, en) (en)
@@ -65,13 +65,13 @@ constexpr const char kNavChartIcon[] = "\xF3\xB0\x84\xAA";   // chart-line
 constexpr const char kNavServiceIcon[] = "\xF3\xB0\x96\xB7"; // wrench
 constexpr const char kNavHeatIcon[] = "\xF3\xB0\x94\x8F";    // thermometer
 
-constexpr const lv_font_t *F_SMALL = &lv_font_warp_14;
-constexpr const lv_font_t *F_LEGEND = &lv_font_warp_11;  // chart legend labels
-constexpr const lv_font_t *F_BODY = &lv_font_warp_16;
-constexpr const lv_font_t *F_TITLE = &lv_font_warp_20;
-constexpr const lv_font_t *F_BIG = &lv_font_warp_36;
-constexpr const lv_font_t *F_MED = &lv_font_warp_20;
-constexpr const lv_font_t *F_ICON = &lv_font_warp_48;
+constexpr const lv_font_t *F_SMALL = &lv_font_hems_14;
+constexpr const lv_font_t *F_LEGEND = &lv_font_hems_11;  // chart legend labels
+constexpr const lv_font_t *F_BODY = &lv_font_hems_16;
+constexpr const lv_font_t *F_TITLE = &lv_font_hems_20;
+constexpr const lv_font_t *F_BIG = &lv_font_hems_36;
+constexpr const lv_font_t *F_MED = &lv_font_hems_20;
+constexpr const lv_font_t *F_ICON = &lv_font_hems_48;
 
 // Power history. One sample per minute is enough for a 24 h graph and keeps
 // the raw ring buffer small (1440 entries). The chart itself always uses the

@@ -16,7 +16,7 @@
  *   -r 0xE4 -r 0xF6 -r 0xFC -r 0xDF -r 0x20AC
  *   --font FontAwesome5-Solid+Brands+Regular.woff
  *   -r 0xF015 -r 0xF0E7 -r 0xF1EB -r 0xF240
- *   --lv-font-name lv_font_warp_36
+ *   --lv-font-name lv_font_hems_36
  ******************************************************************************/
 
 #include <lvgl.h>
@@ -4141,9 +4141,9 @@ static lv_font_fmt_txt_dsc_t font_dsc = {
 
 /*Initialize a public general font descriptor*/
 #if LVGL_VERSION_MAJOR >= 8
-const lv_font_t lv_font_warp_36 = {
+const lv_font_t lv_font_hems_36 = {
 #else
-lv_font_t lv_font_warp_36 = {
+lv_font_t lv_font_hems_36 = {
 #endif
     .get_glyph_dsc = lv_font_get_glyph_dsc_fmt_txt,    /*Function pointer to get glyph's data*/
     .get_glyph_bitmap = lv_font_get_bitmap_fmt_txt,    /*Function pointer to get glyph's bitmap*/
