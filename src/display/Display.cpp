@@ -290,14 +290,15 @@ static volatile uint32_t s_scanFrameEndUs = 0; // esp_timer at the last frame en
 static volatile uint32_t s_scanFrames = 0;      // frames the driver has reported
 static uint32_t s_lineUs = 0;       // pixel clocks per line, in microseconds
 static uint32_t s_frameLines = 0;   // lines per frame, porch included
-static uint32_t s_drawMaxUs = 20000; // longest draw_bitmap() so far; starts
-                                     // conservative until measured. Also the
-                                     // beam margin's basis, and nothing lowers it
-                                     // today: the margin therefore always assumes
-                                     // the worst case and every flush waits for
-                                     // the scan to pass its strip. The heartbeat
-                                     // reports that wait, so a change to this
-                                     // value shows up as a drop in "wait".
+static uint32_t s_drawMaxUs = 3000; // the beam margin's basis: how long a
+                                    // draw_bitmap() may take, so how many lines
+                                    // of head start a strip needs. Measured on
+                                    // the 7-inch panel: 0.05 ms for a moving
+                                    // dot, 2.4 ms worst case on a page switch.
+                                    // Starting at 20 ms - the value this had
+                                    // until the heartbeat existed - made every
+                                    // flush wait for the scan to pass its strip,
+                                    // which was half of a refresh's time.
 static uint32_t s_drawTotalUs = 0;  // all of them, since the last report
 static uint32_t s_drawWinMaxUs = 0; // longest one in the report window
 static uint32_t s_flushes = 0;
@@ -309,6 +310,11 @@ static uint32_t s_refreshes = 0;
 static uint32_t s_renderStartUs = 0;
 static uint32_t s_pxTotal = 0;      // pixels drawn, since the last report
 static uint32_t s_drawBucket[4] = {0, 0, 0, 0};
+
+// Floor for the margin's basis. A slower draw raises it for one report window
+// (displayStats() drops it back to this floor), so one outlier does not make
+// every later flush wait again.
+constexpr uint32_t kBeamDrawUs = 3000;
 
 // How many lines past the strip the write starts, and how long a flush waits for
 // that at most. The margin absorbs how far the line estimate can be off - it
@@ -376,6 +382,10 @@ void displayStats(DisplayStats *out) {
   out->pxTotal = s_pxTotal;
   memcpy(out->drawBucket, s_drawBucket, sizeof(out->drawBucket));
 
+  // The margin keeps the floor, plus the worst draw of the window that just
+  // ended: a page switch raises it for the next five seconds, and an idle
+  // window drops it back.
+  s_drawMaxUs = s_drawWinMaxUs > kBeamDrawUs ? s_drawWinMaxUs : kBeamDrawUs;
   s_flushes = 0;
   s_refreshes = 0;
   s_waitTotalUs = 0;
