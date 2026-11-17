@@ -34,8 +34,17 @@ namespace {
 
 constexpr uint32_t POLL_MS = 10000;
 constexpr uint32_t UI_MS = 1000;
-constexpr uint32_t HEARTBEAT_MS = 5000;
 constexpr uint32_t HTTP_TIMEOUT_MS = 4000;
+
+// Diagnostic heartbeat: the display's refresh, flush and heap numbers every
+// five seconds, for tuning. Off by default, because the block is about 450
+// bytes and the UART ring holds 256, so the print blocks the UI task for a
+// dozen milliseconds and shows up as a hitch in the flow animation. The
+// counters it reads keep running either way - the beam margin is computed
+// from the same draw times.
+#ifdef HEMS_DIAG
+constexpr uint32_t HEARTBEAT_MS = 5000;
+#endif
 
 // The WARP module API lives at the bare host. A URL ending in /json is also
 // accepted and normalized by warpapi::Reader, so an older configuration keeps
@@ -125,7 +134,9 @@ std::unique_ptr<warpapi::Reader> g_reader;
 
 uint32_t g_lastUi = 0;
 uint32_t g_lastTick = 0;
+#ifdef HEMS_DIAG
 uint32_t g_lastHeartbeat = 0;
+#endif
 
 // SD history logging. The UI ring holds 24 h at one sample per minute; the
 // restore buffers are allocated in PSRAM in setup().
@@ -513,6 +524,7 @@ void setupNetwork() {
   g_wm->startWebPortal();
 }
 
+#ifdef HEMS_DIAG
 // The panel's own numbers, once per heartbeat: the scan rate, how often LVGL
 // refreshed, and the three parts a refresh is made of. Printed instead of read
 // in a debugger because the question is always "better than the build before",
@@ -566,6 +578,7 @@ void printHeartbeat() {
       (unsigned)st.refrBucket[2], (unsigned)st.refrBucket[3],
       (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
 }
+#endif  // HEMS_DIAG
 
 }  // namespace
 
@@ -655,9 +668,11 @@ void loop() {
   }
 
   displayLooper();
+#ifdef HEMS_DIAG
   if (now - g_lastHeartbeat >= HEARTBEAT_MS) {
     g_lastHeartbeat = now;
     printHeartbeat();
   }
+#endif
   delay(5);
 }
