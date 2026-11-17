@@ -2148,9 +2148,15 @@ void create(lv_obj_t *parent) {
                       LV_EVENT_CLICKED, nullptr);
   showPage(1);
 
-  // Particle animation. 5 fps on purpose: small 12 px objects, no opacity
-  // layers and no full-page invalidation. Speed scales with power, so a strong
-  // flow visibly moves faster without ever exceeding the CPU budget.
+  // Particle animation. 10 fps: small 10 px objects, no opacity layers and no
+  // full-page invalidation. Speed scales with power, so a strong flow visibly
+  // moves faster without ever exceeding the CPU budget.
+  //
+  // Measured on the 7-inch panel at 5 fps: one tick is one LVGL pass, and a
+  // pass costs ~8 ms whether its three strips cover 300 px or 12,000 - the cost
+  // is the pass, not the area, so the tick rate is what the budget buys. 10 fps
+  // is therefore ~80 ms of a second; the step is halved with the period so the
+  // dots keep their speed and only move in smaller increments.
   lv_timer_create([](lv_timer_t *) {
     if (w.page4 == nullptr ||
         lv_obj_has_flag(w.page4, LV_OBJ_FLAG_HIDDEN)) {
@@ -2172,7 +2178,7 @@ void create(lv_obj_t *parent) {
       if (norm > 1.0f) {
         norm = 1.0f;
       }
-      const int step = 18 + static_cast<int>(42.0f * norm);
+      const int step = 9 + static_cast<int>(21.0f * norm);
       w.flowPhase[i] = (w.flowPhase[i] + step) % 1000;
 
       const bool reverse =
@@ -2198,7 +2204,7 @@ void create(lv_obj_t *parent) {
         lv_obj_set_pos(dot, x, y);
       }
     }
-  }, 200, nullptr);
+  }, 100, nullptr);
 }
 
 void setPage(int page) {
