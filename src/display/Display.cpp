@@ -830,15 +830,18 @@ bool displayInit() {
                           nullptr);
   lv_display_add_event_cb(s_lv_disp, onRenderReady, LV_EVENT_RENDER_READY,
                           nullptr);
-  Serial.printf("LCD: LVGL-Puffer %u Zeilen, %u B (%u B je Pixel), %s, heap %u\n",
-                (unsigned)(bufBytes / ((size_t)LCD_H_RES * pxBytes)),
-                (unsigned)bufBytes, (unsigned)pxBytes,
-                imSram ? "im SRAM" : "im PSRAM", ESP.getFreeHeap());
-
   Serial.println("LCD: display ready");
   delay(1500);
   Serial.printf("LCD: frames %lu, line %lu us\n", (unsigned long)s_scanFrames,
                 (unsigned long)s_lineUs);
+  // After the 1.5 s settle, not at allocation time: the USB serial port
+  // appears too late for anything printed earlier, so the line was never
+  // readable. The buffer is fixed by now and nothing has allocated since,
+  // so it reports the same values.
+  Serial.printf("LCD: LVGL-Puffer %u Zeilen, %u B (%u B je Pixel), %s, heap %u\n",
+                (unsigned)(bufBytes / ((size_t)LCD_H_RES * pxBytes)),
+                (unsigned)bufBytes, (unsigned)pxBytes,
+                imSram ? "im SRAM" : "im PSRAM", ESP.getFreeHeap());
   // The memory the chip found decides the pixel clock the panel can be driven at:
   // Espressif's FAQ allows about 22 MHz for octal PSRAM at 80 MHz and about 11 MHz
   // for quad, and the board file asks for octal. A PSRAM that is found at all is
