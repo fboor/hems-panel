@@ -25,7 +25,7 @@
 #include "display/Display.h"
 #include "display/Touch.h"
 #include "storage/SdLog.h"
-#include "ui/WarpUi.h"
+#include "ui/HemsUi.h"
 #include "warp/WarpApi.h"
 #include "warp/WarpData.h"
 #include "warp/WarpParse.h"
@@ -60,11 +60,11 @@ bool g_haveData = false;
 
 // Polling runs on core 0 so its blocking HTTP requests never freeze the
 // LVGL animation on core 1. The task writes g_pollData under g_dataMutex;
-// the UI thread copies it out and is the only caller of warpui::*.
+// the UI thread copies it out and is the only caller of hemsui::*.
 WarpData g_pollData;
 SemaphoreHandle_t g_dataMutex = nullptr;
 std::atomic<bool> g_dataReady{false};
-std::atomic<int> g_nextConnState{-1};  // warpui::ConnectionState, -1 = none
+std::atomic<int> g_nextConnState{-1};  // hemsui::ConnectionState, -1 = none
 std::atomic<bool> g_pollNow{false};
 std::atomic<bool> g_cmdPending{false};
 std::atomic<int> g_cmdCharger{-1};
@@ -131,7 +131,7 @@ uint32_t g_lastHeartbeat = 0;
 // restore buffers are allocated in PSRAM in setup().
 constexpr int kHistoryRows = 24 * 60 + 2;
 SdHistSample *g_histSamples = nullptr;
-warpui::HistoryPoint *g_histPoints = nullptr;
+hemsui::HistoryPoint *g_histPoints = nullptr;
 uint32_t g_lastLogEpoch = 0;
 bool g_historyRequested = false;
 bool g_historySeeded = false;
@@ -205,7 +205,7 @@ void restoreHistoryIfReady() {
     g_histPoints[i] = {s.ts, s.grid, s.pv, s.house, s.battery,
                        s.wb1, s.wb2, s.soc, s.heat};
   }
-  warpui::seedHistory(g_histPoints, n, (uint32_t)now);
+  hemsui::seedHistory(g_histPoints, n, (uint32_t)now);
   g_historySeeded = true;
   Serial.printf("SD: %d Verlaufszeilen geladen\n", n);
 }
@@ -260,7 +260,7 @@ void applyUrlParam() {
 
 void updateNetworkInfo() {
   if (WiFi.status() != WL_CONNECTED) {
-    warpui::setNetworkInfo("--", "--", g_url, "--");
+    hemsui::setNetworkInfo("--", "--", g_url, "--");
     return;
   }
 
@@ -272,7 +272,7 @@ void updateNetworkInfo() {
   } else {
     snprintf(web, sizeof(web), "http://%s/", ip.c_str());
   }
-  warpui::setNetworkInfo(ssid.c_str(), ip.c_str(), g_url, web);
+  hemsui::setNetworkInfo(ssid.c_str(), ip.c_str(), g_url, web);
 }
 
 void onParamsSaved() {
@@ -401,7 +401,7 @@ void pollTask(void *) {
       g_pollNow = true;
     }
     if (WiFi.status() != WL_CONNECTED) {
-      g_nextConnState = static_cast<int>(warpui::ConnectionState::NoNet);
+      g_nextConnState = static_cast<int>(hemsui::ConnectionState::NoNet);
     } else {
       WarpData fresh;
       const FetchResult result = fetchWarp(fresh);
@@ -412,12 +412,12 @@ void pollTask(void *) {
           xSemaphoreGive(g_dataMutex);
         }
         g_dataReady = true;
-        g_nextConnState = static_cast<int>(warpui::ConnectionState::Data);
+        g_nextConnState = static_cast<int>(hemsui::ConnectionState::Data);
       } else {
         g_nextConnState = static_cast<int>(
             result == FetchResult::Disconnected
-                ? warpui::ConnectionState::Disconnected
-                : warpui::ConnectionState::NoData);
+                ? hemsui::ConnectionState::Disconnected
+                : hemsui::ConnectionState::NoData);
       }
     }
     // Sleep in 100 ms slices so a charge-mode tap or a Wi-Fi change is
@@ -478,12 +478,12 @@ void setupNetwork() {
   g_wm->setAPCallback([](WiFiManager *mgr) {
     const String ssid = mgr->getConfigPortalSSID();
     Serial.printf("Setup AP: %s (offen)\n", ssid.c_str());
-    warpui::showSetup(ssid.c_str(), g_apPassword, "http://192.168.4.1");
+    hemsui::showSetup(ssid.c_str(), g_apPassword, "http://192.168.4.1");
     lv_refr_now(nullptr);
   });
   g_wm->setSaveParamsCallback(onParamsSaved);
 
-  warpui::setConnectionState(warpui::ConnectionState::NoNet);
+  hemsui::setConnectionState(hemsui::ConnectionState::NoNet);
   WiFi.onEvent(onWifiEvent, ARDUINO_EVENT_WIFI_STA_GOT_IP);
   WiFi.onEvent(onWifiEvent, ARDUINO_EVENT_WIFI_STA_CONNECTED);
   WiFi.onEvent(onWifiEvent, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
@@ -498,7 +498,7 @@ void setupNetwork() {
   }
 
   applyUrlParam();
-  warpui::hideSetup();
+  hemsui::hideSetup();
   setupMdns();
   updateNetworkInfo();
   Serial.printf("Wi-Fi: %s   RSSI: %d dBm   heap: %u   PSRAM: %u   endpoint: %s\n",
@@ -572,10 +572,10 @@ void setup() {
     }
   }
 
-  warpui::create(lv_screen_active());
-  warpui::setConnectionState(warpui::ConnectionState::NoNet);
-  warpui::setChargeModeHandler(setChargeMode);
-  warpui::setHeatingOverrideHandler(setHeatingOverride);
+  hemsui::create(lv_screen_active());
+  hemsui::setConnectionState(hemsui::ConnectionState::NoNet);
+  hemsui::setChargeModeHandler(setChargeMode);
+  hemsui::setHeatingOverrideHandler(setHeatingOverride);
   backlightSetWakeable(touchInit());
   lv_indev_t *indev = lv_indev_create();
   lv_indev_set_type(indev, LV_INDEV_TYPE_POINTER);
@@ -587,8 +587,8 @@ void setup() {
   sdInit();
   g_histSamples = (SdHistSample *)heap_caps_malloc(
       sizeof(SdHistSample) * kHistoryRows, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
-  g_histPoints = (warpui::HistoryPoint *)heap_caps_malloc(
-      sizeof(warpui::HistoryPoint) * kHistoryRows,
+  g_histPoints = (hemsui::HistoryPoint *)heap_caps_malloc(
+      sizeof(hemsui::HistoryPoint) * kHistoryRows,
       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
   if (g_histSamples == nullptr || g_histPoints == nullptr) {
     Serial.println(F("SD: kein PSRAM fuer den 24-h-Verlauf, Restore aus"));
@@ -626,21 +626,21 @@ void loop() {
     g_haveData = true;
     syncClockFromWarp(g_data);
     logSampleIfDue(g_data);
-    warpui::update(g_data);
+    hemsui::update(g_data);
   }
   const int connState = g_nextConnState.exchange(-1);
   if (connState >= 0) {
-    warpui::setConnectionState(
-        static_cast<warpui::ConnectionState>(connState));
+    hemsui::setConnectionState(
+        static_cast<hemsui::ConnectionState>(connState));
   }
 
   if (now - g_lastUi >= UI_MS) {
     g_lastUi = now;
     updateNetworkInfo();
-    warpui::setSdStatus(sdStatusText());
+    hemsui::setSdStatus(sdStatusText());
     restoreHistoryIfReady();
     if (g_haveData) {
-      warpui::update(g_data);
+      hemsui::update(g_data);
     }
   }
 

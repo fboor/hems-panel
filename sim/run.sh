@@ -64,7 +64,7 @@ done
 c++ $cflags -std=c++17 \
   "$here/sim_main.cpp" \
   "$here/SimSdLog.cpp" \
-  "$repo/src/ui/WarpUi.cpp" \
+  "$repo/src/ui/HemsUi.cpp" \
   "$build"/lvgl/*.o \
   "$build"/chart_bg.o \
   "${font_objs[@]}" \

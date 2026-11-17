@@ -24,7 +24,7 @@
 #include <thread>
 #include <vector>
 
-#include "ui/WarpUi.h"
+#include "ui/HemsUi.h"
 #include "warp/WarpApi.h"
 #include "warp/WarpData.h"
 #include "warp/WarpParse.h"
@@ -99,7 +99,7 @@ struct Options {
 struct Shared {
   std::mutex mu;
   WarpData data;
-  warpui::ConnectionState state = warpui::ConnectionState::NoNet;
+  hemsui::ConnectionState state = hemsui::ConnectionState::NoNet;
   unsigned seq = 0;
 };
 
@@ -150,11 +150,11 @@ void fetchLoop(const Options &opt) {
       if (ok) {
         parsed.lastUpdateMs = lv_tick_get();
         g_shared.data = parsed;
-        g_shared.state = warpui::ConnectionState::Data;
+        g_shared.state = hemsui::ConnectionState::Data;
       } else {
         g_shared.state = reader.slots().empty()
-                             ? warpui::ConnectionState::Disconnected
-                             : warpui::ConnectionState::NoData;
+                             ? hemsui::ConnectionState::Disconnected
+                             : hemsui::ConnectionState::NoData;
       }
       ++g_shared.seq;
     }
@@ -210,7 +210,7 @@ void restoreSimHistory() {
     return;
   }
   std::vector<simsd::Sample> rows(kSimHistoryRows);
-  std::vector<warpui::HistoryPoint> points(kSimHistoryRows);
+  std::vector<hemsui::HistoryPoint> points(kSimHistoryRows);
   const int n = simsd::restore(rows.data(), kSimHistoryRows);
   if (n <= 0) {
     return;
@@ -221,7 +221,7 @@ void restoreSimHistory() {
     points[i] = {s.ts,    s.grid, s.pv,  s.house, s.battery,
                  s.wb1,   s.wb2,  s.soc, s.heat};
   }
-  warpui::seedHistory(points.data(), n, now);
+  hemsui::seedHistory(points.data(), n, now);
   fprintf(stderr, "SD (Emulator): %d Verlaufszeilen geladen\n", n);
 }
 
@@ -567,15 +567,15 @@ int main(int argc, char **argv) {
   lv_sdl_mouse_create();
   // SDL_AddEventWatch(quitWatch, nullptr);
 
-  warpui::create(lv_screen_active());
-  warpui::setPage(opt.page);
-  warpui::setChargeModeHandler(setChargeMode);
-  warpui::setHeatingOverrideHandler(setHeatingOverride);
-  warpui::setConnectionState(warpui::ConnectionState::NoNet);
-  warpui::setNetworkInfo("WLAN-Demo", "192.168.1.50", "http://192.168.1.222",
+  hemsui::create(lv_screen_active());
+  hemsui::setPage(opt.page);
+  hemsui::setChargeModeHandler(setChargeMode);
+  hemsui::setHeatingOverrideHandler(setHeatingOverride);
+  hemsui::setConnectionState(hemsui::ConnectionState::NoNet);
+  hemsui::setNetworkInfo("WLAN-Demo", "192.168.1.50", "http://192.168.1.222",
                          "http://hems-panel.local/");
   if (opt.setup) {
-    warpui::showSetup("HEMS-Panel-A1B2", nullptr, "http://192.168.4.1");
+    hemsui::showSetup("HEMS-Panel-A1B2", nullptr, "http://192.168.4.1");
   }
 
   // The emulator writes the same CSV rows into a host directory and restores
@@ -586,7 +586,7 @@ int main(int argc, char **argv) {
     simsd::init("");
   }
   restoreSimHistory();
-  warpui::setSdStatus(simsd::statusText());
+  hemsui::setSdStatus(simsd::statusText());
 
   g_lastTick = SDL_GetTicks();
   std::thread worker(fetchLoop, opt);
@@ -628,7 +628,7 @@ int main(int argc, char **argv) {
     advanceTick(now);
 
     WarpData data;
-    warpui::ConnectionState state = warpui::ConnectionState::NoNet;
+    hemsui::ConnectionState state = hemsui::ConnectionState::NoNet;
     unsigned seq = 0;
     {
       std::lock_guard<std::mutex> lock(g_shared.mu);
@@ -637,11 +637,11 @@ int main(int argc, char **argv) {
       seq = g_shared.seq;
     }
 
-    warpui::setConnectionState(state);
+    hemsui::setConnectionState(state);
 
     /* Update data on every pass through the main loop */
     if (seq != seenSeq) {
-      warpui::update(data);
+      hemsui::update(data);
       maybeLogSample(data);
       seenSeq = seq;
       lastUiMs = now;
@@ -650,7 +650,7 @@ int main(int argc, char **argv) {
     simsd::tick();
     if (now - lastSdStatusMs >= 1000) {
       lastSdStatusMs = now;
-      warpui::setSdStatus(simsd::statusText());
+      hemsui::setSdStatus(simsd::statusText());
     }
 
     uint32_t wait = lv_timer_handler();

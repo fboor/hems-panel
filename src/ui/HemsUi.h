@@ -7,7 +7,7 @@
 
 #include "warp/WarpData.h"
 
-namespace warpui {
+namespace hemsui {
 
 // Builds the screen below `parent` (usually lv_screen_active()).
 void create(lv_obj_t *parent);
@@ -75,4 +75,4 @@ void hideSetup();
 void setNetworkInfo(const char *ssid, const char *ip, const char *warpUrl,
                     const char *webUrl);
 
-}  // namespace warpui
+}  // namespace hemsui

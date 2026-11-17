@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: MIT
-#include "WarpUi.h"
+#include "HemsUi.h"
 
 #include <algorithm>
 #include "fonts/lv_font_mdi_icons_28.h"
@@ -24,7 +24,7 @@ LV_IMG_DECLARE(chart_bg);
 
 #include "Mem.h"
 
-namespace warpui {
+namespace hemsui {
 namespace {
 
 constexpr uint32_t C_BG = 0x0E1319;
@@ -92,7 +92,7 @@ uint32_t histNowMs() { return 2u * kHistoryMs + lv_tick_get(); }
 // The wallbox configuration page shows one mode button per supported mode.
 // WARP currently offers at most four (Off + two configurable + Fast); the
 // extra slots keep the renderer safe if a future firmware adds more.
-constexpr int kWarpUiModes = 6;
+constexpr int kModeSlots = 6;
 constexpr uint32_t kPendingModeMs = 15000;
 
 struct PowerSample {
@@ -342,8 +342,8 @@ struct ModeCard {
   lv_obj_t *name = nullptr;
   lv_obj_t *state = nullptr;
   lv_obj_t *power = nullptr;
-  lv_obj_t *buttons[kWarpUiModes] = {};
-  int modes[kWarpUiModes] = {};
+  lv_obj_t *buttons[kModeSlots] = {};
+  int modes[kModeSlots] = {};
   int modeCount = 0;
 };
 
@@ -354,7 +354,7 @@ ModeCard g_chargerCards[kWarpMaxChargers];
 // changes; the labels themselves are updated in place every poll.
 int g_renderedChargers = -1;
 int g_renderedModeCount = -1;
-int g_renderedModes[kWarpUiModes] = {};
+int g_renderedModes[kModeSlots] = {};
 
 // A tap is shown immediately, before the next poll confirms it. The override
 // expires after kPendingModeMs so a rejected command does not stick forever.
@@ -366,8 +366,8 @@ struct PendingMode {
 PendingMode g_pendingGlobal;
 PendingMode g_pendingCharger[kWarpMaxChargers];
 
-warpui::ChargeModeHandler g_chargeModeHandler = nullptr;
-warpui::HeatingOverrideHandler g_heatingOverrideHandler = nullptr;
+hemsui::ChargeModeHandler g_chargeModeHandler = nullptr;
+hemsui::HeatingOverrideHandler g_heatingOverrideHandler = nullptr;
 bool g_lastHeatingOverride = false;
 bool g_partyPending = false;
 bool g_partyPendingOn = true;
@@ -840,7 +840,7 @@ const char *chargerStateName(const WarpChargerData &c) {
 int uiModes(const WarpData &d, int *out) {
   int n = 0;
   if (d.supported_mode_count > 0) {
-    for (int i = 0; i < d.supported_mode_count && n < kWarpUiModes; ++i) {
+    for (int i = 0; i < d.supported_mode_count && n < kModeSlots; ++i) {
       out[n++] = d.supported_modes[i];
     }
   } else {
@@ -979,7 +979,7 @@ bool wallboxLayoutChanged(const WarpData &d) {
   if (count != g_renderedChargers) {
     return true;
   }
-  int modes[kWarpUiModes] = {};
+  int modes[kModeSlots] = {};
   const int modeCount = uiModes(d, modes);
   if (modeCount != g_renderedModeCount) {
     return true;
@@ -1002,7 +1002,7 @@ void rebuildModeCards(const WarpData &d) {
     g_chargerCards[i] = ModeCard();
   }
 
-  int modes[kWarpUiModes] = {};
+  int modes[kModeSlots] = {};
   g_renderedModeCount = uiModes(d, modes);
   for (int i = 0; i < g_renderedModeCount; ++i) {
     g_renderedModes[i] = modes[i];
@@ -3054,4 +3054,4 @@ void update(const WarpData &d) {
   }
 }
 
-}  // namespace warpui
+}  // namespace hemsui

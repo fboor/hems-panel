@@ -20,7 +20,7 @@
 #include <esp_heap_caps.h>
 #endif
 
-namespace warpui {
+namespace hemsui {
 
 // Zeroed block of `bytes`, PSRAM first, internal RAM second, nullptr last.
 inline void *allocLarge(size_t bytes) {
@@ -35,4 +35,4 @@ inline void *allocLarge(size_t bytes) {
 #endif
 }
 
-}  // namespace warpui
+}  // namespace hemsui
