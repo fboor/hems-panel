@@ -74,6 +74,26 @@ If no grid or battery meter is configured, the adapter falls back to
 `/power_manager/low_level_state` for `power_at_meter`, `power_at_battery` and
 `battery_soc`.
 
+## Wallbox states
+
+`/charge_manager/state` reports the charge manager's CAS state per charger in
+`s`. The panel names it the way WARP's web interface does, so both agree:
+
+| `s` | meaning |
+|---|---|
+| 0 | no vehicle connected |
+| 1 | waiting for local release |
+| 2 | waiting for manager release |
+| 3 | ready to charge |
+| 4 | charging |
+| 5 | error |
+| 6 | charging done |
+| 7 | blocked |
+
+Only state 4 draws current. Without a wallbox meter the panel calculates the
+charging power from the allocated current only in that state; the allocation
+alone is not a draw.
+
 ## Signs and island mode
 
 - Grid positive = import, negative = export.

@@ -837,17 +837,21 @@ const char *chargeModeName(int mode) {
   }
 }
 
-// CASState as reported in /charge_manager/state (`s`).
-const char *chargerStateName(const WarpChargerData &c) {
-  switch (c.state) {
-    case 4: return TR("Laden", "Charging");
-    case 5: return TR("Fehler", "Fault");
-    case 6: return TR("Fertig", "Finished");
-    case 1:
-    case 2:
-    case 3:
-    case 7: return TR("Blockiert", "Blocked");
+// CASState as reported in /charge_manager/state (`s`), named the way WARP's
+// own web interface names it, so the panel and the device agree on what a box
+// is doing. The states matter as a whole: 3 means the car is plugged in and
+// the box would charge, which is neither charging nor blocked, and 5 is a
+// fault the box reports while it still looks connected.
+const char *casStateName(int state) {
+  switch (state) {
     case 0: return TR("Kein Fahrzeug", "No vehicle");
+    case 1:
+    case 2: return TR("Warte auf Freigabe", "Waiting for release");
+    case 3: return TR("Ladebereit", "Ready to charge");
+    case 4: return TR("Laden", "Charging");
+    case 5: return TR("Fehler", "Error");
+    case 6: return TR("Fertig", "Finished");
+    case 7: return TR("Blockiert", "Blocked");
     default: return TR("Bereit", "Ready");
   }
 }
@@ -1083,7 +1087,7 @@ void updateModeCard(ModeCard &mc, const WarpData &d, int index, bool global) {
   }
   setTextIfChanged(mc.name, buf);
 
-  const char *stateName = chargerStateName(c);
+  const char *stateName = casStateName(c.state);
   if (c.estimated && c.state == 4) {
     snprintf(buf, sizeof(buf), "%s (geschätzt)", stateName);
   } else {
@@ -2695,29 +2699,26 @@ void update(const WarpData &d) {
   }
 
   // Wallbox -----------------------------------------------------------
-  /* CAS states: 0=kein Fahrzeug, 1/2/3/7=blockiert, 4=laden, 5=Fehler,
-   * 6=fertig. The power is either read from a wallbox meter or estimated from
-   * the allocated current and the phase voltages. */
-  if (d.hasCharger && (d.charge_power > 0.1f || d.charge_current > 0.1)) {
-    fmtPower(chargeBuf, sizeof(chargeBuf), d.charge_power);
-    setTextIfChanged(w.wallboxValue, chargeBuf);
-    const bool charging = d.charge_state == 4 || d.charge_power > 10.0f;
-    if (charging) {
-      setTextIfChanged(w.wallboxNote, d.chargeEstimated ? TR("Laden (berechnet)", "Charging (berechnet)") : TR("Laden", "Charging"));
+  /* CAS states as WARP names them: 0 no vehicle, 1/2 waiting for release,
+   * 3 ready to charge, 4 charging, 5 error, 6 finished, 7 blocked. The power
+   * is either read from a wallbox meter or calculated from the allocated
+   * current and the phase voltages. The state decides what the note says:
+   * naming every state after itself keeps "ready to charge" and "error"
+   * visible instead of folding them into "charging" or "ready". */
+  if (d.hasCharger) {
+    if (d.charge_power > 0.1f || d.charge_state == 4) {
+      fmtPower(chargeBuf, sizeof(chargeBuf), d.charge_power);
+      setTextIfChanged(w.wallboxValue, chargeBuf);
     } else {
-      setTextIfChanged(w.wallboxNote, d.chargeEstimated ? TR("Bereit", "Ready") : TR("Bereit", "Ready"));
+      setTextIfChanged(w.wallboxValue, "--");
     }
-  } else if (d.hasCharger) {
-    setTextIfChanged(w.wallboxValue, "--");
-    if (d.charge_state == 5) {
-      setTextIfChanged(w.wallboxNote, TR("Fehler", "Fault"));
-    } else if (d.charge_state == 6) {
-      setTextIfChanged(w.wallboxNote, TR("Fertig", "Finished"));
-    } else if (d.charge_state == 1 || d.charge_state == 2 ||
-               d.charge_state == 3 || d.charge_state == 7) {
-      setTextIfChanged(w.wallboxNote, TR("Blockiert", "Blocked"));
+    if (d.charge_state == 4) {
+      setTextIfChanged(w.wallboxNote,
+                       d.chargeEstimated
+                           ? TR("Laden (berechnet)", "Charging (berechnet)")
+                           : TR("Laden", "Charging"));
     } else {
-      setTextIfChanged(w.wallboxNote, TR("Kein Fahrzeug", "No vehicle"));
+      setTextIfChanged(w.wallboxNote, casStateName(d.charge_state));
     }
   } else {
     setTextIfChanged(w.wallboxValue, "--");
@@ -3065,33 +3066,22 @@ void update(const WarpData &d) {
     }
 
     // Wallbox ----------------------------------------------------------
-    const double wallboxW = d.charge_power;
-    const bool wallboxOn =
-        d.hasCharger && (wallboxW > 10.0 || d.charge_current > 0.1);
+    // The CAS state names the node. A box that is not in state 4 is not
+    // drawing, even when the charge manager has allocated a current to it, so
+    // "ready to charge" and "error" stay visible instead of turning into a
+    // power reading.
+    const bool wallboxOn = d.hasCharger && d.charge_state == 4;
     if (wallboxOn) {
-      fmtPower(pbuf, sizeof(pbuf), wallboxW);
+      fmtPower(pbuf, sizeof(pbuf), d.charge_power);
       setTextIfChanged(w.wbValue, pbuf);
       setColorIfChanged(w.wbValue, C_EV);
-      setTextIfChanged(w.wbState, (d.charge_state == 4 || wallboxW > 10.0) ? TR("Laden", "Charging")
-                                                                : TR("Verbunden", "Connected"));
+      setTextIfChanged(w.wbState, TR("Laden", "Charging"));
       setColorIfChanged(w.wbState, C_EV);
     } else if (d.hasCharger) {
       setTextIfChanged(w.wbValue, "--");
       setColorIfChanged(w.wbValue, C_MUTED);
-      if (d.charge_state == 5) {
-        setTextIfChanged(w.wbState, TR("Fehler", "Fault"));
-        setColorIfChanged(w.wbState, C_RED);
-      } else if (d.charge_state == 6) {
-        setTextIfChanged(w.wbState, TR("Fertig", "Finished"));
-        setColorIfChanged(w.wbState, C_MUTED);
-      } else if (d.charge_state == 1 || d.charge_state == 2 ||
-                 d.charge_state == 3 || d.charge_state == 7) {
-        setTextIfChanged(w.wbState, TR("Blockiert", "Blocked"));
-        setColorIfChanged(w.wbState, C_MUTED);
-      } else {
-        setTextIfChanged(w.wbState, TR("Kein Fahrzeug", "No vehicle"));
-        setColorIfChanged(w.wbState, C_MUTED);
-      }
+      setTextIfChanged(w.wbState, casStateName(d.charge_state));
+      setColorIfChanged(w.wbState, d.charge_state == 5 ? C_RED : C_MUTED);
     } else {
       setTextIfChanged(w.wbValue, "--");
       setColorIfChanged(w.wbValue, C_MUTED);
@@ -3146,7 +3136,7 @@ void update(const WarpData &d) {
     setFlow(0, d.hasPv, d.pvPower);
     setFlow(1, d.hasGrid && !d.island, d.gridPower);
     setFlow(2, d.hasBattery, d.batteryPower);
-    setFlow(3, wallboxOn, wallboxW);
+    setFlow(3, wallboxOn, d.charge_power);
 
     // Directions: grid/battery links run card -> hub by default.
     w.gridExporting = d.hasGrid && !d.island && d.gridPower < 0.0f;

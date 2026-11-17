@@ -802,7 +802,14 @@ class Reader {
         WarpChargerData &c = d.chargers[i];
         const double amps = c.current / 1000.0;
         const double volts = (c.phases >= 3) ? (v1 + v2 + v3) : v1;
-        const float estimate = static_cast<float>(amps * volts);
+        /* The allocation is not the draw. A box that is ready to charge or
+         * waiting for a release is granted a current while the car takes
+         * nothing, so without a meter only CAS state 4 (charging) justifies a
+         * power. Otherwise the estimate would turn a parked car into a
+         * kilowatt of phantom consumption. */
+        const float estimate = c.state == 4
+                                   ? static_cast<float>(amps * volts)
+                                   : 0.0f;
         c.power = estimate;
         c.estimated = estimate > 0.0f;
         c.meter = false;
