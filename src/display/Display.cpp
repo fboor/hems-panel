@@ -308,6 +308,10 @@ static uint32_t s_refreshTotalUs = 0; // LVGL pass, since the last report
 static uint32_t s_refreshMaxUs = 0;
 static uint32_t s_refreshes = 0;
 static uint32_t s_renderStartUs = 0;
+static uint32_t s_refreshMaxPx = 0;     // area of the slowest pass
+static uint32_t s_refreshMaxStrips = 0; // and how many strips it took
+static uint32_t s_passPx = 0;      // area of the pass in progress
+static uint32_t s_passStrips = 0;
 static uint32_t s_pxTotal = 0;      // pixels drawn, since the last report
 static uint32_t s_drawBucket[4] = {0, 0, 0, 0};
 
@@ -379,6 +383,8 @@ void displayStats(DisplayStats *out) {
   out->drawMaxUs = s_drawWinMaxUs;
   out->refreshTotalUs = s_refreshTotalUs;
   out->refreshMaxUs = s_refreshMaxUs;
+  out->refreshMaxPx = s_refreshMaxPx;
+  out->refreshMaxStrips = s_refreshMaxStrips;
   out->pxTotal = s_pxTotal;
   memcpy(out->drawBucket, s_drawBucket, sizeof(out->drawBucket));
 
@@ -394,6 +400,8 @@ void displayStats(DisplayStats *out) {
   s_drawWinMaxUs = 0;
   s_refreshTotalUs = 0;
   s_refreshMaxUs = 0;
+  s_refreshMaxPx = 0;
+  s_refreshMaxStrips = 0;
   s_pxTotal = 0;
   memset(s_drawBucket, 0, sizeof(s_drawBucket));
 }
@@ -403,6 +411,8 @@ void displayStats(DisplayStats *out) {
 // and draw totals reported next to it leaves what the renderer itself spent.
 static void onRenderStart(lv_event_t *) {
   s_renderStartUs = (uint32_t)esp_timer_get_time();
+  s_passPx = 0;
+  s_passStrips = 0;
 }
 
 static void onRenderReady(lv_event_t *) {
@@ -413,6 +423,8 @@ static void onRenderReady(lv_event_t *) {
   s_refreshTotalUs += t;
   if (t > s_refreshMaxUs) {
     s_refreshMaxUs = t;
+    s_refreshMaxPx = s_passPx;
+    s_refreshMaxStrips = s_passStrips;
   }
   s_refreshes++;
 }
@@ -497,6 +509,8 @@ static void lcdFlushCb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_ma
   }
   s_drawBucket[tDraw < 500 ? 0 : tDraw < 2000 ? 1 : tDraw < 5000 ? 2 : 3]++;
   s_pxTotal += (uint32_t)n;
+  s_passPx += (uint32_t)n;
+  s_passStrips++;
   s_flushes++;
   lv_display_flush_ready(disp);
   diagPhase("lcd.ready");
