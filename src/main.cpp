@@ -550,11 +550,15 @@ void printHeartbeat() {
       ESP.getFreePsram());
   Serial.printf(
       "[hb] draw ms: <0.5 %u  <2 %u  <5 %u  >=5 %u | px/refr %u | slowest "
-      "refr %u px in %u strips\n",
+      "refr %u px in %u strips start %u gap %u@%u tail %u ms\n",
       (unsigned)st.drawBucket[0], (unsigned)st.drawBucket[1],
       (unsigned)st.drawBucket[2], (unsigned)st.drawBucket[3],
       (unsigned)(st.refreshes ? st.pxTotal / st.refreshes : 0),
-      (unsigned)st.refreshMaxPx, (unsigned)st.refreshMaxStrips);
+      (unsigned)st.refreshMaxPx, (unsigned)st.refreshMaxStrips,
+      (unsigned)(st.refreshMaxStartUs / 1000),
+      (unsigned)(st.refreshMaxGapUs / 1000),
+      (unsigned)st.refreshMaxGapY,
+      (unsigned)(st.refreshMaxTailUs / 1000));
 }
 
 }  // namespace

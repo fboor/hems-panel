@@ -312,6 +312,15 @@ static uint32_t s_refreshMaxPx = 0;     // area of the slowest pass
 static uint32_t s_refreshMaxStrips = 0; // and how many strips it took
 static uint32_t s_passPx = 0;      // area of the pass in progress
 static uint32_t s_passStrips = 0;
+static uint32_t s_lastFlushEndUs = 0; // end of the pass's previous strip
+static uint32_t s_passStartUs = 0;    // RENDER_START -> first strip
+static uint32_t s_passGapUs = 0;      // longest renderer gap between strips
+static uint32_t s_passGapY = 0;       // y of the strip that followed that gap
+static uint32_t s_passTailUs = 0;     // last strip -> RENDER_READY
+static uint32_t s_refreshMaxStartUs = 0;
+static uint32_t s_refreshMaxGapUs = 0;
+static uint32_t s_refreshMaxGapY = 0;
+static uint32_t s_refreshMaxTailUs = 0;
 static uint32_t s_pxTotal = 0;      // pixels drawn, since the last report
 static uint32_t s_drawBucket[4] = {0, 0, 0, 0};
 
@@ -385,6 +394,10 @@ void displayStats(DisplayStats *out) {
   out->refreshMaxUs = s_refreshMaxUs;
   out->refreshMaxPx = s_refreshMaxPx;
   out->refreshMaxStrips = s_refreshMaxStrips;
+  out->refreshMaxStartUs = s_refreshMaxStartUs;
+  out->refreshMaxGapUs = s_refreshMaxGapUs;
+  out->refreshMaxGapY = s_refreshMaxGapY;
+  out->refreshMaxTailUs = s_refreshMaxTailUs;
   out->pxTotal = s_pxTotal;
   memcpy(out->drawBucket, s_drawBucket, sizeof(out->drawBucket));
 
@@ -402,6 +415,10 @@ void displayStats(DisplayStats *out) {
   s_refreshMaxUs = 0;
   s_refreshMaxPx = 0;
   s_refreshMaxStrips = 0;
+  s_refreshMaxStartUs = 0;
+  s_refreshMaxGapUs = 0;
+  s_refreshMaxGapY = 0;
+  s_refreshMaxTailUs = 0;
   s_pxTotal = 0;
   memset(s_drawBucket, 0, sizeof(s_drawBucket));
 }
@@ -413,18 +430,31 @@ static void onRenderStart(lv_event_t *) {
   s_renderStartUs = (uint32_t)esp_timer_get_time();
   s_passPx = 0;
   s_passStrips = 0;
+  s_lastFlushEndUs = 0;
+  s_passStartUs = 0;
+  s_passGapUs = 0;
+  s_passGapY = 0;
+  s_passTailUs = 0;
 }
 
 static void onRenderReady(lv_event_t *) {
   if (s_renderStartUs == 0) {
     return;
   }
-  const uint32_t t = (uint32_t)esp_timer_get_time() - s_renderStartUs;
+  const uint32_t now = (uint32_t)esp_timer_get_time();
+  const uint32_t t = now - s_renderStartUs;
+  if (s_lastFlushEndUs != 0) {
+    s_passTailUs = now - s_lastFlushEndUs;
+  }
   s_refreshTotalUs += t;
   if (t > s_refreshMaxUs) {
     s_refreshMaxUs = t;
     s_refreshMaxPx = s_passPx;
     s_refreshMaxStrips = s_passStrips;
+    s_refreshMaxStartUs = s_passStartUs;
+    s_refreshMaxGapUs = s_passGapUs;
+    s_refreshMaxGapY = s_passGapY;
+    s_refreshMaxTailUs = s_passTailUs;
   }
   s_refreshes++;
 }
@@ -437,6 +467,21 @@ static void lcdFlushCb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_ma
   // times per frame, so it is also where a per-frame cost would accumulate.
   diagPhase("lcd.flush");
   const uint32_t t0 = (uint32_t)esp_timer_get_time();
+  // Where the pass spends its time. The area and strip count say how big the
+  // slow pass was, not whether the renderer took long before the first strip,
+  // between two of them, or after the last one - and those point at different
+  // causes (layout/preparation, drawing, or bookkeeping).
+  if (s_renderStartUs != 0) {
+    if (s_passStrips == 0) {
+      s_passStartUs = t0 - s_renderStartUs;
+    } else if (s_lastFlushEndUs != 0) {
+      const uint32_t gap = t0 - s_lastFlushEndUs;
+      if (gap > s_passGapUs) {
+        s_passGapUs = gap;
+        s_passGapY = (uint32_t)area->y1;
+      }
+    }
+  }
   uint16_t *px = (uint16_t *)px_map;
   size_t n = (size_t)(area->x2 - area->x1 + 1) * (area->y2 - area->y1 + 1);
   if (s_corrAktiv) { // nothing to correct: the loop is 18 ms of a 26 ms frame
@@ -512,6 +557,7 @@ static void lcdFlushCb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_ma
   s_passPx += (uint32_t)n;
   s_passStrips++;
   s_flushes++;
+  s_lastFlushEndUs = (uint32_t)esp_timer_get_time();
   lv_display_flush_ready(disp);
   diagPhase("lcd.ready");
 }

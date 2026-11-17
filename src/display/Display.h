@@ -58,6 +58,13 @@ struct DisplayStats {
   // area it covered tells the two apart.
   uint32_t refreshMaxPx;
   uint32_t refreshMaxStrips;
+  // And where that pass spent the time: before the first strip was flushed,
+  // between two strips (largest gap, with the y of the strip that followed it),
+  // and after the last strip.
+  uint32_t refreshMaxStartUs;
+  uint32_t refreshMaxGapUs;
+  uint32_t refreshMaxGapY;
+  uint32_t refreshMaxTailUs;
   uint32_t pxTotal;        // pixels flushed, since the last call
   // Draw time distribution: below 0.5 ms, below 2 ms, below 5 ms, 5 ms or more.
   // The mean says little when a page switch and a moving dot are both "a draw".
