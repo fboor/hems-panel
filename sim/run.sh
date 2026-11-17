@@ -35,6 +35,16 @@ cflags="-O2 -DLV_CONF_INCLUDE_SIMPLE -I$here/lvconf -I$repo/include -I$repo/src 
 [ -n "${WARP_LANG_EN:-}" ] && cflags="$cflags -DWARP_LANG_EN=1"
 [ -n "${HEMS_UI_DEBUG_BAND:-}" ] && cflags="$cflags -DHEMS_UI_DEBUG_BAND=1"
 
+# The LVGL objects are keyed by their .c files, but they also bake in the
+# config headers - colours, fonts, heap. Drop them when either config changes,
+# otherwise a renamed default font links against a symbol that no longer exists.
+conf_stamp="$build/lv_conf.stamp"
+conf_key=$(stat -c '%Y %n' "$here/lvconf/lv_conf.h" "$repo/include/lv_conf.h")
+if [ "$(cat "$conf_stamp" 2>/dev/null)" != "$conf_key" ]; then
+  rm -f "$build"/lvgl/*.o
+  printf '%s' "$conf_key" > "$conf_stamp"
+fi
+
 # LVGL once, keyed by source path.
 neu=0
 while IFS= read -r f; do
