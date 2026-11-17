@@ -78,6 +78,11 @@ constexpr const lv_font_t *F_ICON = &lv_font_hems_48;
 // same number of points; the samples are resampled into the visible window.
 constexpr int kChartPoints = 240;
 constexpr int kChartLineWidth = 2;
+// The chart card's size, the same as the widget it replaces: a rounded card
+// with a 1 px border, so the plot area is 764 x 238 at (1, 1).
+constexpr int kChartW = 766;
+constexpr int kChartH = 240;
+constexpr int kChartBorder = 1;
 constexpr uint32_t kSampleIntervalMs = 60u * 1000u;
 constexpr uint32_t kHistoryMs = 24u * 60u * 60u * 1000u;
 constexpr int kMaxSamples = 24 * 60 + 2;
@@ -140,6 +145,16 @@ int32_t *g_chartBattery = nullptr;
 int32_t *g_chartWb1 = nullptr;
 int32_t *g_chartWb2 = nullptr;
 int32_t *g_chartSoc = nullptr;  // raw SOC %, mapped into the power range
+
+// The chart is drawn once per new sample into this RGB565 buffer and then
+// shown as a plain image. LVGL's chart widget turns every line segment into
+// its own draw task - each one a malloc plus a walk to the list's tail - so a
+// full redraw of the chart page, which is what every page switch triggers,
+// costs more than the rest of the page together. As an image the same switch
+// is one opaque blit. 766 x 240 x 2 B = 368 kB, allocated in PSRAM; if that
+// fails the page keeps the original chart widgets.
+uint16_t *g_chartPixels = nullptr;
+int g_chartRange = 5000;  // last y range, kept for re-renders
 
 // Scratch copy of the SG ring for the timeline band, filled on every redraw
 // of the heating page.
@@ -259,6 +274,7 @@ struct Widgets {
   bool batCharging = false;
   lv_obj_t *powerChart = nullptr;
   lv_obj_t *socChart = nullptr;
+  lv_obj_t *chartImage = nullptr;
   lv_chart_series_t *powerSeries = nullptr;
   lv_chart_series_t *seriesSoc = nullptr;
   lv_chart_series_t *seriesGrid = nullptr;
@@ -1224,11 +1240,124 @@ void restoreLegendLabels(const WarpData &d) {
   }
 }
 
+// Chart geometry, as LVGL's chart widget computes it: x = border + w * i /
+// (points - 1) and y measured down from the top of the content area, with the
+// value range centred on zero.
+inline int chartX(int point) {
+  return kChartBorder + (kChartW - 2 * kChartBorder) * point /
+                            (kChartPoints - 1);
+}
+
+inline int chartY(int value, int range) {
+  const int h = kChartH - 2 * kChartBorder;
+  return kChartBorder + h - ((value + range) * h) / (2 * range);
+}
+
+// Two-pixel polyline from a resampled series. Columns are filled from the
+// previous y to the current one so a steep jump stays connected, which is what
+// LVGL's thick line does with four masks and a blend per segment.
+void drawChartSeries(const int32_t *values, uint16_t color) {
+  if (g_chartPixels == nullptr) {
+    return;
+  }
+  const int yMin = kChartBorder;
+  const int yMax = kChartH - kChartBorder - 1;
+  int prevX = -1;
+  int prevY = 0;
+  for (int i = 0; i < kChartPoints; ++i) {
+    const int32_t v = values[i];
+    if (v == LV_CHART_POINT_NONE) {
+      prevX = -1;
+      continue;
+    }
+    const int x = chartX(i);
+    const int y = chartY((int)v, g_chartRange);
+    if (prevX >= 0 && x > prevX) {
+      for (int cx = prevX; cx < x; ++cx) {
+        const int cy = prevY + (y - prevY) * (cx - prevX) / (x - prevX);
+        int y0 = cy < prevY ? cy : prevY;
+        int y1 = cy < prevY ? prevY : cy;
+        if (y0 < yMin) y0 = yMin;
+        if (y1 > yMax) y1 = yMax;
+        for (int yy = y0; yy <= y1; ++yy) {
+          uint16_t *row = g_chartPixels + yy * kChartW + cx;
+          row[0] = color;
+          if (cx + 1 < kChartW - kChartBorder) row[1] = color;
+        }
+      }
+    }
+    prevX = x;
+    prevY = y;
+  }
+}
+
+// Repaint the whole chart image: the card first, so the rounded corners blend
+// into whatever the page background is right now, then the seven series in the
+// order the two chart widgets drew them (power first, SOC on top).
+void renderChartImage() {
+  if (g_chartPixels == nullptr || w.chartImage == nullptr) {
+    return;
+  }
+  // Pixels outside the rounded card show the page background, so the buffer
+  // starts as a copy of it before the card is drawn on top.
+  lv_canvas_fill_bg(w.chartImage,
+                    lv_obj_get_style_bg_color(lv_screen_active(), LV_PART_MAIN),
+                    LV_OPA_COVER);
+  lv_layer_t layer;
+  lv_canvas_init_layer(w.chartImage, &layer);
+  lv_draw_rect_dsc_t cardDsc;
+  lv_draw_rect_dsc_init(&cardDsc);
+  cardDsc.base.layer = &layer;
+  cardDsc.bg_color = lv_color_hex(C_CARD);
+  cardDsc.bg_opa = LV_OPA_COVER;
+  cardDsc.radius = 10;
+  cardDsc.border_color = lv_color_hex(C_LINE);
+  cardDsc.border_opa = LV_OPA_COVER;
+  cardDsc.border_width = kChartBorder;
+  lv_area_t area = {0, 0, kChartW - 1, kChartH - 1};
+  lv_draw_rect(&layer, &cardDsc, &area);
+  lv_canvas_finish_layer(w.chartImage, &layer);
+
+  // LVGL's chart draws its divider lines before the series: three vertical
+  // lines at quarter widths and one horizontal line in the middle, in the
+  // muted line colour. They run across the whole widget, over the border
+  // pixels, so they are written straight into the buffer after the card.
+  const uint16_t divider = lv_color_to_u16(lv_color_hex(C_MUTED));
+  const int plotW = kChartW - 2 * kChartBorder;
+  const int plotH = kChartH - 2 * kChartBorder;
+  for (int i = 1; i < 4; ++i) {
+    const int x = kChartBorder + plotW * i / 4;
+    for (int y = 0; y < kChartH; ++y) {
+      g_chartPixels[y * kChartW + x] = divider;
+    }
+  }
+  const int midY = kChartBorder + plotH / 2;
+  for (int x = 0; x < kChartW; ++x) {
+    g_chartPixels[midY * kChartW + x] = divider;
+  }
+
+  static const uint32_t colors[7] = {0x2CA02C, 0xFF7F0E, 0x007BFF, 0xD62728,
+                                     0x9467BD, 0x8C564B, 0xC9CED4};
+  const int32_t *const series[7] = {g_chartGrid, g_chartPv, g_chartHouse,
+                                    g_chartBattery, g_chartWb1, g_chartWb2,
+                                    g_chartSoc};
+  for (int i = 0; i < 7; ++i) {
+    if (series[i] != nullptr) {
+      drawChartSeries(series[i], lv_color_to_u16(lv_color_hex(colors[i])));
+    }
+  }
+  lv_obj_invalidate(w.chartImage);
+}
+
 void chartTapEvent(lv_event_t *e) {
+  lv_obj_t *chart = w.powerChart != nullptr ? w.powerChart : w.chartImage;
+  if (chart == nullptr) {
+    return;
+  }
   lv_point_t p{};
   lv_indev_get_point(lv_indev_get_act(), &p);
   lv_area_t coords{};
-  lv_obj_get_coords(w.powerChart, &coords);
+  lv_obj_get_coords(chart, &coords);
   int localX = p.x - coords.x1;
   if (localX < 0) localX = 0;
   const int chartW = coords.x2 - coords.x1;
@@ -1292,7 +1421,8 @@ void recordPowerSample(uint32_t now, const WarpData &d) {
 // the next one arrives, so the newest value sits at the right edge and the
 // left side stays empty until the window has actually been covered.
 void rebuildPowerChart() {
-  if (w.powerChart == nullptr || g_chartData == nullptr || g_sampleCount == 0) {
+  if ((w.powerChart == nullptr && w.chartImage == nullptr) ||
+      g_chartData == nullptr || g_sampleCount == 0) {
     return;
   }
 
@@ -1355,9 +1485,12 @@ void rebuildPowerChart() {
   if (steps < 1) steps = 1;
   const int range = steps * stepW;
 
-  lv_chart_set_range(w.powerChart, LV_CHART_AXIS_PRIMARY_Y, -range, range);
-  if (w.socChart != nullptr) {
-    lv_chart_set_range(w.socChart, LV_CHART_AXIS_PRIMARY_Y, -range, range);
+  g_chartRange = range;
+  if (w.powerChart != nullptr) {
+    lv_chart_set_range(w.powerChart, LV_CHART_AXIS_PRIMARY_Y, -range, range);
+    if (w.socChart != nullptr) {
+      lv_chart_set_range(w.socChart, LV_CHART_AXIS_PRIMARY_Y, -range, range);
+    }
   }
   for (int i = 0; i < kChartPoints; ++i) {
     if (g_chartSoc[i] == LV_CHART_POINT_NONE || g_chartSoc[i] < 0) {
@@ -1381,8 +1514,12 @@ void rebuildPowerChart() {
     setText(w.scaleMin, buf);
   }
   setText(w.scaleMid, TR("0 kW", "0 kW"));
-  lv_chart_refresh(w.powerChart);
-  if (w.socChart != nullptr) lv_chart_refresh(w.socChart);
+  if (w.chartImage != nullptr) {
+    renderChartImage();
+  } else {
+    lv_chart_refresh(w.powerChart);
+    if (w.socChart != nullptr) lv_chart_refresh(w.socChart);
+  }
 }
 
 struct FlowNode {
@@ -1567,9 +1704,9 @@ void seedHistory(const HistoryPoint *points, int count, uint32_t nowEpoch) {
 
 void create(lv_obj_t *parent) {
   // The 24 h history and chart buffers go to PSRAM before any widget exists.
-  // Sizes: 1442 samples x 32 B, 1442 SG states, seven 240-point series and
-  // the SG band scratch copy. If an allocation fails the history stays empty
-  // and the chart falls back to LVGL's own (smaller) series buffers.
+  // Sizes: 1442 samples x 32 B, 1442 SG states, seven 240-point series, the
+  // SG band scratch copy and the chart image. If an allocation fails the
+  // history stays empty and the chart falls back to LVGL's own widgets.
   if (g_samples == nullptr) {
     g_samples = (PowerSample *)allocLarge(sizeof(PowerSample) * kMaxSamples);
   }
@@ -1594,6 +1731,10 @@ void create(lv_obj_t *parent) {
       g_chartWb2 = g_chartData + 5 * kChartPoints;
       g_chartSoc = g_chartData + 6 * kChartPoints;
     }
+  }
+  if (g_chartPixels == nullptr) {
+    g_chartPixels = (uint16_t *)allocLarge((size_t)kChartW * kChartH *
+                                           sizeof(uint16_t));
   }
   prepareChartBackground();
 
@@ -1725,38 +1866,17 @@ void create(lv_obj_t *parent) {
 
   // Chart colours as on the panel's Energiebilanz page: load blue, PV
   // orange, grid green, battery red, wallboxes purple and brown.
-  w.powerChart = lv_chart_create(w.page2);
-  lv_obj_set_pos(w.powerChart, 12, 0);
-  lv_obj_set_size(w.powerChart, 766, 240);
-  lv_chart_set_type(w.powerChart, LV_CHART_TYPE_LINE);
-  lv_chart_set_point_count(w.powerChart, kChartPoints);
-  lv_chart_set_range(w.powerChart, LV_CHART_AXIS_PRIMARY_Y, -5000, 5000);
-  lv_obj_set_style_bg_color(w.powerChart, lv_color_hex(C_CARD), 0);
-  lv_obj_set_style_line_width(w.powerChart, kChartLineWidth, LV_PART_ITEMS);
-  // No point markers. The theme draws one rounded 2x2 rect per sample - 240
-  // of them per series, seven series - and each is its own draw task with a
-  // radius mask. They sit inside the 2 px line and are invisible, but on a
-  // full redraw they cost more than the lines themselves. Zero size turns
-  // them off in draw_series_line().
-  lv_obj_set_style_width(w.powerChart, 0, LV_PART_INDICATOR);
-  lv_obj_set_style_height(w.powerChart, 0, LV_PART_INDICATOR);
-  lv_obj_set_style_border_width(w.powerChart, 1, 0);
-  lv_obj_set_style_border_color(w.powerChart, lv_color_hex(C_LINE), 0);
-  lv_obj_set_style_line_color(w.powerChart, lv_color_hex(C_MUTED), 0);
-  lv_obj_set_style_pad_all(w.powerChart, 0, 0);
-  w.scaleMax = label(w.page2, 20, 5, 60, F_SMALL, C_MUTED, "--", LV_TEXT_ALIGN_LEFT, false);
-  w.scaleMid = label(w.page2, 20, 122, 60, F_SMALL, C_MUTED, "--", LV_TEXT_ALIGN_LEFT, false);
-  w.scaleMin = label(w.page2, 20, 222, 60, F_SMALL, C_MUTED, "--", LV_TEXT_ALIGN_LEFT, false);
-  lv_obj_clear_flag(w.scaleMax, LV_OBJ_FLAG_CLICKABLE);
-  lv_obj_clear_flag(w.scaleMid, LV_OBJ_FLAG_CLICKABLE);
-  lv_obj_clear_flag(w.scaleMin, LV_OBJ_FLAG_CLICKABLE);
-  w.seriesGrid = lv_chart_add_series(w.powerChart, lv_color_hex(0x2CA02C), LV_CHART_AXIS_PRIMARY_Y);
-  w.seriesPv = lv_chart_add_series(w.powerChart, lv_color_hex(0xFF7F0E), LV_CHART_AXIS_PRIMARY_Y);
-  w.seriesHouse = lv_chart_add_series(w.powerChart, lv_color_hex(0x007BFF), LV_CHART_AXIS_PRIMARY_Y);
-  w.seriesBat = lv_chart_add_series(w.powerChart, lv_color_hex(0xD62728), LV_CHART_AXIS_PRIMARY_Y);
-  w.seriesWb1 = lv_chart_add_series(w.powerChart, lv_color_hex(0x9467BD), LV_CHART_AXIS_PRIMARY_Y);
-  w.seriesWb2 = lv_chart_add_series(w.powerChart, lv_color_hex(0x8C564B), LV_CHART_AXIS_PRIMARY_Y);
-  if (g_chartData != nullptr) {
+  if (g_chartPixels != nullptr && g_chartData != nullptr) {
+    // A pre-rendered image instead of two chart widgets. The page switch
+    // then blits 766 x 240 pixels instead of rebuilding roughly 1700 line
+    // draw tasks; renderChartImage() repaints the card and the series
+    // whenever a new sample arrives.
+    w.chartImage = lv_canvas_create(w.page2);
+    lv_obj_remove_style_all(w.chartImage);
+    lv_obj_set_pos(w.chartImage, 12, 0);
+    lv_obj_set_size(w.chartImage, kChartW, kChartH);
+    lv_canvas_set_buffer(w.chartImage, g_chartPixels, kChartW, kChartH,
+                         LV_COLOR_FORMAT_RGB565);
     for (int i = 0; i < kChartPoints; ++i) {
       g_chartGrid[i] = LV_CHART_POINT_NONE;
       g_chartPv[i] = LV_CHART_POINT_NONE;
@@ -1764,43 +1884,94 @@ void create(lv_obj_t *parent) {
       g_chartBattery[i] = LV_CHART_POINT_NONE;
       g_chartWb1[i] = LV_CHART_POINT_NONE;
       g_chartWb2[i] = LV_CHART_POINT_NONE;
-    }
-    lv_chart_set_series_ext_y_array(w.powerChart, w.seriesGrid, g_chartGrid);
-    lv_chart_set_series_ext_y_array(w.powerChart, w.seriesPv, g_chartPv);
-    lv_chart_set_series_ext_y_array(w.powerChart, w.seriesHouse, g_chartHouse);
-    lv_chart_set_series_ext_y_array(w.powerChart, w.seriesBat, g_chartBattery);
-    lv_chart_set_series_ext_y_array(w.powerChart, w.seriesWb1, g_chartWb1);
-    lv_chart_set_series_ext_y_array(w.powerChart, w.seriesWb2, g_chartWb2);
-  }
-
-  // Battery SOC on its own transparent overlay chart: same line width as the
-  // power lines, but a light grey clearly lighter than the grid - it is a
-  // percentage, not a power value. Same geometry as the power chart, so both
-  // ranges line up; 0 % sits at the bottom edge, 100 % at the top,
-  // independent of the power range.
-  w.socChart = lv_chart_create(w.page2);
-  lv_obj_set_pos(w.socChart, 12, 0);
-  lv_obj_set_size(w.socChart, 766, 240);
-  lv_chart_set_type(w.socChart, LV_CHART_TYPE_LINE);
-  lv_chart_set_point_count(w.socChart, kChartPoints);
-  lv_chart_set_range(w.socChart, LV_CHART_AXIS_PRIMARY_Y, -5000, 5000);
-  lv_obj_set_style_bg_opa(w.socChart, LV_OPA_TRANSP, 0);
-  lv_obj_set_style_border_width(w.socChart, 0, 0);
-  lv_obj_set_style_line_width(w.socChart, kChartLineWidth, LV_PART_ITEMS);
-  lv_obj_set_style_width(w.socChart, 0, LV_PART_INDICATOR);
-  lv_obj_set_style_height(w.socChart, 0, LV_PART_INDICATOR);
-  lv_obj_set_style_line_opa(w.socChart, LV_OPA_TRANSP, LV_PART_MAIN);
-  lv_obj_set_style_pad_all(w.socChart, 0, 0);
-  w.seriesSoc = lv_chart_add_series(w.socChart, lv_color_hex(0xC9CED4), LV_CHART_AXIS_PRIMARY_Y);
-  if (g_chartData != nullptr) {
-    for (int i = 0; i < kChartPoints; ++i) {
       g_chartSoc[i] = LV_CHART_POINT_NONE;
     }
-    lv_chart_set_series_ext_y_array(w.socChart, w.seriesSoc, g_chartSoc);
+    // Tap on the chart shows the sample values in the legend for 30 s.
+    lv_obj_add_flag(w.chartImage, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(w.chartImage, chartTapEvent, LV_EVENT_CLICKED,
+                        nullptr);
+    renderChartImage();
+  } else {
+    w.powerChart = lv_chart_create(w.page2);
+    lv_obj_set_pos(w.powerChart, 12, 0);
+    lv_obj_set_size(w.powerChart, 766, 240);
+    lv_chart_set_type(w.powerChart, LV_CHART_TYPE_LINE);
+    lv_chart_set_point_count(w.powerChart, kChartPoints);
+    lv_chart_set_range(w.powerChart, LV_CHART_AXIS_PRIMARY_Y, -5000, 5000);
+    lv_obj_set_style_bg_color(w.powerChart, lv_color_hex(C_CARD), 0);
+    lv_obj_set_style_line_width(w.powerChart, kChartLineWidth, LV_PART_ITEMS);
+    // No point markers. The theme draws one rounded 2x2 rect per sample -
+    // 240 of them per series, seven series - and each is its own draw task
+    // with a radius mask. They sit inside the 2 px line and are invisible,
+    // but on a full redraw they cost more than the lines themselves. Zero
+    // size turns them off in draw_series_line().
+    lv_obj_set_style_width(w.powerChart, 0, LV_PART_INDICATOR);
+    lv_obj_set_style_height(w.powerChart, 0, LV_PART_INDICATOR);
+    lv_obj_set_style_border_width(w.powerChart, 1, 0);
+    lv_obj_set_style_border_color(w.powerChart, lv_color_hex(C_LINE), 0);
+    lv_obj_set_style_line_color(w.powerChart, lv_color_hex(C_MUTED), 0);
+    lv_obj_set_style_pad_all(w.powerChart, 0, 0);
+    w.seriesGrid = lv_chart_add_series(w.powerChart, lv_color_hex(0x2CA02C), LV_CHART_AXIS_PRIMARY_Y);
+    w.seriesPv = lv_chart_add_series(w.powerChart, lv_color_hex(0xFF7F0E), LV_CHART_AXIS_PRIMARY_Y);
+    w.seriesHouse = lv_chart_add_series(w.powerChart, lv_color_hex(0x007BFF), LV_CHART_AXIS_PRIMARY_Y);
+    w.seriesBat = lv_chart_add_series(w.powerChart, lv_color_hex(0xD62728), LV_CHART_AXIS_PRIMARY_Y);
+    w.seriesWb1 = lv_chart_add_series(w.powerChart, lv_color_hex(0x9467BD), LV_CHART_AXIS_PRIMARY_Y);
+    w.seriesWb2 = lv_chart_add_series(w.powerChart, lv_color_hex(0x8C564B), LV_CHART_AXIS_PRIMARY_Y);
+    if (g_chartData != nullptr) {
+      for (int i = 0; i < kChartPoints; ++i) {
+        g_chartGrid[i] = LV_CHART_POINT_NONE;
+        g_chartPv[i] = LV_CHART_POINT_NONE;
+        g_chartHouse[i] = LV_CHART_POINT_NONE;
+        g_chartBattery[i] = LV_CHART_POINT_NONE;
+        g_chartWb1[i] = LV_CHART_POINT_NONE;
+        g_chartWb2[i] = LV_CHART_POINT_NONE;
+      }
+      lv_chart_set_series_ext_y_array(w.powerChart, w.seriesGrid, g_chartGrid);
+      lv_chart_set_series_ext_y_array(w.powerChart, w.seriesPv, g_chartPv);
+      lv_chart_set_series_ext_y_array(w.powerChart, w.seriesHouse, g_chartHouse);
+      lv_chart_set_series_ext_y_array(w.powerChart, w.seriesBat, g_chartBattery);
+      lv_chart_set_series_ext_y_array(w.powerChart, w.seriesWb1, g_chartWb1);
+      lv_chart_set_series_ext_y_array(w.powerChart, w.seriesWb2, g_chartWb2);
+    }
+
+    // Battery SOC on its own transparent overlay chart: same line width as
+    // the power lines, but a light grey clearly lighter than the grid - it
+    // is a percentage, not a power value. Same geometry as the power chart,
+    // so both ranges line up; 0 % sits at the bottom edge, 100 % at the top,
+    // independent of the power range.
+    w.socChart = lv_chart_create(w.page2);
+    lv_obj_set_pos(w.socChart, 12, 0);
+    lv_obj_set_size(w.socChart, 766, 240);
+    lv_chart_set_type(w.socChart, LV_CHART_TYPE_LINE);
+    lv_chart_set_point_count(w.socChart, kChartPoints);
+    lv_chart_set_range(w.socChart, LV_CHART_AXIS_PRIMARY_Y, -5000, 5000);
+    lv_obj_set_style_bg_opa(w.socChart, LV_OPA_TRANSP, 0);
+    lv_obj_set_style_border_width(w.socChart, 0, 0);
+    lv_obj_set_style_line_width(w.socChart, kChartLineWidth, LV_PART_ITEMS);
+    lv_obj_set_style_width(w.socChart, 0, LV_PART_INDICATOR);
+    lv_obj_set_style_height(w.socChart, 0, LV_PART_INDICATOR);
+    lv_obj_set_style_line_opa(w.socChart, LV_OPA_TRANSP, LV_PART_MAIN);
+    lv_obj_set_style_pad_all(w.socChart, 0, 0);
+    w.seriesSoc = lv_chart_add_series(w.socChart, lv_color_hex(0xC9CED4), LV_CHART_AXIS_PRIMARY_Y);
+    if (g_chartData != nullptr) {
+      for (int i = 0; i < kChartPoints; ++i) {
+        g_chartSoc[i] = LV_CHART_POINT_NONE;
+      }
+      lv_chart_set_series_ext_y_array(w.socChart, w.seriesSoc, g_chartSoc);
+    }
+    // Tap on the chart shows the sample values in the legend for 30 s.
+    lv_obj_clear_flag(w.socChart, LV_OBJ_FLAG_CLICKABLE);
+    lv_obj_add_event_cb(w.powerChart, chartTapEvent, LV_EVENT_CLICKED, nullptr);
   }
-  // Tap on the chart shows the sample values in the legend for 30 s.
-  lv_obj_clear_flag(w.socChart, LV_OBJ_FLAG_CLICKABLE);
-  lv_obj_add_event_cb(w.powerChart, chartTapEvent, LV_EVENT_CLICKED, nullptr);
+
+  // Y-scale labels last, so they draw over the chart. They sit at the left
+  // edge of the card, where the plot is empty.
+  w.scaleMax = label(w.page2, 20, 5, 60, F_SMALL, C_MUTED, "--", LV_TEXT_ALIGN_LEFT, false);
+  w.scaleMid = label(w.page2, 20, 122, 60, F_SMALL, C_MUTED, "--", LV_TEXT_ALIGN_LEFT, false);
+  w.scaleMin = label(w.page2, 20, 222, 60, F_SMALL, C_MUTED, "--", LV_TEXT_ALIGN_LEFT, false);
+  lv_obj_clear_flag(w.scaleMax, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_clear_flag(w.scaleMid, LV_OBJ_FLAG_CLICKABLE);
+  lv_obj_clear_flag(w.scaleMin, LV_OBJ_FLAG_CLICKABLE);
 
   // Day-ahead exchange price band over the next 24 h in its own card,
   // shown only when the dynamic tariff is enabled. Colours: grey = no
@@ -2056,6 +2227,9 @@ void create(lv_obj_t *parent) {
     // Only the labels that sit directly on the page background follow the
     // background colour. Text inside cards keeps its palette.
     applyBackgroundTextColors();
+    // The chart image bakes its rounded corners into the page background,
+    // so it has to be repainted when that background changes.
+    renderChartImage();
   }, LV_EVENT_CLICKED, nullptr);
 
   // Network state. The setup portal stays reachable on the local network, so
@@ -2644,7 +2818,7 @@ void update(const WarpData &d) {
   }
 
   // Power chart --------------------------------------------------------
-  if (w.powerChart != nullptr) {
+  if (w.powerChart != nullptr || w.chartImage != nullptr) {
     const uint32_t now = histNowMs();
     const bool fresh = !g_haveSample || d.lastUpdateMs == 0 ||
                        d.lastUpdateMs != g_lastDataUpdateMs;
