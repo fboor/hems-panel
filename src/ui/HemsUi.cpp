@@ -1089,7 +1089,8 @@ void updateModeCard(ModeCard &mc, const WarpData &d, int index, bool global) {
 
   const char *stateName = casStateName(c.state);
   if (c.estimated && c.state == 4) {
-    snprintf(buf, sizeof(buf), "%s (geschätzt)", stateName);
+    snprintf(buf, sizeof(buf), TR("%s (berechnet)", "%s (calculated)"),
+             stateName);
   } else {
     snprintf(buf, sizeof(buf), "%s", stateName);
   }
@@ -2715,7 +2716,7 @@ void update(const WarpData &d) {
     if (d.charge_state == 4) {
       setTextIfChanged(w.wallboxNote,
                        d.chargeEstimated
-                           ? TR("Laden (berechnet)", "Charging (berechnet)")
+                           ? TR("Laden (berechnet)", "Charging (calculated)")
                            : TR("Laden", "Charging"));
     } else {
       setTextIfChanged(w.wallboxNote, casStateName(d.charge_state));
