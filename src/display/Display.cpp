@@ -30,6 +30,7 @@
 #endif
 
 #include <math.h>
+#include <string.h>
 
 #include "Backlight.h"
 #include "board/BoardPins.h"
@@ -290,10 +291,23 @@ static volatile uint32_t s_scanFrames = 0;      // frames the driver has reporte
 static uint32_t s_lineUs = 0;       // pixel clocks per line, in microseconds
 static uint32_t s_frameLines = 0;   // lines per frame, porch included
 static uint32_t s_drawMaxUs = 20000; // longest draw_bitmap() so far; starts
-                                     // conservative until measured
+                                     // conservative until measured. Also the
+                                     // beam margin's basis, and nothing lowers it
+                                     // today: the margin therefore always assumes
+                                     // the worst case and every flush waits for
+                                     // the scan to pass its strip. The heartbeat
+                                     // reports that wait, so a change to this
+                                     // value shows up as a drop in "wait".
 static uint32_t s_drawTotalUs = 0;  // all of them, since the last report
+static uint32_t s_drawWinMaxUs = 0; // longest one in the report window
 static uint32_t s_flushes = 0;
-static uint32_t s_flushesAtLastReport = 0;
+static uint32_t s_waitTotalUs = 0;   // beam wait, since the last report
+static uint32_t s_waitMaxUs = 0;
+static uint32_t s_refreshTotalUs = 0; // LVGL pass, since the last report
+static uint32_t s_refreshMaxUs = 0;
+static uint32_t s_refreshes = 0;
+static uint32_t s_renderStartUs = 0;
+static uint32_t s_drawBucket[4] = {0, 0, 0, 0};
 
 // How many lines past the strip the write starts, and how long a flush waits for
 // that at most. The margin absorbs how far the line estimate can be off - it
@@ -346,18 +360,48 @@ float displayFrameRate() {
   return fps;
 }
 
-uint32_t displaySlowestDrawMs(uint32_t *draws, uint32_t *totalMs) {
-  if (draws != nullptr) {
-    *draws = s_flushes - s_flushesAtLastReport;
+void displayStats(DisplayStats *out) {
+  if (out == nullptr) {
+    return;
   }
-  if (totalMs != nullptr) {
-    *totalMs = s_drawTotalUs / 1000;
-  }
-  s_flushesAtLastReport = s_flushes;
+  out->flushes = s_flushes;
+  out->refreshes = s_refreshes;
+  out->waitTotalUs = s_waitTotalUs;
+  out->waitMaxUs = s_waitMaxUs;
+  out->drawTotalUs = s_drawTotalUs;
+  out->drawMaxUs = s_drawWinMaxUs;
+  out->refreshTotalUs = s_refreshTotalUs;
+  out->refreshMaxUs = s_refreshMaxUs;
+  memcpy(out->drawBucket, s_drawBucket, sizeof(out->drawBucket));
+
+  s_flushes = 0;
+  s_refreshes = 0;
+  s_waitTotalUs = 0;
+  s_waitMaxUs = 0;
   s_drawTotalUs = 0;
-  uint32_t ms = s_drawMaxUs / 1000;
-  s_drawMaxUs = 0;
-  return ms;
+  s_drawWinMaxUs = 0;
+  s_refreshTotalUs = 0;
+  s_refreshMaxUs = 0;
+  memset(s_drawBucket, 0, sizeof(s_drawBucket));
+}
+
+// LVGL's own share of a refresh: everything between RENDER_START and
+// RENDER_READY, which contains the flush callbacks too - subtracting the wait
+// and draw totals reported next to it leaves what the renderer itself spent.
+static void onRenderStart(lv_event_t *) {
+  s_renderStartUs = (uint32_t)esp_timer_get_time();
+}
+
+static void onRenderReady(lv_event_t *) {
+  if (s_renderStartUs == 0) {
+    return;
+  }
+  const uint32_t t = (uint32_t)esp_timer_get_time() - s_renderStartUs;
+  s_refreshTotalUs += t;
+  if (t > s_refreshMaxUs) {
+    s_refreshMaxUs = t;
+  }
+  s_refreshes++;
 }
 
 static void lcdFlushCb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_map) {
@@ -422,13 +466,23 @@ static void lcdFlushCb(lv_display_t *disp, const lv_area_t *area, uint8_t *px_ma
   const uint32_t tDraw = (uint32_t)esp_timer_get_time() - t0 - tCorr - tWait;
   // What a flush costs, because the question behind all of this is whether a strip
   // can be written faster than the scan reaches it: the driver copies the area
-  // into the frame buffer and then writes the whole buffer back out of the CPU
-  // cache, so the cost is not the area but the frame buffer - and a frame is 26 ms
-  // long at 16 MHz. The heartbeat prints the slowest one (displaySlowestDrawMs).
+  // into the frame buffer and then writes back a range covering the whole frame
+  // buffer, so the cost is not the area but the frame buffer - and a frame is
+  // 26 ms long at 16 MHz. Both halves are reported: the wait is what the beam
+  // costs, the draw is what the driver costs, and they are fixed by different
+  // changes.
   if (tDraw > s_drawMaxUs) {
     s_drawMaxUs = tDraw;
   }
+  if (tDraw > s_drawWinMaxUs) {
+    s_drawWinMaxUs = tDraw;
+  }
   s_drawTotalUs += tDraw;
+  s_waitTotalUs += tWait;
+  if (tWait > s_waitMaxUs) {
+    s_waitMaxUs = tWait;
+  }
+  s_drawBucket[tDraw < 500 ? 0 : tDraw < 2000 ? 1 : tDraw < 5000 ? 2 : 3]++;
   s_flushes++;
   lv_display_flush_ready(disp);
   diagPhase("lcd.ready");
@@ -686,6 +740,10 @@ bool displayInit() {
   lv_display_set_buffers(s_lv_disp, buf1, nullptr, bufBytes,
                          LV_DISPLAY_RENDER_MODE_PARTIAL);
   lv_display_set_flush_cb(s_lv_disp, lcdFlushCb);
+  lv_display_add_event_cb(s_lv_disp, onRenderStart, LV_EVENT_RENDER_START,
+                          nullptr);
+  lv_display_add_event_cb(s_lv_disp, onRenderReady, LV_EVENT_RENDER_READY,
+                          nullptr);
   Serial.printf("LCD: LVGL-Puffer %u Zeilen, %u B (%u B je Pixel), %s, heap %u\n",
                 (unsigned)(bufBytes / ((size_t)LCD_H_RES * pxBytes)),
                 (unsigned)bufBytes, (unsigned)pxBytes,

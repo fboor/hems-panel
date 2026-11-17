@@ -36,15 +36,28 @@ bool displaySyncPolarity(int *hsIdleLow, int *vsIdleLow);
 uint32_t displayFrameCount();
 float displayFrameRate();
 
-// The longest time a single draw took since the last call, in milliseconds, plus
-// the number of draws in that time and their total. The total is the measure
-// that matters here: it is the time the PSRAM spends being written to while the
-// scan is reading it, and it is what a change in where LVGL's buffer lives shows
-// up in. The driver copies the area into the frame buffer and then writes the
-// whole buffer back out of the CPU cache, so this is not the size of the area but
-// the size of the frame buffer - against a frame that is 26 ms long. Returns 0
-// before the first call.
-uint32_t displaySlowestDrawMs(uint32_t *draws, uint32_t *totalMs);
+// What the panel spent its time on since the last call, all times in
+// microseconds. Split three ways because they are three different costs and a
+// change usually shortens one of them: the wait is the flush callback holding
+// back until the scan is off the strip, the draw is the driver's copy into the
+// frame buffer plus its cache write-back, and the refresh is the whole LVGL
+// pass, which contains both. The driver copies the area and then writes back a
+// range covering the whole frame buffer, so a draw costs the frame buffer, not
+// the area - against a frame that is 26 ms long on the 7-inch timings.
+struct DisplayStats {
+  uint32_t flushes;        // strips drawn
+  uint32_t refreshes;      // LVGL refresh passes
+  uint32_t waitTotalUs;    // time spent waiting for the scan
+  uint32_t waitMaxUs;
+  uint32_t drawTotalUs;    // time inside draw_bitmap()
+  uint32_t drawMaxUs;
+  uint32_t refreshTotalUs; // whole LVGL pass, flushes included
+  uint32_t refreshMaxUs;
+  // Draw time distribution: below 0.5 ms, below 2 ms, below 5 ms, 5 ms or more.
+  // The mean says little when a page switch and a moving dot are both "a draw".
+  uint32_t drawBucket[4];
+};
+void displayStats(DisplayStats *out);
 
 // Handle used internally; keeps the compiler honest in gui/.
 lv_display_t *dispGetHandle();

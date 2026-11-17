@@ -34,6 +34,7 @@ namespace {
 
 constexpr uint32_t POLL_MS = 10000;
 constexpr uint32_t UI_MS = 1000;
+constexpr uint32_t HEARTBEAT_MS = 5000;
 constexpr uint32_t HTTP_TIMEOUT_MS = 4000;
 
 // The WARP module API lives at the bare host. A URL ending in /json is also
@@ -124,6 +125,7 @@ std::unique_ptr<warpapi::Reader> g_reader;
 
 uint32_t g_lastUi = 0;
 uint32_t g_lastTick = 0;
+uint32_t g_lastHeartbeat = 0;
 
 // SD history logging. The UI ring holds 24 h at one sample per minute; the
 // restore buffers are allocated in PSRAM in setup().
@@ -511,6 +513,46 @@ void setupNetwork() {
   g_wm->startWebPortal();
 }
 
+// The panel's own numbers, once per heartbeat: the scan rate, how often LVGL
+// refreshed, and the three parts a refresh is made of. Printed instead of read
+// in a debugger because the question is always "better than the build before",
+// and that needs a number from both - and because two of the three parts are
+// invisible from outside: the beam wait happens before the driver is called and
+// the renderer's share is hidden inside the refresh pass that also contains the
+// flushes.
+void printHeartbeat() {
+  DisplayStats st = {};
+  displayStats(&st);
+  const float secs = HEARTBEAT_MS / 1000.0f;
+  const float refrPerS = (float)st.refreshes / secs;
+  const float stripsPerS = (float)st.flushes / secs;
+  const float refrAvg =
+      st.refreshes ? (float)st.refreshTotalUs / (float)st.refreshes / 1000.0f : 0.0f;
+  const float drawAvg =
+      st.flushes ? (float)st.drawTotalUs / (float)st.flushes / 1000.0f : 0.0f;
+  const float waitAvg =
+      st.flushes ? (float)st.waitTotalUs / (float)st.flushes / 1000.0f : 0.0f;
+  // The renderer's own share: the refresh pass contains the flushes, so what is
+  // left after taking them out is drawing.
+  const uint32_t renderUs =
+      st.refreshTotalUs > st.waitTotalUs + st.drawTotalUs
+          ? st.refreshTotalUs - st.waitTotalUs - st.drawTotalUs
+          : 0;
+  const float renderAvg =
+      st.refreshes ? (float)renderUs / (float)st.refreshes / 1000.0f : 0.0f;
+  Serial.printf(
+      "[hb] %4.1f fps | refr %4.1f/s %5.1f ms avg %5.1f max | strips %4.1f/s "
+      "draw %5.2f avg %5.1f max | wait %5.2f avg %5.1f max | render %5.1f "
+      "avg | heap %6u psram %7u\n",
+      displayFrameRate(), refrPerS, refrAvg, (float)st.refreshMaxUs / 1000.0f,
+      stripsPerS, drawAvg, (float)st.drawMaxUs / 1000.0f, waitAvg,
+      (float)st.waitMaxUs / 1000.0f, renderAvg, ESP.getFreeHeap(),
+      ESP.getFreePsram());
+  Serial.printf("[hb] draw ms: <0.5 %u  <2 %u  <5 %u  >=5 %u\n",
+                (unsigned)st.drawBucket[0], (unsigned)st.drawBucket[1],
+                (unsigned)st.drawBucket[2], (unsigned)st.drawBucket[3]);
+}
+
 }  // namespace
 
 void setup() {
@@ -599,5 +641,9 @@ void loop() {
   }
 
   displayLooper();
+  if (now - g_lastHeartbeat >= HEARTBEAT_MS) {
+    g_lastHeartbeat = now;
+    printHeartbeat();
+  }
   delay(5);
 }
