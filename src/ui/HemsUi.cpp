@@ -2095,9 +2095,9 @@ void create(lv_obj_t *parent) {
 
   lv_obj_t *sg = card(w.page6, 16, 0, 758, 164);
   title(sg, TR("SG-READY", "SG-READY"));
-  row(sg, 16, 30, 720, TR("Blockiert (SG1)", "Blocked (SG1)"), &w.heatBlocking);
+  row(sg, 16, 30, 720, "Status", &w.heatStatus);
   row(sg, 16, 52, 720, TR("Erweitert (SG2)", "Extended (SG2)"), &w.heatExtended);
-  row(sg, 16, 74, 720, "Status", &w.heatStatus);
+  row(sg, 16, 74, 720, TR("Blockiert (SG1)", "Blocked (SG1)"), &w.heatBlocking);
   row(sg, 16, 96, 720, "§14a EnWG", &w.heatP14);
   // 24 h history band in the same card: grey = no data, blue = none active,
   // red = SG1 (blocking), green = SG2 (extended), orange = both (wrong state).
