@@ -83,7 +83,7 @@ The energy page shows the current state as cards:
 - today's energy sums (`ENERGIE HEUTE`), including the wallbox meters and the
   battery charge / discharge.
 
-The wallbox card marks calculated power as `geschätzt`; see
+The wallbox card marks calculated power as `berechnet`; see
 [wallbox.md](wallbox.md).
 
 ## Energy balance

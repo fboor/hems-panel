@@ -26,7 +26,7 @@ estimate also works in island mode while the grid meter is off.
 The load meter normally measures the whole house connection, including the
 wallbox. The panel subtracts the wallbox power from the displayed household
 power (clamped at zero) so the house value shows household consumption only.
-The wallbox card marks calculated values as `geschätzt` and distinguishes them
+The wallbox card marks calculated values as `berechnet` and distinguishes them
 from metered values.
 
 ![Wallbox card on the energy page](../screenshots/wallbox.png)
