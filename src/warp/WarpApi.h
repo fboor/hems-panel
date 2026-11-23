@@ -3,8 +3,9 @@
 // A real WARP device does not have the flat /json endpoint; it exposes one
 // object per module (/info/name, /meters/N/config, /meters/N/value_ids,
 // /meters/N/values, /power_manager/low_level_state, ...). This adapter
-// discovers the configured meter slots, maps them by their WARP meter location
-// (Grid, Battery, Load, PV) and reads the values through the MeterValueIDs.
+// discovers the configured meter slots, maps them to the panel's roles using
+// the module configuration (power manager, heating, EVSE) first and the WARP
+// meter location as a fallback, then reads the values through MeterValueIDs.
 //
 // The transport is an interface so the same adapter runs over HTTPClient in the
 // firmware and over POSIX sockets in the emulator. No Arduino or LVGL headers
@@ -13,7 +14,6 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#include <ctype.h>
 #include <math.h>
 #include <stddef.h>
 #include <stdint.h>
@@ -115,6 +115,10 @@ struct Slot {
   int location = LOC_UNKNOWN;
   int virtualMeter = 0;
   Role role = ROLE_NONE;
+  // WARP's "excluded" flag removes a duplicate meter from location-based
+  // summaries. An explicit module configuration still selects that slot.
+  bool excluded = false;
+  bool configured = false;
   char name[40] = "";
   std::vector<int> valueIds;
   std::vector<double> values;
@@ -152,25 +156,6 @@ inline std::string extractQuery(const std::string &url) {
     query.erase(fragment);
   }
   return query;
-}
-
-inline bool containsCI(const char *text, const char *needle) {
-  if (text == nullptr || needle == nullptr || *needle == '\0') {
-    return false;
-  }
-  const size_t n = strlen(needle);
-  for (const char *p = text; *p != '\0'; ++p) {
-    size_t i = 0;
-    while (i < n && p[i] != '\0' &&
-           tolower(static_cast<unsigned char>(p[i])) ==
-               tolower(static_cast<unsigned char>(needle[i]))) {
-      ++i;
-    }
-    if (i == n) {
-      return true;
-    }
-  }
-  return false;
 }
 
 inline Role roleForLocation(int location) {
@@ -212,23 +197,18 @@ inline Role roleForVirtualMeter(int virtualMeter) {
   }
 }
 
-inline Role roleForName(const char *name) {
-  if (containsCI(name, "netz") || containsCI(name, "grid")) {
-    return ROLE_GRID;
+// Number of meter slots a WARP Energy Manager exposes. The module configs use
+// 255 to mean "none"; anything outside the slot range is treated as unset.
+const int kMeterSlots = 7;
+
+inline bool configSlot(const std::string &body, const char *key, int &out) {
+  int value = -1;
+  if (!warpjson::integer(body.data(), body.size(), key, value) || value < 0 ||
+      value >= kMeterSlots) {
+    return false;
   }
-  if (containsCI(name, "akku") || containsCI(name, "battery") ||
-      containsCI(name, "speicher")) {
-    return ROLE_BATTERY;
-  }
-  if (containsCI(name, "pv") || containsCI(name, "solar") ||
-      containsCI(name, "erzeug") || containsCI(name, "generat")) {
-    return ROLE_PV;
-  }
-  if (containsCI(name, "haus") || containsCI(name, "verbrauch") ||
-      containsCI(name, "load") || containsCI(name, "consum")) {
-    return ROLE_LOAD;
-  }
-  return ROLE_NONE;
+  out = value;
+  return true;
 }
 
 class Reader {
@@ -243,9 +223,10 @@ class Reader {
   const char *firmware() const { return firmware_; }
   const std::vector<Slot> &slots() const { return slots_; }
 
-  // Reads /info/name, /info/version and the configuration of all seven meter
-  // slots. Returns false when this is not a WARP module API. The result is
-  // cached; poll() calls discover() itself if necessary.
+  // Reads /info/name, /info/version, the module configs that name meter slots
+  // and the configuration of all seven meter slots. Returns false when this is
+  // not a WARP module API. The result is cached; poll() calls discover() itself
+  // if necessary.
   // errorOut erhaelt den fallenden Endpoint und den Transportfehler, damit im
   // Serienlog steht, warum die Entdeckung gescheitert ist - "kein WARP-Modul"
   // allein sagt nicht, ob /info/name oder die Meter-Abfragen Antworten.
@@ -270,7 +251,23 @@ class Reader {
                        sizeof(firmware_));
     }
 
-    for (int i = 0; i < 7; ++i) {
+    int gridSlot = -1;
+    int batterySlot = -1;
+    int heatingGridSlot = -1;
+    int chargerSlot = -1;
+    if (get("/power_manager/config", body, error)) {
+      configSlot(body, "meter_slot_grid_power", gridSlot);
+      configSlot(body, "meter_slot_battery_power", batterySlot);
+    }
+    if (get("/heating/config", body, error)) {
+      configSlot(body, "meter_slot_grid_power", heatingGridSlot);
+    }
+    // Older firmware and devices without a wallbox meter answer 404 here.
+    if (get("/evse/meter_config", body, error)) {
+      configSlot(body, "slot", chargerSlot);
+    }
+
+    for (int i = 0; i < kMeterSlots; ++i) {
       const std::string path = "/meters/" + std::to_string(i);
       if (!get(path + "/config", body, error)) {
         if (slots_.empty() && errorOut.empty()) {
@@ -293,19 +290,9 @@ class Reader {
       slot.slot = i;
       slot.location = haveLocation ? location : LOC_UNKNOWN;
       slot.virtualMeter = haveVirtual ? virtualMeter : 0;
+      warpjson::boolean(body.data(), body.size(), "excluded", slot.excluded);
       warpjson::string(body.data(), body.size(), "display_name", slot.name,
                        sizeof(slot.name));
-
-      slot.role = roleForLocation(slot.location);
-      if (slot.role == ROLE_NONE) {
-        slot.role = roleForVirtualMeter(slot.virtualMeter);
-      }
-      if (slot.role == ROLE_NONE) {
-        slot.role = roleForName(slot.name);
-      }
-      if (slot.role == ROLE_NONE) {
-        slot.role = ROLE_EXTERNAL;
-      }
 
       if (!get(path + "/value_ids", body, error)) {
         continue;
@@ -325,6 +312,8 @@ class Reader {
       }
       slots_.push_back(std::move(slot));
     }
+
+    assignRoles(gridSlot, batterySlot, heatingGridSlot, chargerSlot);
 
     if (slots_.empty() && errorOut.empty()) {
       errorOut = "keine Messstellen in /meters/0..6";
@@ -497,6 +486,9 @@ class Reader {
     bool gridVoltageFound = false;
 
     for (const Slot &slot : slots_) {
+      if (slot.excluded && !slot.configured) {
+        continue;
+      }
       bool roleFound = false;
 
       switch (slot.role) {
@@ -1052,6 +1044,34 @@ class Reader {
     return true;
   }
 
+  // The WARP UI treats the module configs as authoritative: they name the
+  // meter slot used for grid power, battery power and the wallbox. Location and
+  // virtual meter are only fallbacks for slots no module claims. A slot WARP
+  // marked "excluded" is a duplicate for location-based summaries and gets no
+  // role that way; an explicit config still wins. Display names are never
+  // inspected: they are user-editable and can be misleading.
+  void assignRoles(int gridSlot, int batterySlot, int heatingGridSlot,
+                   int chargerSlot) {
+    for (Slot &slot : slots_) {
+      const bool grid = slot.slot == gridSlot || slot.slot == heatingGridSlot;
+      const bool battery = slot.slot == batterySlot;
+      const bool charger = slot.slot == chargerSlot;
+      if (grid || battery || charger) {
+        slot.role = grid ? ROLE_GRID
+                         : (battery ? ROLE_BATTERY : ROLE_CHARGER);
+        slot.configured = true;
+        continue;
+      }
+      if (slot.excluded) {
+        continue;
+      }
+      slot.role = roleForLocation(slot.location);
+      if (slot.role == ROLE_NONE) {
+        slot.role = roleForVirtualMeter(slot.virtualMeter);
+      }
+    }
+  }
+
   static bool value(const Slot &slot, int id, double &out) {
     const size_t n = slot.valueIds.size();
     for (size_t i = 0; i < n; ++i) {
@@ -1528,6 +1548,9 @@ class Reader {
     int batterySlot = -1;
     std::vector<int> chargerSlots;
     for (const Slot &slot : slots_) {
+      if (slot.excluded && !slot.configured) {
+        continue;
+      }
       if (slot.role == ROLE_LOAD && loadSlot < 0) {
         loadSlot = slot.slot;
       }

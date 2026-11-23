@@ -5,9 +5,10 @@ a charge-mode page for every charger that the WARP charge manager reports.
 
 ## Power: meter or estimate
 
-When a wallbox has its own meter, the panel reads the power from a meter with
-location `Charger` (2) or `Vehicle` (8). It prefers the total power value and
-falls back to the three phase values.
+When a wallbox has its own meter, the panel reads the power from the slot named
+by `/evse/meter_config`, or from a meter with location `Charger` (2) or `Vehicle`
+(8) when that endpoint is absent. It prefers the total power value and falls back
+to the three phase values.
 
 Without a wallbox meter, the panel estimates the charging power from the
 allocated current in `/charge_manager/state` (`ac`, in mA) and the measured grid
@@ -37,8 +38,7 @@ counter (`209`) and falls back to the import-minus-export counter (`215`) when
 that is all the meter provides. WARP reports both in kWh, so they are converted
 to Wh on ingest.
 
-Every meter with location `Charger` (2) or `Vehicle` (8) contributes to one
-combined value:
+Every meter assigned to a wallbox contributes to one combined value:
 
 - the `ZÄHLER` card on the service page shows the sum since commissioning,
 - the `ENERGIE HEUTE` card on the energy page shows today's sum, taken from the

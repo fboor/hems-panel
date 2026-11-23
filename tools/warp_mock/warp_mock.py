@@ -5,6 +5,7 @@ The mock serves the same module API as a real WARP device:
 
     /info/name, /info/version
     /meters/0..6/config, /value_ids, /values
+    /power_manager/config, /heating/config, /evse/meter_config
     /power_manager/low_level_state
     /charge_manager/state
     /solar_forecast/state
@@ -87,6 +88,10 @@ BASE = {
     "charge_modes": None,         # per-charger list; None = use charge_mode
     "supported_charge_modes": [1, 2, 3, 0],  # Off, PV, Min+PV, Fast
     "charger_specs": None,        # explicit multi-charger layout
+    # Meter mapping: optional overrides for the meter configs and for the slots
+    # named by the module configs (used by the meter_mapping scenario).
+    "meter_config_overrides": None,
+    "module_slot_overrides": None,
     # Heating (SG-Ready) and outdoor temperatures.
     "heating_enabled": True,
     "sgr_blocking": True,
@@ -262,6 +267,55 @@ def scenario(name):
         # Yesterday's grid/PV/battery counters are missing, like a day the
         # WARP spent without a network connection.
         d["daily_gap"] = True
+    elif name == "meter_mapping":
+        # Names and locations contradict the module configs. The panel must use
+        # the configs, ignore the names and leave unclaimed or excluded slots
+        # without a role instead of guessing one.
+        d.update(
+            charger_specs=[
+                {
+                    "name": "Wallbox",
+                    "state": 4,
+                    "current": 10000.0,
+                    "phases": 1,
+                    "supported": 1,
+                    "meter_power": 2300.0,
+                    "meter_energy_wh": 120000.0,
+                    "meter_day_wh": 2000.0,
+                },
+                {
+                    "name": "Doppelzaehler",
+                    "state": 0,
+                    "current": 0.0,
+                    "phases": 1,
+                    "supported": 1,
+                    "meter_power": 0.0,
+                    "meter_energy_wh": 50000.0,
+                    "meter_day_wh": 0.0,
+                },
+                {
+                    "name": "Sonstiges",
+                    "state": 0,
+                    "current": 0.0,
+                    "phases": 1,
+                    "supported": 1,
+                    "meter_power": 0.0,
+                    "meter_energy_wh": 5000.0,
+                    "meter_day_wh": 0.0,
+                },
+            ],
+            meter_config_overrides={
+                2: {"display_name": "Verbrauch", "location": 0,
+                    "virtual_meter": 0},
+                3: {"display_name": "Netz", "location": 0, "virtual_meter": 0},
+                4: {"display_name": "PV", "location": 2, "virtual_meter": 0},
+                5: {"display_name": "Netz", "location": 0,
+                    "virtual_meter": 0, "excluded": True},
+                6: {"display_name": "Sonstiges", "location": 0,
+                    "virtual_meter": 0},
+            },
+            module_slot_overrides={"grid": 2, "battery": 3, "charger": 4},
+        )
     return d
 
 
@@ -277,6 +331,7 @@ SCENARIOS = (
     "wallboxes",
     "negative_prices",
     "daily_gap",
+    "meter_mapping",
 )
 
 
@@ -516,9 +571,40 @@ def meter_payloads(d):
             ids,
             values,
         ))
+    overrides = d.get("meter_config_overrides") or {}
+    for index, changes in overrides.items():
+        config = slots[index][0]
+        if config[1] is not None:
+            config[1].update(changes)
+
     while len(slots) < 7:
         slots.append(([0, None], [], []))
     return slots
+
+
+def module_slots(d):
+    """Return the meter slots named by the power manager, heating and EVSE.
+
+    WARP uses 255 for "none" and may omit /evse/meter_config entirely, so each
+    entry is either a slot number or None.
+    """
+    override = d.get("module_slot_overrides")
+    if override is not None:
+        return (override.get("grid"), override.get("battery"),
+                override.get("charger"))
+
+    grid = battery = charger = None
+    for index, (config, value_ids, values) in enumerate(meter_payloads(d)):
+        if not config or config[1] is None:
+            continue
+        location = config[1].get("location")
+        if location == 4 and grid is None:
+            grid = index
+        elif location == 5 and battery is None:
+            battery = index
+        elif location == 2 and charger is None:
+            charger = index
+    return grid, battery, charger
 
 
 class Handler(BaseHTTPRequestHandler):
@@ -625,6 +711,29 @@ class Handler(BaseHTTPRequestHandler):
                 "config": "1.5.0",
                 "config_type": "wem",
             })
+            return
+
+        grid, battery, charger = module_slots(d)
+        if path == "/power_manager/config":
+            self._send({
+                "meter_slot_grid_power": grid if grid is not None else 255,
+                "meter_slot_battery_power": battery if battery is not None
+                else 255,
+                "battery_inverted": False,
+            })
+            return
+
+        if path == "/heating/config":
+            self._send({
+                "meter_slot_grid_power": grid if grid is not None else 255,
+            })
+            return
+
+        if path == "/evse/meter_config":
+            if charger is None:
+                self.send_error(404)
+            else:
+                self._send({"slot": charger})
             return
 
         if path == "/rtc/time":

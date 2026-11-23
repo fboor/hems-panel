@@ -17,6 +17,9 @@ emulator. The flat fallback is `src/warp/WarpParse.h`.
 | `/meters/N/config` | meter slot configuration: location, virtual meter, name |
 | `/meters/N/value_ids` | the value IDs that this slot provides |
 | `/meters/N/values` | the current values, in the order of `value_ids` |
+| `/power_manager/config` | meter slots selected for grid and battery power |
+| `/heating/config` | meter slot selected for grid power |
+| `/evse/meter_config` | meter slot reserved for the wallbox (optional) |
 | `/power_manager/low_level_state` | fallback for grid/battery power and SOC |
 | `/power_manager/charge_mode` | global charge mode |
 | `/charge_manager/state` | chargers: state, current, phases, name |
@@ -48,27 +51,36 @@ Commands answer with an empty `200`, like the WARP firmware.
 
 ## Meter mapping
 
-The adapter reads the slot configuration and value IDs, then selects the values
-the UI needs:
+The adapter reads the module configs, the meter configs and the value IDs, then
+selects the values the UI needs. A role is chosen in this order:
 
-| Role | WARP location | Values |
+1. A module config names the slot explicitly: `meter_slot_grid_power` in
+   `/power_manager/config` or `/heating/config` selects the grid meter,
+   `meter_slot_battery_power` selects the battery meter, and `slot` in
+   `/evse/meter_config` selects the wallbox meter. `255` means "none".
+2. For slots no module claims, the WARP meter `location` decides.
+3. If the location is unknown, the RCT `virtual_meter` is used as a last resort.
+
+Display names are never inspected: they are user-editable and can contradict the
+configuration. A slot WARP marks `excluded` is a duplicate for location-based
+summaries and gets no role that way; an explicit module config still wins.
+Unassigned slots do not contribute to any sum. The external role is only used
+for a genuine WARP location 1 ("Anderer"/S0), never as a fallback for an unknown
+meter.
+
+| Role | Selected by | Values |
 |---|---|---|
-| grid | 4 | power L1/L2/L3 `39/48/57`, total `74`, import `209`, export `211`, voltage `1/2/3`, frequency `361` |
-| battery | 5 | voltage `10`, current `396`, power `404`, charge `413`, discharge `415`, SOC `387` |
-| household | 6 | power L1/L2/L3 `39/48/57`, total `74`, energy `215` |
-| PV | 7 | string power `442/443`, total `452`, string energy `454/456`, total `472` |
-| wallbox | 2 or 8 | power L1/L2/L3 `39/48/57`, total `74`, energy import `209` (fallback `215`) |
-| external / S0 | other | total `74` |
+| grid | module config or location 4 | power L1/L2/L3 `39/48/57`, total `74`, import `209`, export `211`, voltage `1/2/3`, frequency `361` |
+| battery | module config or location 5 | voltage `10`, current `396`, power `404`, charge `413`, discharge `415`, SOC `387` |
+| household | location 6 | power L1/L2/L3 `39/48/57`, total `74`, energy `215` |
+| PV | location 7 | string power `442/443`, total `452`, string energy `454/456`, total `472` |
+| wallbox | `/evse/meter_config` or location 2/8 | power L1/L2/L3 `39/48/57`, total `74`, energy import `209` (fallback `215`) |
+| external / S0 | location 1 | total `74` |
 
 The energy value IDs (`209/211/215/413/415/454/456/472`) are reported in **kWh**
 by WARP. The panel converts them to Wh on ingest; see [energy.md](energy.md).
 Several wallbox meters are summed into one energy value; today's part is the
 day-over-day difference of their import counters in the daily history.
-
-A meter is matched by its WARP location first. If the location is unknown, the
-adapter tries `virtual_meter`, then keywords in `display_name` ("Netz", "Akku",
-"PV", "Verbrauch", ...). A slot that still has no role is treated as an external
-meter.
 
 If no grid or battery meter is configured, the adapter falls back to
 `/power_manager/low_level_state` for `power_at_meter`, `power_at_battery` and

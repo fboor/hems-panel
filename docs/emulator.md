@@ -98,6 +98,7 @@ Available scenarios:
 | `wallboxes` | three chargers with different states and modes |
 | `negative_prices` | day-ahead curve with a negative midday window |
 | `daily_gap` | a missing day in the daily history, so today's sums come from the 5-minute history |
+| `meter_mapping` | misleading names and locations, excluded and unknown meter slots |
 
 `wallbox` and `wallbox_3p` exercise the calculated power (1 and 3 phases);
 `wallbox_meter` adds a meter with location `Charger`; `wallboxes` configures
@@ -105,7 +106,9 @@ three boxes for the configuration page. `negative_prices` keeps the midsummer
 source values and only changes the day-ahead curve, so the price band shows its
 bright-green negative state around noon. `daily_gap` leaves yesterday's grid, PV
 and battery counters empty while the day before stays complete, so a naive
-last-valid-day baseline would double today's totals.
+last-valid-day baseline would double today's totals. `meter_mapping` makes the
+meter names and locations contradict the module configs and adds excluded and
+unassigned slots, so `--probe` shows whether the roles come from the configs.
 
 The mock also accepts the charge-mode commands and remembers the result, so the
 mode buttons can be exercised without a real device:
@@ -162,4 +165,12 @@ and battery values match the mock's day values in both cases:
 
 ```sh
 python3 tools/test_daily_gap.py
+```
+
+`tools/test_meter_mapping.py` checks the roles printed by `--probe` for the
+normal and `meter_mapping` scenarios, so a regression in config-driven meter
+selection shows up without a device:
+
+```sh
+python3 tools/test_meter_mapping.py
 ```
