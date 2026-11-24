@@ -90,8 +90,12 @@ The wallbox card marks calculated power as `berechnet`; see
 
 The energy balance page is a 24 h chart with one sample per minute. The visible
 window can be 1, 2, 4, 6, 12 or 24 hours. The chart draws grid, PV, consumption,
-battery and up to two wallboxes, plus the battery SOC. A tap on the chart shows
-the sample values in the legend for 30 seconds.
+battery and up to two wallboxes, plus the battery SOC. Values between samples
+are interpolated using the recorded timestamps, so the lines follow the actual
+times instead of holding each value until the next sample. An interval longer
+than 90 seconds without a sample is left as a visible gap in every series. A
+tap on the chart shows the interpolated values at that point in the legend for
+30 seconds.
 
 Below the chart, the day-ahead exchange-price band is shown when the dynamic
 tariff is enabled; see [energy.md](energy.md#day-ahead-exchange-prices).

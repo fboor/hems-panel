@@ -84,6 +84,9 @@ constexpr int kChartW = 766;
 constexpr int kChartH = 240;
 constexpr int kChartBorder = 1;
 constexpr uint32_t kSampleIntervalMs = 60u * 1000u;
+// One missed minute plus the usual poll jitter is a gap, not a slope. Points
+// between samples that far apart are left blank instead of being invented.
+constexpr uint32_t kChartGapMs = kSampleIntervalMs + kSampleIntervalMs / 2u;
 constexpr uint32_t kHistoryMs = 24u * 60u * 60u * 1000u;
 constexpr int kMaxSamples = 24 * 60 + 2;
 
@@ -1118,6 +1121,55 @@ const PowerSample &sampleAt(int index) {
   return g_samples[(g_sampleHead + index) % kMaxSamples];
 }
 
+// History value at an age before the newest sample. The samples carry their
+// own timestamp, so a point between two samples is interpolated instead of
+// holding the older one: that removes the stairs without adding a sample.
+// Across a gap the value is unknown and the chart leaves the point blank.
+// The returned timestamp is the point's own time, which keeps a tapped legend
+// consistent with the line it points at.
+bool sampleAtAge(uint32_t ageMs, PowerSample &out) {
+  if (g_sampleCount == 0) {
+    return false;
+  }
+  const uint32_t newest = sampleAt(g_sampleCount - 1).timeMs;
+  if (ageMs > newest - sampleAt(0).timeMs) {
+    return false;  // left of the recorded history
+  }
+
+  int older = 0;
+  while (older + 1 < g_sampleCount &&
+         (uint32_t)(newest - sampleAt(older + 1).timeMs) >= ageMs) {
+    ++older;
+  }
+  const PowerSample &a = sampleAt(older);
+  const uint32_t ageA = newest - a.timeMs;
+  if (ageA == ageMs) {
+    out = a;
+    return true;
+  }
+  if (older + 1 >= g_sampleCount) {
+    return false;
+  }
+  const PowerSample &b = sampleAt(older + 1);
+  const uint32_t ageB = newest - b.timeMs;
+  if (ageA - ageB > kChartGapMs) {
+    return false;
+  }
+
+  const float f = (float)(ageA - ageMs) / (float)(ageA - ageB);
+  out.timeMs = newest - ageMs;
+  out.grid = a.grid + (b.grid - a.grid) * f;
+  out.pv = a.pv + (b.pv - a.pv) * f;
+  out.house = a.house + (b.house - a.house) * f;
+  out.battery = a.battery + (b.battery - a.battery) * f;
+  out.wb1 = a.wb1 + (b.wb1 - a.wb1) * f;
+  out.wb2 = a.wb2 + (b.wb2 - a.wb2) * f;
+  // One missing battery value is enough to leave SOC out for this point.
+  out.soc = (a.soc < 0.0f || b.soc < 0.0f) ? -1.0f
+                                            : a.soc + (b.soc - a.soc) * f;
+  return true;
+}
+
 // Keep the x labels in the same units the window uses: 45m for an hour,
 // 1h30 for the middle of a two-hour window, and so on.
 void formatAgeLabel(char *out, size_t n, uint32_t seconds) {
@@ -1158,11 +1210,10 @@ int selectWindow(uint32_t spanMs) {
   return 24 * 3600;
 }
 
-// Find the sample plotted at chart point pointIdx (same resampling as
-// rebuildPowerChart). Returns false in the empty left region before the
-// first sample.
+// Value plotted at chart point pointIdx (same interpolation as
+// rebuildPowerChart). Returns false in the empty left region and in a gap.
 bool sampleForChartPoint(int pointIdx, PowerSample &out) {
-  if (g_sampleCount == 0) {
+  if (g_sampleCount == 0 || pointIdx < 0 || pointIdx >= kChartPoints) {
     return false;
   }
   const uint32_t newest = sampleAt(g_sampleCount - 1).timeMs;
@@ -1171,16 +1222,7 @@ bool sampleForChartPoint(int pointIdx, PowerSample &out) {
   const uint32_t age = (uint32_t)((uint64_t)windowMs *
                                   (uint32_t)(kChartPoints - 1 - pointIdx) /
                                   (uint32_t)(kChartPoints - 1));
-  int sampleIndex = 0;
-  while (sampleIndex + 1 < g_sampleCount &&
-         (uint32_t)(newest - sampleAt(sampleIndex + 1).timeMs) >= age) {
-    ++sampleIndex;
-  }
-  if ((uint32_t)(newest - sampleAt(sampleIndex).timeMs) < age) {
-    return false;
-  }
-  out = sampleAt(sampleIndex);
-  return true;
+  return sampleAtAge(age, out);
 }
 
 const char *legendBaseName(int i) {
@@ -1254,44 +1296,90 @@ inline int chartX(int point) {
                             (kChartPoints - 1);
 }
 
-inline int chartY(int value, int range) {
-  const int h = kChartH - 2 * kChartBorder;
-  return kChartBorder + h - ((value + range) * h) / (2 * range);
+inline float chartY(float value, int range) {
+  const float h = (float)(kChartH - 2 * kChartBorder);
+  return (float)kChartBorder + h -
+         ((value + (float)range) * h) / (2.0f * (float)range);
 }
 
-// Two-pixel polyline from a resampled series. Columns are filled from the
-// previous y to the current one so a steep jump stays connected, which is what
-// LVGL's thick line does with four masks and a blend per segment.
+// Blend one pixel of the antialiased two-pixel line into the cached image.
+void blendChartPixel(int x, int y, uint16_t color, float coverage) {
+  if (x < kChartBorder || x >= kChartW - kChartBorder || y < kChartBorder ||
+      y >= kChartH - kChartBorder) {
+    return;
+  }
+  uint16_t &dst = g_chartPixels[y * kChartW + x];
+  if (coverage >= 0.999f) {
+    dst = color;
+    return;
+  }
+  const int alpha = (int)lroundf(coverage * 255.0f);
+  if (alpha <= 0) {
+    return;
+  }
+  const int r0 = (dst >> 11) & 0x1f;
+  const int g0 = (dst >> 5) & 0x3f;
+  const int b0 = dst & 0x1f;
+  const int r1 = (color >> 11) & 0x1f;
+  const int g1 = (color >> 5) & 0x3f;
+  const int b1 = color & 0x1f;
+  const int r = r0 + ((r1 - r0) * alpha + 127) / 255;
+  const int g = g0 + ((g1 - g0) * alpha + 127) / 255;
+  const int b = b0 + ((b1 - b0) * alpha + 127) / 255;
+  dst = (uint16_t)((r << 11) | (g << 5) | b);
+}
+
+// Coverage of a pixel row by a two-pixel line centred at y: the overlap of the
+// row with [y-1, y+1]. Subpixel centres and blended edges keep a shallow slope
+// from turning into a staircase.
+void plotChartPixel(int x, float y, uint16_t color) {
+  const float lo = y - 1.0f;
+  const float hi = y + 1.0f;
+  for (int row = (int)floorf(lo); row <= (int)floorf(hi); ++row) {
+    const float overlap =
+        std::min((float)(row + 1), hi) - std::max((float)row, lo);
+    if (overlap > 0.0f) {
+      blendChartPixel(x, row, color, std::min(1.0f, overlap));
+    }
+  }
+}
+
+// Polyline through the interpolated series. Points marked NONE break the line,
+// which is how a gap in the history becomes visible on the chart.
 void drawChartSeries(const int32_t *values, uint16_t color) {
   if (g_chartPixels == nullptr) {
     return;
   }
-  const int yMin = kChartBorder;
-  const int yMax = kChartH - kChartBorder - 1;
-  int prevX = -1;
-  int prevY = 0;
+  bool havePrev = false;
+  float prevX = 0.0f;
+  float prevY = 0.0f;
   for (int i = 0; i < kChartPoints; ++i) {
     const int32_t v = values[i];
     if (v == LV_CHART_POINT_NONE) {
-      prevX = -1;
+      havePrev = false;
       continue;
     }
-    const int x = chartX(i);
-    const int y = chartY((int)v, g_chartRange);
-    if (prevX >= 0 && x > prevX) {
-      for (int cx = prevX; cx < x; ++cx) {
-        const int cy = prevY + (y - prevY) * (cx - prevX) / (x - prevX);
-        int y0 = cy < prevY ? cy : prevY;
-        int y1 = cy < prevY ? prevY : cy;
-        if (y0 < yMin) y0 = yMin;
-        if (y1 > yMax) y1 = yMax;
-        for (int yy = y0; yy <= y1; ++yy) {
-          uint16_t *row = g_chartPixels + yy * kChartW + cx;
-          row[0] = color;
-          if (cx + 1 < kChartW - kChartBorder) row[1] = color;
-        }
+    // Keep subpixel x positions as well: with 240 points on a 764 px plot the
+    // spacing is fractional, and rounding it would show up as uneven steps.
+    const float x = (float)kChartBorder +
+                    (float)(kChartW - 2 * kChartBorder) * (float)i /
+                        (float)(kChartPoints - 1);
+    const float y = chartY((float)v, g_chartRange);
+    if (!havePrev) {
+      plotChartPixel((int)lroundf(x), y, color);
+    } else {
+      const float dx = x - prevX;
+      const float dy = y - prevY;
+      const int steps = std::max(
+          1, (int)std::ceil(std::fmax(std::fabs(dx), std::fabs(dy))));
+      // Step along the segment instead of once per chart column: a steep jump
+      // stays connected, a flat one is painted just once.
+      for (int s = 1; s <= steps; ++s) {
+        const float f = (float)s / (float)steps;
+        plotChartPixel((int)lroundf(prevX + dx * f), prevY + dy * f, color);
       }
     }
+    havePrev = true;
     prevX = x;
     prevY = y;
   }
@@ -1429,9 +1517,10 @@ void recordPowerSample(uint32_t now, const WarpData &d) {
   }
 }
 
-// Resample the raw history into the fixed chart width. Samples are held until
-// the next one arrives, so the newest value sits at the right edge and the
-// left side stays empty until the window has actually been covered.
+// Resample the raw history into the fixed chart width. Points are interpolated
+// between the timestamped samples, so the curve follows the actual times and
+// has no stairs. Unknown regions (before the first sample and gaps in the log)
+// stay blank instead of being filled with an invented value.
 void rebuildPowerChart() {
   if ((w.powerChart == nullptr && w.chartImage == nullptr) ||
       g_chartData == nullptr || g_sampleCount == 0) {
@@ -1444,7 +1533,6 @@ void rebuildPowerChart() {
   const uint32_t windowMs = (uint32_t)windowSec * 1000u;
   updateTimeLabels(windowSec);
 
-  int sampleIndex = 0;
   bool haveValue = false;
   float mn = 0.0f;
   float mx = 0.0f;
@@ -1454,13 +1542,8 @@ void rebuildPowerChart() {
         (uint64_t)windowMs * (uint32_t)(kChartPoints - 1 - i) /
         (uint32_t)(kChartPoints - 1));
 
-    // Move to the newest sample that is not newer than this point's time.
-    while (sampleIndex + 1 < g_sampleCount &&
-           (uint32_t)(newest - sampleAt(sampleIndex + 1).timeMs) >= age) {
-      ++sampleIndex;
-    }
-
-    if ((uint32_t)(newest - sampleAt(sampleIndex).timeMs) < age) {
+    PowerSample s{};
+    if (!sampleAtAge(age, s)) {
       g_chartGrid[i] = LV_CHART_POINT_NONE;
       g_chartPv[i] = LV_CHART_POINT_NONE;
       g_chartHouse[i] = LV_CHART_POINT_NONE;
@@ -1471,13 +1554,11 @@ void rebuildPowerChart() {
       continue;
     }
 
-    const PowerSample &s = sampleAt(sampleIndex);
     const float values[6] = {s.grid, s.pv, s.house, s.battery, s.wb1, s.wb2};
     int32_t *const out[6] = {g_chartGrid, g_chartPv, g_chartHouse,
                              g_chartBattery, g_chartWb1, g_chartWb2};
     for (int j = 0; j < 6; ++j) {
       out[j][i] = (int32_t)lroundf(values[j]);
-      g_chartSoc[i] = (int32_t)lroundf(s.soc);
       if (!haveValue) {
         mn = mx = values[j];
         haveValue = true;
@@ -1485,6 +1566,7 @@ void rebuildPowerChart() {
       if (values[j] < mn) mn = values[j];
       if (values[j] > mx) mx = values[j];
     }
+    g_chartSoc[i] = (int32_t)lroundf(s.soc);
   }
 
   // Round outwards on a progressive step grid: 500 W steps up to 2 kW,
