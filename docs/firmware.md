@@ -110,9 +110,10 @@ pio device monitor -e esp32-s3-touch-lcd-7 --port /dev/ttyACM1 -b 115200
 ## Recovery and erase
 
 `./flash.sh --erase` erases the whole 16 MB flash before flashing. NVS, the WLAN
-credentials and the WARP endpoint are lost; the setup access point opens again
-on the next boot. Use it after a bad image, when the panel comes from a different
-project, or when the partition table has changed.
+credentials, the WARP endpoint and the selected theme are lost; the setup access
+point opens again on the next boot and the palette starts dark. Use it after a
+bad image, when the panel comes from a different project, or when the partition
+table has changed.
 
 If the panel cannot reach the configured WLAN after a change, power-cycle it.
 The setup access point opens again because the saved connection failed. The

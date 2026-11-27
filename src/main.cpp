@@ -244,6 +244,24 @@ void saveUrl() {
   prefs.end();
 }
 
+// The theme lives in the same NVS namespace as the endpoint. An unset key
+// stays on the dark palette, and unknown values fall back to it on read.
+void loadTheme() {
+  Preferences prefs;
+  prefs.begin("warp", true);
+  const uint8_t value =
+      prefs.getUChar("theme", (uint8_t)hemsui::ThemeId::Dark);
+  prefs.end();
+  hemsui::setTheme(hemsui::themeId(value));
+}
+
+void saveTheme(hemsui::ThemeId id) {
+  Preferences prefs;
+  prefs.begin("warp", false);
+  prefs.putUChar("theme", (uint8_t)id);
+  prefs.end();
+}
+
 // The form accepts a bare IP, a hostname or a full URL. Store one canonical
 // form so the reader and the service page always see the same string.
 void normalizeUrl(const char *input, char *out, size_t n) {
@@ -620,6 +638,8 @@ void setup() {
     }
   }
 
+  loadTheme();
+  hemsui::setThemeChangeHandler(saveTheme);
   hemsui::create(lv_screen_active());
   hemsui::setConnectionState(hemsui::ConnectionState::NoNet);
   hemsui::setChargeModeHandler(setChargeMode);

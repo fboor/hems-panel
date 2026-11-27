@@ -29,7 +29,9 @@ NVS. A trailing `/json` is still accepted for the flat fallback, but a real
 WARP firmware serves the module API, not `/json`. The reader is reset when the
 address changes, so the next poll uses the new endpoint immediately.
 
-The panel uses DHCP. Only the WARP address is configured manually.
+The panel uses DHCP. Only the WARP address is configured manually. The colour
+theme picked on the service page is stored in the same NVS namespace under
+`theme`; a missing or unknown value starts with the dark palette.
 
 ## After the first connection
 

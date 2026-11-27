@@ -122,8 +122,12 @@ The page is populated from `/heating/state`, `/heating/sgr_blocking_override`,
 
 The service page contains:
 
-- **HINTERGRUND** — cycles the page background between black, grey and white, and
-  switches the flow-page background image on and off,
+- **THEME** — cycles the complete palette: **Dunkel** (the original dark scheme
+  with the flow-page photograph) and **Hell** (white cards on a grey-green
+  surface with green accents and a drawn schematic instead of the photo). The
+  button next to it switches that background image on and off. The chart and
+  the history bands keep their data colours; only their surrounding surface
+  follows the theme. The choice is stored in NVS and restored on boot,
 - **NETZWERK** — WLAN, panel IP, WARP endpoint, the local web setup URL and the
   SD-card status line (see [sd-log.md](sd-log.md)),
 - **ZÄHLER** — generation, consumption, grid import, feed-in and battery energy
