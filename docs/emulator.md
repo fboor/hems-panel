@@ -160,11 +160,11 @@ python3 tools/test_io_status.py
 
 `tools/test_theme.py` renders the service page with both palettes, taps the
 `THEME` button to check the runtime switch, checks the schematic only on the
-light flow page, including its blue house highlights and yellow particles, and
-checks the plain panel on the service pages and on the dark flow page with the
-image off. The light panel is deep green. It also renders the chart from a fresh
-SD history to verify that the card follows the palette while the series keep
-their colours:
+light flow page, including its yellow particles, and checks the blue active
+button plus the plain panel on the service pages and on the dark flow page with
+the image off. In the light theme the header and footer are deep green and the
+panel is light. It also renders the chart from a fresh SD history to verify that
+the card follows the palette while the series keep their colours:
 
 ```sh
 python3 tools/test_theme.py

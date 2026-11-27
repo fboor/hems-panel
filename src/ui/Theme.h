@@ -37,8 +37,9 @@ struct Theme {
   uint32_t text;
   uint32_t muted;
 
-  // Text directly on the page background needs a darker shade on light
-  // surfaces; text inside cards keeps the normal palette colours.
+  // Text directly on the page background flips with that surface: dark text on
+  // the dark theme, light text on the light theme's dark-green header/footer.
+  // Text inside cards keeps the normal palette colours.
   uint32_t onBackground;
   uint32_t mutedOnBackground;
 
@@ -75,8 +76,8 @@ struct Theme {
 
   // Schematic drawn on the flow page when no photograph is used. It has the
   // photo's 800x356 geometry. backdropAccent keeps the house highlights blue in
-  // both themes. backdropPanel is the plain surface on every other page: dark
-  // green in light, matched to bg in dark.
+  // both themes. backdropPanel is the plain surface on every other page: light
+  // in light, matched to bg in dark.
   uint32_t backdrop;
   uint32_t backdropFill;
   uint32_t backdropLine;
@@ -103,20 +104,20 @@ inline const Theme &theme(ThemeId id) {
           0x10171F, 0x171F29, 0x34465A, 0x4AA3FF,
           0x0E1319,
       },
-      // Light: white cards on a grey-green surface, green as the accent.
+      // Light: dark-green header/footer, light centre, blue active buttons.
       {
           "Hell", "Light", false,
-          0xE7ECE8, 0xFFFFFF, 0xF1F5F2, 0xC6D1C9, 0x1D2A22, 0x607166,
-          0x1D2A22, 0x52665A,
-          0x2E8B57, 0xFFFFFF,
-          0xF1F5F2, 0x1D2A22, 0x2E8B57, 0xFFFFFF, 0x607166,
+          0x145033, 0xFFFFFF, 0xF1F5F2, 0xC6D1C9, 0x1D2A22, 0x607166,
+          0xE8F3EC, 0xAFC4B6,
+          0x4AA3FF, 0xFFFFFF,
+          0xF1F5F2, 0x1D2A22, 0x4AA3FF, 0xFFFFFF, 0x607166,
           0x2E8B57, 0xB23A34, 0x2C6E8E, 0xB07A1E,
           0xC98A1B, 0x2E8B57, 0x7755A8,
           0xF6EBD5, 0xDDEAF1, 0xDDEEE4, 0xE8E0F2,
           0xFFD400, 0xFFD400, 0xFFD400, 0xFFD400,
           0xF3DEDC, 0xDDEEE4, 0xF5E8CF,
           0xE7ECE8, 0xF4F7F5, 0xB6C4BA, 0x4AA3FF,
-          0x145033,
+          0xE7ECE8,
       },
   };
   const unsigned i = (unsigned)id < kThemeCount ? (unsigned)id : 0u;

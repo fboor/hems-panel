@@ -3,11 +3,12 @@
 
 Checks that the dark and light palettes repaint both the page background and
 the cards, that tapping the THEME button switches to the next palette without
-a restart, and that the schematic appears only on the light flow page. Other
-pages keep a plain dark-green 800x356 panel in the light theme and a panel
-matching the background in the dark theme. The light schematic uses blue house
-highlights and its flow particles are yellow. The chart is checked too: its card
-must follow the theme while the series keep their theme-independent colours.
+a restart, and that the schematic appears only on the light flow page. Active
+buttons are blue in both themes. The light theme keeps its dark-green colour in
+the header and footer and shows a light centre; its flow particles are yellow.
+The dark theme keeps its plain panel and particles unchanged. The chart is
+checked too: its card must follow the theme while the series keep their
+theme-independent colours.
 
 Usage: python3 tools/test_theme.py
 Exit code 0 = all checks pass, 1 = at least one failed.
@@ -28,12 +29,15 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MOCK_PORT = 8084
 DARK_BG = (8, 16, 24)
 DARK_CARD = (16, 28, 41)
-LIGHT_BG = (230, 238, 238)
+LIGHT_BG = (16, 80, 49)
 LIGHT_CARD = (255, 255, 255)
-# Plain panel after RGB565 conversion. The light panel is deep green; dark
-# matches the page background.
-LIGHT_PANEL = (16, 80, 49)
+# Plain panel after RGB565 conversion. The light panel is light; dark matches
+# the page background.
+LIGHT_PANEL = (230, 238, 238)
 DARK_PANEL = DARK_BG
+# Active navigation button on the service page, away from its white icon.
+ACTIVE_BUTTON = (74, 161, 255)
+ACTIVE_BUTTON_POINT = (744, 438)
 # Exposed pixels inside the 800x356 panel on the service pages. The flow page
 # keeps its image there, so these are checked only with the image switched off.
 PANEL_POINTS = [(10, 100), (780, 100), (400, 130), (780, 420)]
@@ -150,6 +154,13 @@ def main():
                   ("PASS" if ok else "FAIL", name, gotBg, gotCard))
             failures += 0 if ok else 1
 
+        for name, im in [("dark", dark), ("light", light)]:
+            got = im.getpixel(ACTIVE_BUTTON_POINT)
+            ok = close(got, ACTIVE_BUTTON, 6)
+            print("%s %-16s active %s" %
+                  ("PASS" if ok else "FAIL", "%s button" % name, got))
+            failures += 0 if ok else 1
+
         colors = Counter(flow.crop((0, 68, 800, 424)).getdata())
         symbolPixels = sum(count_near(colors, c)
                            for c in LIGHT_BACKDROP_SYMBOLS)
@@ -196,8 +207,8 @@ def main():
             failures += 0 if ok else 1
 
         print("---")
-        print("RESULT: %s (%d/12 checks correct)" %
-              ("PASS" if failures == 0 else "FAIL", 12 - failures))
+        print("RESULT: %s (%d/14 checks correct)" %
+              ("PASS" if failures == 0 else "FAIL", 14 - failures))
         return 1 if failures else 0
     finally:
         mock.send_signal(signal.SIGKILL)

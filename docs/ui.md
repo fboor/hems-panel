@@ -75,10 +75,10 @@ old timer is removed before the new one starts.
 The flow page alone can show an 800x356 image: the photograph in the dark theme
 or a quiet line schematic of sun, PV array, house and car in the light theme.
 The image switch hides either one. Every other page, and the flow page with the
-image off, shows only a plain panel of the same size and position. That panel is
-deep green in the light theme; the dark theme matches it to the page background.
-In the light schematic the house highlights stay blue as in the dark theme, and
-the moving flow particles are yellow.
+image off, shows only a plain panel of the same size and position. In the light
+theme that panel and the flow image area are light, while the header and footer
+stay dark green; the dark theme matches the panel to the page background. Active
+buttons are blue in both themes, and the light flow particles are yellow.
 
 ## Energy page
 
@@ -132,12 +132,12 @@ The page is populated from `/heating/state`, `/heating/sgr_blocking_override`,
 The service page contains:
 
 - **THEME** — cycles the complete palette: **Dunkel** (the original dark scheme
-  with the flow-page photograph) and **Hell** (white cards on a deep-green panel,
-  green UI accents, blue schematic highlights, yellow flow particles and the
-  drawn schematic instead of the photo). The
+  with the flow-page photograph) and **Hell** (a dark-green header and footer
+  around a light content area, white cards, blue active buttons, yellow flow
+  particles and the drawn schematic instead of the photo). The
   button next to it switches the flow-page image on and off. Only page 1 draws
   the photo or schematic; this and the other pages keep a plain 800x356 panel
-  in its place. The light panel is deep green, the dark panel matches the page
+  in its place. The light panel is light, the dark panel matches the page
   background. The chart and the history bands keep their data colours; only
   their surrounding surface follows the theme. The choice is stored in NVS and
   restored on boot,
