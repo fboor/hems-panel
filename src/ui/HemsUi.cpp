@@ -317,7 +317,7 @@ void prepareBackdrop() {
   const uint16_t bg = lv_color_to_u16(lv_color_hex(t.backdrop));
   const uint16_t fill = lv_color_to_u16(lv_color_hex(t.backdropFill));
   const uint16_t line = lv_color_to_u16(lv_color_hex(t.backdropLine));
-  const uint16_t accent = lv_color_to_u16(lv_color_hex(t.accent));
+  const uint16_t accent = lv_color_to_u16(lv_color_hex(t.backdropAccent));
   const uint16_t solar = lv_color_to_u16(lv_color_hex(t.solar));
   const uint16_t amber = lv_color_to_u16(lv_color_hex(t.amber));
   const uint16_t ev = lv_color_to_u16(lv_color_hex(t.ev));

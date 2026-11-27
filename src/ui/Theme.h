@@ -74,11 +74,13 @@ struct Theme {
   uint32_t chipNoData;
 
   // Schematic drawn on the flow page when no photograph is used. It has the
-  // photo's 800x356 geometry. backdropPanel is the plain surface shown at the
-  // same position on every other page: light makes it visible, dark matches bg.
+  // photo's 800x356 geometry. backdropAccent keeps the house highlights blue in
+  // both themes. backdropPanel is the plain surface on every other page: dark
+  // green in light, matched to bg in dark.
   uint32_t backdrop;
   uint32_t backdropFill;
   uint32_t backdropLine;
+  uint32_t backdropAccent;
   uint32_t backdropPanel;
 };
 
@@ -98,7 +100,7 @@ inline const Theme &theme(ThemeId id) {
           0x3A2E12, 0x142A40, 0x123225, 0x2A1E44,
           0xFFF0B8, 0xCFE8FF, 0xCFFFE4, 0xE9DBFF,
           0x2A1D22, 0x173026, 0x33280F,
-          0x10171F, 0x171F29, 0x34465A,
+          0x10171F, 0x171F29, 0x34465A, 0x4AA3FF,
           0x0E1319,
       },
       // Light: white cards on a grey-green surface, green as the accent.
@@ -111,10 +113,10 @@ inline const Theme &theme(ThemeId id) {
           0x2E8B57, 0xB23A34, 0x2C6E8E, 0xB07A1E,
           0xC98A1B, 0x2E8B57, 0x7755A8,
           0xF6EBD5, 0xDDEAF1, 0xDDEEE4, 0xE8E0F2,
-          0x7A5410, 0x16435C, 0x145033, 0x4B3470,
+          0xFFD400, 0xFFD400, 0xFFD400, 0xFFD400,
           0xF3DEDC, 0xDDEEE4, 0xF5E8CF,
-          0xE7ECE8, 0xF4F7F5, 0xB6C4BA,
-          0xF4F7F5,
+          0xE7ECE8, 0xF4F7F5, 0xB6C4BA, 0x4AA3FF,
+          0x145033,
       },
   };
   const unsigned i = (unsigned)id < kThemeCount ? (unsigned)id : 0u;

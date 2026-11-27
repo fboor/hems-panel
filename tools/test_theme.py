@@ -4,9 +4,10 @@
 Checks that the dark and light palettes repaint both the page background and
 the cards, that tapping the THEME button switches to the next palette without
 a restart, and that the schematic appears only on the light flow page. Other
-pages keep a plain 800x356 panel: visible in the light theme, the same colour as
-the page background in the dark theme. The chart is checked too: its card must
-follow the theme while the series keep their theme-independent colours.
+pages keep a plain dark-green 800x356 panel in the light theme and a panel
+matching the background in the dark theme. The light schematic uses blue house
+highlights and its flow particles are yellow. The chart is checked too: its card
+must follow the theme while the series keep their theme-independent colours.
 
 Usage: python3 tools/test_theme.py
 Exit code 0 = all checks pass, 1 = at least one failed.
@@ -29,15 +30,17 @@ DARK_BG = (8, 16, 24)
 DARK_CARD = (16, 28, 41)
 LIGHT_BG = (230, 238, 238)
 LIGHT_CARD = (255, 255, 255)
-# Plain panel after RGB565 conversion. Dark matches the page background.
-LIGHT_PANEL = (246, 246, 246)
+# Plain panel after RGB565 conversion. The light panel is deep green; dark
+# matches the page background.
+LIGHT_PANEL = (16, 80, 49)
 DARK_PANEL = DARK_BG
 # Exposed pixels inside the 800x356 panel on the service pages. The flow page
 # keeps its image there, so these are checked only with the image switched off.
 PANEL_POINTS = [(10, 100), (780, 100), (400, 130), (780, 420)]
 # Schematic symbol colours after RGB565 conversion in the light palette.
-LIGHT_BACKDROP_SYMBOLS = [(41, 137, 82), (205, 137, 24), (115, 85, 172),
+LIGHT_BACKDROP_SYMBOLS = [(74, 161, 255), (205, 137, 24), (115, 85, 172),
                           (180, 121, 24)]
+LIGHT_DOT = (255, 214, 0)
 # Centre of the THEME button: page at (16, 0), button at (542, 9), 200x40,
 # and the page starts at screen y 68.
 THEME_BUTTON = (658, 97)
@@ -155,6 +158,12 @@ def main():
               ("PASS" if ok else "FAIL", "light flow schematic", symbolPixels))
         failures += 0 if ok else 1
 
+        dotPixels = count_near(colors, LIGHT_DOT)
+        ok = dotPixels >= 100
+        print("%s %-16s yellow px %d" %
+              ("PASS" if ok else "FAIL", "light flow dots", dotPixels))
+        failures += 0 if ok else 1
+
         for name, im, panel in [
             ("light service", light, LIGHT_PANEL),
             ("dark service", dark, DARK_PANEL),
@@ -187,8 +196,8 @@ def main():
             failures += 0 if ok else 1
 
         print("---")
-        print("RESULT: %s (%d/11 checks correct)" %
-              ("PASS" if failures == 0 else "FAIL", 11 - failures))
+        print("RESULT: %s (%d/12 checks correct)" %
+              ("PASS" if failures == 0 else "FAIL", 12 - failures))
         return 1 if failures else 0
     finally:
         mock.send_signal(signal.SIGKILL)
