@@ -73,11 +73,13 @@ struct Theme {
   uint32_t chipData;
   uint32_t chipNoData;
 
-  // Backdrop drawn where no photograph is shown. It has the photo's 800x356
-  // geometry and is tinted per theme, so the same artwork works on every page.
+  // Schematic drawn on the flow page when no photograph is used. It has the
+  // photo's 800x356 geometry. backdropPanel is the plain surface shown at the
+  // same position on every other page: light makes it visible, dark matches bg.
   uint32_t backdrop;
   uint32_t backdropFill;
   uint32_t backdropLine;
+  uint32_t backdropPanel;
 };
 
 constexpr int kThemeCount = 2;
@@ -97,6 +99,7 @@ inline const Theme &theme(ThemeId id) {
           0xFFF0B8, 0xCFE8FF, 0xCFFFE4, 0xE9DBFF,
           0x2A1D22, 0x173026, 0x33280F,
           0x10171F, 0x171F29, 0x34465A,
+          0x0E1319,
       },
       // Light: white cards on a grey-green surface, green as the accent.
       {
@@ -111,6 +114,7 @@ inline const Theme &theme(ThemeId id) {
           0x7A5410, 0x16435C, 0x145033, 0x4B3470,
           0xF3DEDC, 0xDDEEE4, 0xF5E8CF,
           0xE7ECE8, 0xF4F7F5, 0xB6C4BA,
+          0xF4F7F5,
       },
   };
   const unsigned i = (unsigned)id < kThemeCount ? (unsigned)id : 0u;

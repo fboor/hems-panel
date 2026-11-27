@@ -528,8 +528,8 @@ struct Widgets {
 Widgets w;
 
 // The theme picks the photograph or the schematic for the flow page; the
-// service-page switch can hide that image. The tinted backdrop below stays in
-// place either way, so every page without a photo keeps the same 800x356 art.
+// image switch can hide it. Other pages only show the plain 800x356 panel
+// below, never the schematic.
 void applyFlowBackground() {
   if (w.page4 == nullptr) {
     return;
@@ -2057,18 +2057,17 @@ void create(lv_obj_t *parent) {
   }
   parent = g_root;
 
-  // One shared backdrop behind all pages. It is created before every page, so
-  // cards draw on top; the photo page covers it while a photo is shown.
+  // Plain panel behind all pages, in the photo's exact geometry. The light
+  // theme makes it visible; the dark theme matches the page background so it
+  // does not stand out. Only the flow page paints its own image over it.
   w.backdrop = lv_obj_create(parent);
   lv_obj_remove_style_all(w.backdrop);
   lv_obj_set_pos(w.backdrop, 0, 68);
   lv_obj_set_size(w.backdrop, kBackdropW, kBackdropH);
-  lv_obj_set_style_bg_opa(w.backdrop, LV_OPA_TRANSP, 0);
+  lv_obj_set_style_bg_color(w.backdrop,
+                            lv_color_hex(palette().backdropPanel), 0);
+  lv_obj_set_style_bg_opa(w.backdrop, LV_OPA_COVER, 0);
   lv_obj_clear_flag(w.backdrop, LV_OBJ_FLAG_SCROLLABLE);
-  if (g_backdropReady) {
-    lv_obj_set_style_bg_image_src(w.backdrop, &g_backdrop565, 0);
-    lv_obj_set_style_bg_image_opa(w.backdrop, LV_OPA_COVER, 0);
-  }
 
   // Header ---------------------------------------------------------------
   label(parent, 16, 8, 0, F_TITLE, palette().text, TR("Home Energy Manager", "Home Energy Manager"));
@@ -2384,9 +2383,8 @@ void create(lv_obj_t *parent) {
   lv_obj_remove_style_all(w.page4);
   lv_obj_set_pos(w.page4, 0, 68);
   lv_obj_set_size(w.page4, 800, 356);
-  // The theme picks the photograph or reuses the shared backdrop; the
-  // service-page switch hides the photograph. With no image, the backdrop
-  // below shows through.
+  // The theme picks the photograph or the schematic; the image switch hides
+  // either. With no image, the plain panel below shows through.
   applyFlowBackground();
   lv_obj_add_flag(w.page4, LV_OBJ_FLAG_HIDDEN);
 

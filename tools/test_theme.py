@@ -3,10 +3,10 @@
 
 Checks that the dark and light palettes repaint both the page background and
 the cards, that tapping the THEME button switches to the next palette without
-a restart, and that the flow and service pages use the drawn backdrop with the
-light theme and with the photograph switched off. The chart is checked too: its
-card must follow the theme while the series keep their theme-independent
-colours.
+a restart, and that the schematic appears only on the light flow page. Other
+pages keep a plain 800x356 panel: visible in the light theme, the same colour as
+the page background in the dark theme. The chart is checked too: its card must
+follow the theme while the series keep their theme-independent colours.
 
 Usage: python3 tools/test_theme.py
 Exit code 0 = all checks pass, 1 = at least one failed.
@@ -29,10 +29,13 @@ DARK_BG = (8, 16, 24)
 DARK_CARD = (16, 28, 41)
 LIGHT_BG = (230, 238, 238)
 LIGHT_CARD = (255, 255, 255)
-# Backdrop colours after RGB565 conversion, from both palettes.
-DARK_BACKDROP_BG = (16, 20, 24)
-DARK_BACKDROP_SYMBOLS = [(74, 161, 255), (255, 194, 65), (179, 136, 255),
-                         (255, 179, 70)]
+# Plain panel after RGB565 conversion. Dark matches the page background.
+LIGHT_PANEL = (246, 246, 246)
+DARK_PANEL = DARK_BG
+# Exposed pixels inside the 800x356 panel on the service pages. The flow page
+# keeps its image there, so these are checked only with the image switched off.
+PANEL_POINTS = [(10, 100), (780, 100), (400, 130), (780, 420)]
+# Schematic symbol colours after RGB565 conversion in the light palette.
 LIGHT_BACKDROP_SYMBOLS = [(41, 137, 82), (205, 137, 24), (115, 85, 172),
                           (180, 121, 24)]
 # Centre of the THEME button: page at (16, 0), button at (542, 9), 200x40,
@@ -59,6 +62,10 @@ def count_near(pixels, target, tol=12):
     if isinstance(pixels, Counter):
         return sum(n for color, n in pixels.items() if close(color, target, tol))
     return sum(1 for color in pixels if close(color, target, tol))
+
+
+def points_near(im, points, target, tol=6):
+    return all(close(im.getpixel(p), target, tol) for p in points)
 
 
 def shot(name, page, extra=(), sd=None):
@@ -140,19 +147,23 @@ def main():
                   ("PASS" if ok else "FAIL", name, gotBg, gotCard))
             failures += 0 if ok else 1
 
-        for name, im, bg, symbols, min_symbols in [
-            ("light backdrop", flow, LIGHT_BG, LIGHT_BACKDROP_SYMBOLS, 2000),
-            ("dark backdrop", flow_noimg, DARK_BACKDROP_BG,
-             DARK_BACKDROP_SYMBOLS, 2000),
-            ("light service", light, LIGHT_BG, LIGHT_BACKDROP_SYMBOLS, 500),
-            ("dark service", dark, DARK_BACKDROP_BG, DARK_BACKDROP_SYMBOLS, 500),
+        colors = Counter(flow.crop((0, 68, 800, 424)).getdata())
+        symbolPixels = sum(count_near(colors, c)
+                           for c in LIGHT_BACKDROP_SYMBOLS)
+        ok = symbolPixels > 2000
+        print("%s %-16s symbol px %d" %
+              ("PASS" if ok else "FAIL", "light flow schematic", symbolPixels))
+        failures += 0 if ok else 1
+
+        for name, im, panel in [
+            ("light service", light, LIGHT_PANEL),
+            ("dark service", dark, DARK_PANEL),
+            ("dark flow, no image", flow_noimg, DARK_PANEL),
         ]:
-            colors = Counter(im.crop((0, 68, 800, 424)).getdata())
-            symbolPixels = sum(count_near(colors, c) for c in symbols)
-            bgPixels = count_near(colors, bg, 18)
-            ok = symbolPixels > min_symbols and bgPixels > 10000
-            print("%s %-16s symbol px %d bg px %d" %
-                  ("PASS" if ok else "FAIL", name, symbolPixels, bgPixels))
+            ok = points_near(im, PANEL_POINTS, panel)
+            got = [im.getpixel(p) for p in PANEL_POINTS]
+            print("%s %-21s panel %s" %
+                  ("PASS" if ok else "FAIL", name, got))
             failures += 0 if ok else 1
 
         # The card follows the palette, but the series must keep their identity.

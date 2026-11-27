@@ -23,7 +23,7 @@ void setTheme(ThemeId id);
 using ThemeChangeHandler = void (*)(ThemeId id);
 void setThemeChangeHandler(ThemeChangeHandler handler);
 
-// Flow-page photograph on/off. The tinted backdrop stays visible either way.
+// Flow-page image on/off. Other pages keep only the plain panel fill.
 void setBackgroundImage(bool on);
 
 // Copies the values into the labels. Safe to call before create().
