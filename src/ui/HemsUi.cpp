@@ -90,9 +90,9 @@ constexpr int kChartDrop = 6;
 // same number of points; the samples are resampled into the visible window.
 constexpr int kChartPoints = 240;
 constexpr int kChartLineWidth = 2;
-// The chart card's size, the same as the widget it replaces: a rounded card
-// with a 1 px border, so the plot area is 764 x 232 at (1, 1).
-constexpr int kChartW = 766;
+// The chart card is as wide as the price card below it (776 px). With the 1 px
+// border the plot area is 774 x 232 at (1, 1).
+constexpr int kChartW = 776;
 constexpr int kChartH = 234;
 constexpr int kChartBorder = 1;
 constexpr uint32_t kSampleIntervalMs = 60u * 1000u;
@@ -166,7 +166,7 @@ int32_t *g_chartSoc = nullptr;  // raw SOC %, mapped into the power range
 // its own draw task - each one a malloc plus a walk to the list's tail - so a
 // full redraw of the chart page, which is what every page switch triggers,
 // costs more than the rest of the page together. As an image the same switch
-// is one opaque blit. 766 x 234 x 2 B = 350 kB, allocated in PSRAM; if that
+// is one opaque blit. 776 x 234 x 2 B = 356 kB, allocated in PSRAM; if that
 // fails the page keeps the original chart widgets.
 uint16_t *g_chartPixels = nullptr;
 int g_chartRange = 5000;  // last y range, kept for re-renders
@@ -1565,7 +1565,7 @@ void drawChartSeries(const int32_t *values, uint16_t color) {
       havePrev = false;
       continue;
     }
-    // Keep subpixel x positions as well: with 240 points on a 764 px plot the
+    // Keep subpixel x positions as well: with 240 points on a 774 px plot the
     // spacing is fractional, and rounding it would show up as uneven steps.
     const float x = (float)kChartBorder +
                     (float)(kChartW - 2 * kChartBorder) * (float)i /
@@ -1598,10 +1598,10 @@ void renderChartImage() {
   if (g_chartPixels == nullptr || w.chartImage == nullptr) {
     return;
   }
-  // Pixels outside the rounded card show the page background, so the buffer
-  // starts as a copy of it before the card is drawn on top.
-  lv_canvas_fill_bg(w.chartImage,
-                    lv_obj_get_style_bg_color(lv_screen_active(), LV_PART_MAIN),
+  // Pixels outside the rounded card must match the panel behind it. The
+  // screen background is the dark-green header/footer in the light theme,
+  // so copying it here would paint dark corners around the white card.
+  lv_canvas_fill_bg(w.chartImage, lv_color_hex(palette().backdropPanel),
                     LV_OPA_COVER);
   lv_layer_t layer;
   lv_canvas_init_layer(w.chartImage, &layer);
@@ -2224,7 +2224,7 @@ void create(lv_obj_t *parent) {
   // orange, grid green, battery red, wallboxes purple and brown.
   if (g_chartPixels != nullptr && g_chartData != nullptr) {
     // A pre-rendered image instead of two chart widgets. The page switch
-    // then blits 766 x 234 pixels instead of rebuilding roughly 1700 line
+    // then blits 776 x 234 pixels instead of rebuilding roughly 1700 line
     // draw tasks; renderChartImage() repaints the card and the series
     // whenever a new sample arrives.
     w.chartImage = lv_canvas_create(w.page2);
@@ -2354,6 +2354,8 @@ void create(lv_obj_t *parent) {
     w.priceBand = createHistoryBand(w.page2, 306 - kCardSave + kChartDrop, TR("Börsenpreis", "Exchange price"),
                                     0x999999, 0x007BFF, 0x2CA02C, 0xD62728, 0x999999,
                                     172, priceTicks, 0x00FF00);
+    // Five pixels of extra room before the band's first tick.
+    lv_obj_set_x(w.priceBand->label, 21);
   }
   setBandVisible(w.priceBand, false);
   w.priceStats =
@@ -2379,7 +2381,8 @@ void create(lv_obj_t *parent) {
   // Variable slot widths: "Verbrauch" and the wallbox names are long, so
   // they get wide slots (in the 11 px legend font their tapped values
   // "[1234 W]" fit on one line without wrapping).
-  const int dotX[7] = {8, 108, 190, 318, 418, 558, 698};
+  // The first dot lines up with the chart's left edge at x 12.
+  const int dotX[7] = {12, 108, 190, 318, 418, 558, 698};
   const int labelW[7] = {78, 66, 112, 78, 124, 124, 80};
   for (int i = 0; i < 7; ++i) {
     lv_obj_t *dot = lv_obj_create(w.page2);

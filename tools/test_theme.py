@@ -45,6 +45,9 @@ INACTIVE_BUTTON_BORDER_POINT = (520, 434)
 # Exposed pixels inside the 800x356 panel on the service pages. The flow page
 # keeps its image there, so these are checked only with the image switched off.
 PANEL_POINTS = [(10, 100), (780, 100), (400, 133), (780, 418)]
+# Rounded chart corner: outside the card but inside its canvas. It must show
+# the panel colour, not the dark-green screen background in the light theme.
+CHART_CORNER_POINT = (13, 72)
 # Schematic symbol colours after RGB565 conversion in the light palette.
 LIGHT_BACKDROP_SYMBOLS = [(74, 161, 255), (205, 137, 24), (115, 85, 172),
                           (180, 121, 24)]
@@ -217,8 +220,16 @@ def main():
             print("%s %-16s card %s" %
                   ("PASS" if ok else "FAIL", name, gotCard))
             failures += 0 if ok else 1
+        for name, im, panel in [("dark", chart_dark, DARK_PANEL),
+                                ("light", chart_light, LIGHT_PANEL)]:
+            got = im.getpixel(CHART_CORNER_POINT)
+            ok = close(got, panel)
+            print("%s %-16s corner %s" %
+                  ("PASS" if ok else "FAIL", "%s chart corner" % name, got))
+            failures += 0 if ok else 1
+
         for name, im in [("dark", chart_dark), ("light", chart_light)]:
-            pixels = list(im.crop((12, 65, 778, 299)).getdata())
+            pixels = list(im.crop((12, 65, 788, 305)).getdata())
             green = count_near(pixels, SERIES_GREEN)
             orange = count_near(pixels, SERIES_ORANGE)
             ok = green >= 100 and orange >= 100
@@ -257,8 +268,8 @@ def main():
         failures += 0 if ok else 1
 
         print("---")
-        print("RESULT: %s (%d/18 checks correct)" %
-              ("PASS" if failures == 0 else "FAIL", 18 - failures))
+        print("RESULT: %s (%d/20 checks correct)" %
+              ("PASS" if failures == 0 else "FAIL", 20 - failures))
         return 1 if failures else 0
     finally:
         mock.send_signal(signal.SIGKILL)
