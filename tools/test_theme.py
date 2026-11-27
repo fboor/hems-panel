@@ -3,9 +3,10 @@
 
 Checks that the dark and light palettes repaint both the page background and
 the cards, that tapping the THEME button switches to the next palette without
-a restart, and that the light flow page uses the drawn schematic instead of
-the photograph. The chart is checked too: its card must follow the theme while
-the series keep their theme-independent colours.
+a restart, and that the flow and service pages use the drawn backdrop with the
+light theme and with the photograph switched off. The chart is checked too: its
+card must follow the theme while the series keep their theme-independent
+colours.
 
 Usage: python3 tools/test_theme.py
 Exit code 0 = all checks pass, 1 = at least one failed.
@@ -28,7 +29,12 @@ DARK_BG = (8, 16, 24)
 DARK_CARD = (16, 28, 41)
 LIGHT_BG = (230, 238, 238)
 LIGHT_CARD = (255, 255, 255)
-SCHEMATIC_GRID = (197, 210, 205)
+# Backdrop colours after RGB565 conversion, from both palettes.
+DARK_BACKDROP_BG = (16, 20, 24)
+DARK_BACKDROP_SYMBOLS = [(74, 161, 255), (255, 194, 65), (179, 136, 255),
+                         (255, 179, 70)]
+LIGHT_BACKDROP_SYMBOLS = [(41, 137, 82), (205, 137, 24), (115, 85, 172),
+                          (180, 121, 24)]
 # Centre of the THEME button: page at (16, 0), button at (542, 9), 200x40,
 # and the page starts at screen y 68.
 THEME_BUTTON = (658, 97)
@@ -50,7 +56,9 @@ def close(a, b, tol=18):
 
 
 def count_near(pixels, target, tol=12):
-    return sum(1 for k in pixels if close(k, target, tol))
+    if isinstance(pixels, Counter):
+        return sum(n for color, n in pixels.items() if close(color, target, tol))
+    return sum(1 for color in pixels if close(color, target, tol))
 
 
 def shot(name, page, extra=(), sd=None):
@@ -113,9 +121,11 @@ def main():
                         ("--tap", str(THEME_BUTTON[0]), str(THEME_BUTTON[1]),
                          "--tapdelay", "0"))
         flow = shot("flow_light", 1, ("--theme", "light"))
+        flow_noimg = shot("flow_dark_noimg", 1, ("--image", "off"))
         chart_dark = shot("chart_dark", 3, sd=sd_dir)
         chart_light = shot("chart_light", 3, ("--theme", "light"), sd=sd_dir)
-        if None in (dark, light, switched, flow, chart_dark, chart_light):
+        if None in (dark, light, switched, flow, flow_noimg, chart_dark,
+                    chart_light):
             return 1
 
         for name, im, bg, card in [
@@ -130,13 +140,20 @@ def main():
                   ("PASS" if ok else "FAIL", name, gotBg, gotCard))
             failures += 0 if ok else 1
 
-        colors = Counter(flow.crop((0, 68, 800, 424)).getdata())
-        gridPixels = colors[SCHEMATIC_GRID]
-        ok = gridPixels > 1000 and close(colors.most_common(1)[0][0],
-                                         LIGHT_BG, 18)
-        print("%s %-16s grid px %d" %
-              ("PASS" if ok else "FAIL", "light schematic", gridPixels))
-        failures += 0 if ok else 1
+        for name, im, bg, symbols, min_symbols in [
+            ("light backdrop", flow, LIGHT_BG, LIGHT_BACKDROP_SYMBOLS, 2000),
+            ("dark backdrop", flow_noimg, DARK_BACKDROP_BG,
+             DARK_BACKDROP_SYMBOLS, 2000),
+            ("light service", light, LIGHT_BG, LIGHT_BACKDROP_SYMBOLS, 500),
+            ("dark service", dark, DARK_BACKDROP_BG, DARK_BACKDROP_SYMBOLS, 500),
+        ]:
+            colors = Counter(im.crop((0, 68, 800, 424)).getdata())
+            symbolPixels = sum(count_near(colors, c) for c in symbols)
+            bgPixels = count_near(colors, bg, 18)
+            ok = symbolPixels > min_symbols and bgPixels > 10000
+            print("%s %-16s symbol px %d bg px %d" %
+                  ("PASS" if ok else "FAIL", name, symbolPixels, bgPixels))
+            failures += 0 if ok else 1
 
         # The card follows the palette, but the series must keep their identity.
         for name, im, card in [
@@ -159,8 +176,8 @@ def main():
             failures += 0 if ok else 1
 
         print("---")
-        print("RESULT: %s (%d/8 checks correct)" %
-              ("PASS" if failures == 0 else "FAIL", 8 - failures))
+        print("RESULT: %s (%d/11 checks correct)" %
+              ("PASS" if failures == 0 else "FAIL", 11 - failures))
         return 1 if failures else 0
     finally:
         mock.send_signal(signal.SIGKILL)

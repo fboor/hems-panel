@@ -87,6 +87,7 @@ struct Options {
   int afterS = 2;
   int page = 1;
   int theme = 0;
+  bool backgroundImage = true;
   int tapX = -1;
   int tapY = -1;
   int tapDelayS = -1;
@@ -450,6 +451,7 @@ void usage() {
       "  --after S        seconds to wait before the shot (default 2)\n"
       "  --page N         page to show, 1..6 (default 1)\n"
       "  --theme NAME     dark or light palette (default dark)\n"
+      "  --image NAME     flow-page image on or off (default on)\n"
       "  --setup          show the first-boot Wi-Fi setup screen\n"
       "  --probe          read once, print the mapped values, exit\n"
       "  --sd DIR         write the history CSV to DIR\n"
@@ -484,6 +486,9 @@ int main(int argc, char **argv) {
     } else if (a == "--theme") {
       const std::string name = value("dark");
       opt.theme = name == "light" ? 1 : 0;
+    } else if (a == "--image") {
+      const std::string name = value("on");
+      opt.backgroundImage = name != "off";
     } else if (a == "--tap") {
       opt.tapX = atoi(value("0").c_str());
       opt.tapY = atoi(value("0").c_str());
@@ -574,6 +579,7 @@ int main(int argc, char **argv) {
 
   hemsui::setTheme(hemsui::themeId(opt.theme));
   hemsui::create(lv_screen_active());
+  hemsui::setBackgroundImage(opt.backgroundImage);
   hemsui::setPage(opt.page);
   hemsui::setChargeModeHandler(setChargeMode);
   hemsui::setHeatingOverrideHandler(setHeatingOverride);

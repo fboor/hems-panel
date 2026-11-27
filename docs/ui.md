@@ -66,10 +66,16 @@ The first page is a live energy-flow view:
   `Inselbetrieb`.
 - A missing meter shows `--` / `kein Messwert` instead of hiding the card.
 
-The animation is deliberately cheap: one LVGL timer at 5 fps, two small
+The animation is deliberately cheap: one LVGL timer at 15 fps, two small
 particles per active link, and invalidation only of the particle rectangles. The
 timer returns immediately while the flow page is hidden, and the line width is
-updated only when new data arrives.
+updated only when new data arrives. A theme switch rebuilds the pages, so the
+old timer is removed before the new one starts.
+
+Behind every page without a photograph - including this one when the image is
+switched off - the panel draws the same 800x356 backdrop: a quiet line schematic
+of sun, PV array, house and car, tinted from the active theme. The light theme
+uses that artwork instead of the photograph.
 
 ## Energy page
 
@@ -124,10 +130,12 @@ The service page contains:
 
 - **THEME** — cycles the complete palette: **Dunkel** (the original dark scheme
   with the flow-page photograph) and **Hell** (white cards on a grey-green
-  surface with green accents and a drawn schematic instead of the photo). The
-  button next to it switches that background image on and off. The chart and
-  the history bands keep their data colours; only their surrounding surface
-  follows the theme. The choice is stored in NVS and restored on boot,
+  surface with green accents and the drawn schematic instead of the photo). The
+  button next to it switches the flow-page photograph on and off. Every page
+  without a photo, including this one with the image off, keeps the tinted
+  800x356 backdrop. The chart and the history bands keep their data colours;
+  only their surrounding surface follows the theme. The choice is stored in NVS
+  and restored on boot,
 - **NETZWERK** — WLAN, panel IP, WARP endpoint, the local web setup URL and the
   SD-card status line (see [sd-log.md](sd-log.md)),
 - **ZÄHLER** — generation, consumption, grid import, feed-in and battery energy

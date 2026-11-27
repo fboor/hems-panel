@@ -40,8 +40,10 @@ The page numbers are 1–6, in the same order as the on-screen pages
 default is 2 seconds; use a larger value when a real device is slow to answer.
 
 `--theme dark|light` picks the initial palette for the emulator (default dark).
-Tapping the `THEME` button on the service page switches it at runtime; the
-firmware persists that choice in NVS, while the emulator keeps it for that run.
+`--image on|off` starts with the flow-page photograph shown or hidden (default
+on). Tapping the `THEME` button on the service page switches the palette at
+runtime; the firmware persists that choice in NVS, while the emulator keeps it
+for that run.
 
 Set `HEMS_UI_DEBUG_BAND=1` to log the price-band segment geometry while tuning
 the history chart. The firmware build uses the same flag as
@@ -157,9 +159,10 @@ python3 tools/test_io_status.py
 ```
 
 `tools/test_theme.py` renders the service page with both palettes, taps the
-`THEME` button to check the runtime switch, and checks the light flow page's
-schematic background. It also renders the chart from a fresh SD history to
-verify that the card follows the palette while the series keep their colours:
+`THEME` button to check the runtime switch, and checks the drawn backdrop on
+the flow and service pages. It also renders the chart from a fresh SD history
+to verify that the card follows the palette while the series keep their
+colours:
 
 ```sh
 python3 tools/test_theme.py

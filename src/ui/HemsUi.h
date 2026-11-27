@@ -23,6 +23,9 @@ void setTheme(ThemeId id);
 using ThemeChangeHandler = void (*)(ThemeId id);
 void setThemeChangeHandler(ThemeChangeHandler handler);
 
+// Flow-page photograph on/off. The tinted backdrop stays visible either way.
+void setBackgroundImage(bool on);
+
 // Copies the values into the labels. Safe to call before create().
 void update(const WarpData &data);
 

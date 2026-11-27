@@ -39,6 +39,7 @@ ThemeChangeHandler g_themeChangeHandler = nullptr;
 bool g_showBackgroundImage = true;
 bool g_imageInitialized = false;
 lv_obj_t *g_root = nullptr;
+lv_timer_t *g_flowTimer = nullptr;
 int g_activePage = 1;
 ConnectionState g_connectionState = ConnectionState::NoNet;
 WarpData g_lastData{};
@@ -193,54 +194,183 @@ void prepareChartBackground() {
   g_chartBg565Ready = true;
 }
 
-// The light palette replaces the photograph with a drawn schematic: a faint
-// grid, five nodes and the links between them. It uses the theme colours, so it
-// stays consistent when more light palettes are added later.
-lv_image_dsc_t g_schematic565{};
-bool g_schematic565Ready = false;
+// Backdrop drawn wherever no photograph is shown. It has the photo's exact
+// 800x356 geometry, so the same object can sit behind every page. The drawing
+// is a quiet line schematic - sun, PV, house, car - tinted from the theme.
+constexpr int kBackdropW = 800;
+constexpr int kBackdropH = 356;
 
-void prepareSchematicBackground() {
-  constexpr int w = 800;
-  constexpr int h = 356;
-  if (!g_schematic565Ready) {
-    uint16_t *dst = (uint16_t *)allocLarge((size_t)w * h * sizeof(uint16_t));
+void backdropPixel(uint16_t *dst, int x, int y, uint16_t c) {
+  if (x < 0 || y < 0 || x >= kBackdropW || y >= kBackdropH) {
+    return;
+  }
+  dst[y * kBackdropW + x] = c;
+}
+
+void backdropRect(uint16_t *dst, int x0, int y0, int x1, int y1, uint16_t c,
+                  bool fill) {
+  if (x0 > x1) {
+    const int t = x0;
+    x0 = x1;
+    x1 = t;
+  }
+  if (y0 > y1) {
+    const int t = y0;
+    y0 = y1;
+    y1 = t;
+  }
+  if (fill) {
+    for (int y = y0; y <= y1; ++y) {
+      for (int x = x0; x <= x1; ++x) {
+        backdropPixel(dst, x, y, c);
+      }
+    }
+    return;
+  }
+  for (int x = x0; x <= x1; ++x) {
+    backdropPixel(dst, x, y0, c);
+    backdropPixel(dst, x, y1, c);
+  }
+  for (int y = y0; y <= y1; ++y) {
+    backdropPixel(dst, x0, y, c);
+    backdropPixel(dst, x1, y, c);
+  }
+}
+
+// Integer Bresenham with a small square brush. The brush keeps thin diagonal
+// lines connected without antialiasing or per-pixel blending on the panel.
+void backdropLine(uint16_t *dst, int x0, int y0, int x1, int y1, uint16_t c,
+                  int thickness = 2) {
+  int dx = x1 - x0;
+  if (dx < 0) dx = -dx;
+  int dy = y1 - y0;
+  if (dy < 0) dy = -dy;
+  const int sx = x0 < x1 ? 1 : -1;
+  const int sy = y0 < y1 ? 1 : -1;
+  int err = dx - dy;
+  for (;;) {
+    for (int oy = -thickness / 2; oy <= (thickness - 1) / 2; ++oy) {
+      for (int ox = -thickness / 2; ox <= (thickness - 1) / 2; ++ox) {
+        backdropPixel(dst, x0 + ox, y0 + oy, c);
+      }
+    }
+    if (x0 == x1 && y0 == y1) {
+      break;
+    }
+    const int e2 = 2 * err;
+    if (e2 > -dy) {
+      err -= dy;
+      x0 += sx;
+    }
+    if (e2 < dx) {
+      err += dx;
+      y0 += sy;
+    }
+  }
+}
+
+void backdropPath(uint16_t *dst, const int pts[][2], int count, uint16_t c,
+                  int thickness = 2) {
+  for (int i = 1; i < count; ++i) {
+    backdropLine(dst, pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1], c,
+                 thickness);
+  }
+}
+
+void backdropCircle(uint16_t *dst, int cx, int cy, int radius, uint16_t c,
+                    bool fill) {
+  const int outer = radius * radius;
+  const int r = radius > 2 ? radius - 2 : 0;
+  const int inner = r * r;
+  for (int dy = -radius; dy <= radius; ++dy) {
+    for (int dx = -radius; dx <= radius; ++dx) {
+      const int d = dx * dx + dy * dy;
+      if (fill ? d <= outer : (d >= inner && d <= outer)) {
+        backdropPixel(dst, cx + dx, cy + dy, c);
+      }
+    }
+  }
+}
+
+lv_image_dsc_t g_backdrop565{};
+bool g_backdropReady = false;
+
+void prepareBackdrop() {
+  if (!g_backdropReady) {
+    uint16_t *dst =
+        (uint16_t *)allocLarge((size_t)kBackdropW * kBackdropH * sizeof(uint16_t));
     if (dst == nullptr) {
       return;
     }
-    g_schematic565.header.cf = LV_COLOR_FORMAT_RGB565;
-    g_schematic565.header.w = w;
-    g_schematic565.header.h = h;
-    g_schematic565.header.stride = (uint16_t)(w * sizeof(uint16_t));
-    g_schematic565.data_size = (uint32_t)(w * h * sizeof(uint16_t));
-    g_schematic565.data = (const uint8_t *)dst;
-    g_schematic565Ready = true;
+    g_backdrop565.header.cf = LV_COLOR_FORMAT_RGB565;
+    g_backdrop565.header.w = kBackdropW;
+    g_backdrop565.header.h = kBackdropH;
+    g_backdrop565.header.stride = (uint16_t)(kBackdropW * sizeof(uint16_t));
+    g_backdrop565.data_size =
+        (uint32_t)(kBackdropW * kBackdropH * sizeof(uint16_t));
+    g_backdrop565.data = (const uint8_t *)dst;
+    g_backdropReady = true;
   }
 
-  uint16_t *dst = (uint16_t *)g_schematic565.data;
-  const uint16_t bg = lv_color_to_u16(lv_color_hex(palette().bg));
-  const uint16_t grid = lv_color_to_u16(lv_color_hex(palette().line));
-  const uint16_t node = lv_color_to_u16(lv_color_hex(palette().accent));
-  const uint16_t link = lv_color_to_u16(lv_color_hex(palette().battery));
-  constexpr int centers[5][2] = {{200, 100}, {600, 100}, {200, 254},
-                                 {600, 254}, {400, 178}};
-  for (int y = 0; y < h; ++y) {
-    for (int x = 0; x < w; ++x) {
-      uint16_t c = (x % 40 == 0 || y % 40 == 0) ? grid : bg;
-      if ((y == 100 || y == 254) && x >= 226 && x <= 574) c = link;
-      if ((x == 200 || x == 600) && y >= 126 && y <= 228) c = link;
-      for (int i = 0; i < 5; ++i) {
-        const int dx = x > centers[i][0] ? x - centers[i][0]
-                                         : centers[i][0] - x;
-        const int dy = y > centers[i][1] ? y - centers[i][1]
-                                         : centers[i][1] - y;
-        if (dx <= 26 && dy <= 26 &&
-            ((dx >= 24 && dy <= 26) || (dy >= 24 && dx <= 26))) {
-          c = node;
-        }
-      }
-      dst[y * w + x] = c;
-    }
+  uint16_t *dst = (uint16_t *)g_backdrop565.data;
+  const Theme &t = palette();
+  const uint16_t bg = lv_color_to_u16(lv_color_hex(t.backdrop));
+  const uint16_t fill = lv_color_to_u16(lv_color_hex(t.backdropFill));
+  const uint16_t line = lv_color_to_u16(lv_color_hex(t.backdropLine));
+  const uint16_t accent = lv_color_to_u16(lv_color_hex(t.accent));
+  const uint16_t solar = lv_color_to_u16(lv_color_hex(t.solar));
+  const uint16_t amber = lv_color_to_u16(lv_color_hex(t.amber));
+  const uint16_t ev = lv_color_to_u16(lv_color_hex(t.ev));
+
+  for (int i = 0; i < kBackdropW * kBackdropH; ++i) {
+    dst[i] = bg;
   }
+
+  // Two quiet links tie the symbols together without turning the picture into
+  // a grid. They sit behind the glyphs.
+  const int sunLink[2][2] = {{282, 62}, {350, 72}};
+  const int carLink[2][2] = {{448, 88}, {484, 304}};
+  backdropPath(dst, sunLink, 2, line, 2);
+  backdropPath(dst, carLink, 2, line, 2);
+
+  // Sun, top-left of the clear area above the flow cards.
+  backdropCircle(dst, 258, 60, 16, amber, false);
+  const int rays[8][4] = {
+      {258, 34, 258, 26}, {258, 86, 258, 94}, {232, 60, 224, 60},
+      {284, 60, 292, 60}, {240, 42, 234, 36}, {276, 42, 282, 36},
+      {240, 78, 234, 84}, {276, 78, 282, 84},
+  };
+  for (int i = 0; i < 8; ++i) {
+    backdropLine(dst, rays[i][0], rays[i][1], rays[i][2], rays[i][3], amber, 2);
+  }
+
+  // House in the top-centre gap; the hub card starts below it.
+  backdropRect(dst, 360, 56, 444, 106, fill, true);
+  backdropRect(dst, 360, 56, 444, 106, line, false);
+  const int roof[3][2] = {{346, 58}, {402, 22}, {458, 58}};
+  backdropPath(dst, roof, 3, accent, 3);
+  backdropRect(dst, 374, 68, 392, 86, line, false);
+  backdropRect(dst, 412, 68, 430, 86, line, false);
+  backdropRect(dst, 392, 86, 412, 106, accent, true);
+
+  // PV array and car in the clear strip below the hub and side cards.
+  backdropRect(dst, 226, 292, 326, 340, fill, true);
+  backdropRect(dst, 226, 292, 326, 340, solar, false);
+  backdropLine(dst, 259, 292, 259, 340, solar, 2);
+  backdropLine(dst, 293, 292, 293, 340, solar, 2);
+  backdropLine(dst, 226, 316, 326, 316, solar, 2);
+  backdropLine(dst, 242, 340, 234, 350, solar, 2);
+  backdropLine(dst, 310, 340, 318, 350, solar, 2);
+
+  backdropRect(dst, 478, 306, 594, 332, fill, true);
+  backdropRect(dst, 478, 306, 594, 332, ev, false);
+  const int carRoof[4][2] = {{500, 306}, {514, 286}, {558, 286}, {572, 306}};
+  backdropPath(dst, carRoof, 4, ev, 2);
+  backdropLine(dst, 536, 287, 536, 305, ev, 2);
+  backdropCircle(dst, 506, 336, 9, ev, false);
+  backdropCircle(dst, 566, 336, 9, ev, false);
+  backdropCircle(dst, 506, 336, 3, line, true);
+  backdropCircle(dst, 566, 336, 3, line, true);
 }
 
 // Tapped chart position: the tapped sample is shown in the legend as
@@ -271,6 +401,7 @@ struct Widgets {
   lv_obj_t *caption4 = nullptr;
   lv_obj_t *caption5 = nullptr;
   lv_obj_t *caption6 = nullptr;
+  lv_obj_t *backdrop = nullptr;
   lv_obj_t *page1 = nullptr;
   lv_obj_t *page2 = nullptr;
   lv_obj_t *page3 = nullptr;
@@ -396,8 +527,9 @@ struct Widgets {
 
 Widgets w;
 
-// The image switch is independent of the theme: a theme decides *which* image
-// is drawn (photo or schematic), the switch decides whether one is drawn at all.
+// The theme picks the photograph or the schematic for the flow page; the
+// service-page switch can hide that image. The tinted backdrop below stays in
+// place either way, so every page without a photo keeps the same 800x356 art.
 void applyFlowBackground() {
   if (w.page4 == nullptr) {
     return;
@@ -407,11 +539,8 @@ void applyFlowBackground() {
     if (palette().photoBackground) {
       src = g_chartBg565Ready ? (const void *)&g_chartBg565
                               : (const void *)&chart_bg;
-    } else {
-      prepareSchematicBackground();
-      if (g_schematic565Ready) {
-        src = (const void *)&g_schematic565;
-      }
+    } else if (g_backdropReady) {
+      src = (const void *)&g_backdrop565;
     }
   }
   lv_obj_set_style_bg_image_src(w.page4, src, 0);
@@ -1890,6 +2019,7 @@ void create(lv_obj_t *parent) {
                                            sizeof(uint16_t));
   }
   prepareChartBackground();
+  prepareBackdrop();
 
   lv_obj_t *screen = lv_obj_get_screen(parent);
   lv_obj_set_style_bg_color(screen, lv_color_hex(palette().bg), 0);
@@ -1926,6 +2056,19 @@ void create(lv_obj_t *parent) {
     g_imageInitialized = true;
   }
   parent = g_root;
+
+  // One shared backdrop behind all pages. It is created before every page, so
+  // cards draw on top; the photo page covers it while a photo is shown.
+  w.backdrop = lv_obj_create(parent);
+  lv_obj_remove_style_all(w.backdrop);
+  lv_obj_set_pos(w.backdrop, 0, 68);
+  lv_obj_set_size(w.backdrop, kBackdropW, kBackdropH);
+  lv_obj_set_style_bg_opa(w.backdrop, LV_OPA_TRANSP, 0);
+  lv_obj_clear_flag(w.backdrop, LV_OBJ_FLAG_SCROLLABLE);
+  if (g_backdropReady) {
+    lv_obj_set_style_bg_image_src(w.backdrop, &g_backdrop565, 0);
+    lv_obj_set_style_bg_image_opa(w.backdrop, LV_OPA_COVER, 0);
+  }
 
   // Header ---------------------------------------------------------------
   label(parent, 16, 8, 0, F_TITLE, palette().text, TR("Home Energy Manager", "Home Energy Manager"));
@@ -2241,8 +2384,9 @@ void create(lv_obj_t *parent) {
   lv_obj_remove_style_all(w.page4);
   lv_obj_set_pos(w.page4, 0, 68);
   lv_obj_set_size(w.page4, 800, 356);
-  // The theme picks the photograph or the schematic; the service-page switch
-  // can hide either. Both are opaque images, so no per-pixel blending is needed.
+  // The theme picks the photograph or reuses the shared backdrop; the
+  // service-page switch hides the photograph. With no image, the backdrop
+  // below shows through.
   applyFlowBackground();
   lv_obj_add_flag(w.page4, LV_OBJ_FLAG_HIDDEN);
 
@@ -2519,6 +2663,13 @@ void create(lv_obj_t *parent) {
                       LV_EVENT_CLICKED, nullptr);
   showPage(1);
 
+  // create() also runs on a theme switch. Drop the old timer first: two active
+  // timers would advance the same phases twice and visibly double the speed.
+  if (g_flowTimer != nullptr) {
+    lv_timer_delete(g_flowTimer);
+    g_flowTimer = nullptr;
+  }
+
   // Particle animation. 15 fps: small 10 px objects, no opacity layers and no
   // full-page invalidation. Speed scales with power, so a strong flow visibly
   // moves faster without ever exceeding the CPU budget.
@@ -2532,7 +2683,7 @@ void create(lv_obj_t *parent) {
   // half again as often: a dot crosses a link in 2.2 s at full power instead of
   // 3.3 s, and in 7.4 s instead of 11.1 s when the flow is weak. The per-tick
   // jump is unchanged, so nothing gets choppier.
-  lv_timer_create([](lv_timer_t *) {
+  g_flowTimer = lv_timer_create([](lv_timer_t *) {
     if (w.page4 == nullptr ||
         lv_obj_has_flag(w.page4, LV_OBJ_FLAG_HIDDEN)) {
       return;
@@ -3421,6 +3572,12 @@ void update(const WarpData &d) {
 }
 
 ThemeId currentTheme() { return g_themeId; }
+
+void setBackgroundImage(bool on) {
+  g_showBackgroundImage = on;
+  g_imageInitialized = true;
+  applyFlowBackground();
+}
 
 void setThemeChangeHandler(ThemeChangeHandler handler) {
   g_themeChangeHandler = handler;
