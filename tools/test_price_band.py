@@ -52,7 +52,15 @@ def count_color(im, want):
 
 
 def shot(scenario):
-    env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+    # Keep the screenshot in the dark palette without changing the user's
+    # saved emulator theme.
+    state = "/tmp/hems_theme_state_price_band_%s" % scenario
+    try:
+        os.remove(state)
+    except OSError:
+        pass
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy",
+               HEMS_SIM_THEME_FILE=state)
     r = subprocess.run(
         ["./run.sh", "--shot", SHOT, "--page", "3", "--after", "6",
          "--no-sd",

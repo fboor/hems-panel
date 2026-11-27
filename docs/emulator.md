@@ -39,11 +39,14 @@ The page numbers are 1–6, in the same order as the on-screen pages
 ([ui.md](ui.md#page-order)). `--after N` waits N seconds before the shot. The
 default is 2 seconds; use a larger value when a real device is slow to answer.
 
-`--theme dark|light` picks the initial palette for the emulator (default dark).
+`--theme dark|light` selects the palette and saves it as the current setting.
+Without the flag the emulator restores the theme selected in an earlier session
+(dark on first start). Tapping the `THEME` button on the service page switches
+the palette and saves it as well, matching the firmware's NVS persistence.
+`HEMS_SIM_THEME_FILE` redirects the emulator's theme state file; the screenshot
+tests use it to keep their runs independent.
 `--image on|off` starts with the flow-page photograph shown or hidden (default
-on). Tapping the `THEME` button on the service page switches the palette at
-runtime; the firmware persists that choice in NVS, while the emulator keeps it
-for that run.
+on).
 
 Set `HEMS_UI_DEBUG_BAND=1` to log the price-band segment geometry while tuning
 the history chart. The firmware build uses the same flag as

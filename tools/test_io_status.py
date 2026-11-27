@@ -58,7 +58,15 @@ def main():
         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:
         time.sleep(1.5)
-        env = dict(os.environ, SDL_VIDEODRIVER="dummy")
+        # Keep the screenshot in the dark palette without changing the user's
+        # saved emulator theme.
+        state = "/tmp/hems_theme_state_io_status"
+        try:
+            os.remove(state)
+        except OSError:
+            pass
+        env = dict(os.environ, SDL_VIDEODRIVER="dummy",
+                   HEMS_SIM_THEME_FILE=state)
         r = subprocess.run(
             ["./run.sh", "--shot", SHOT, "--page", "6", "--after", "6",
              "--no-sd",

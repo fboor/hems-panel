@@ -34,6 +34,44 @@
 
 namespace {
 
+// The theme is a user setting, so the emulator restores it on startup just
+// like the firmware restores it from NVS. Tests can redirect this file with
+// HEMS_SIM_THEME_FILE to keep their runs independent.
+std::string themeStatePath() {
+  const char *env = getenv("HEMS_SIM_THEME_FILE");
+  if (env != nullptr && *env != '\0') {
+    return env;
+  }
+  const char *home = getenv("HOME");
+  if (home != nullptr && *home != '\0') {
+    return std::string(home) + "/.hems-panel-theme";
+  }
+  return "/tmp/hems-panel-theme";
+}
+
+hemsui::ThemeId loadSavedTheme() {
+  FILE *fp = fopen(themeStatePath().c_str(), "r");
+  if (fp == nullptr) {
+    return hemsui::ThemeId::Dark;
+  }
+  int value = -1;
+  const int n = fscanf(fp, "%d", &value);
+  fclose(fp);
+  if (n == 1 && (value == 0 || value == 1)) {
+    return hemsui::themeId(value);
+  }
+  return hemsui::ThemeId::Dark;
+}
+
+void saveTheme(hemsui::ThemeId id) {
+  FILE *fp = fopen(themeStatePath().c_str(), "w");
+  if (fp == nullptr) {
+    return;
+  }
+  fprintf(fp, "%d\n", static_cast<int>(id));
+  fclose(fp);
+}
+
 class PosixTransport : public warpapi::Transport {
  public:
   PosixTransport(int timeoutMs, bool verbose)
@@ -87,6 +125,7 @@ struct Options {
   int afterS = 2;
   int page = 1;
   int theme = 0;
+  bool themeGiven = false;
   bool backgroundImage = true;
   int tapX = -1;
   int tapY = -1;
@@ -450,7 +489,8 @@ void usage() {
       "  --shot FILE      render one frame to PNG, then exit\n"
       "  --after S        seconds to wait before the shot (default 2)\n"
       "  --page N         page to show, 1..6 (default 1)\n"
-      "  --theme NAME     dark or light palette (default dark)\n"
+      "  --theme NAME     dark or light palette (default: saved theme, dark\n"
+      "                   on first start; also saved as the new setting)\n"
       "  --image NAME     flow-page image on or off (default on)\n"
       "  --setup          show the first-boot Wi-Fi setup screen\n"
       "  --probe          read once, print the mapped values, exit\n"
@@ -486,6 +526,7 @@ int main(int argc, char **argv) {
     } else if (a == "--theme") {
       const std::string name = value("dark");
       opt.theme = name == "light" ? 1 : 0;
+      opt.themeGiven = true;
     } else if (a == "--image") {
       const std::string name = value("on");
       opt.backgroundImage = name != "off";
@@ -577,7 +618,15 @@ int main(int argc, char **argv) {
   lv_sdl_mouse_create();
   // SDL_AddEventWatch(quitWatch, nullptr);
 
-  hemsui::setTheme(hemsui::themeId(opt.theme));
+  // An explicit --theme wins and becomes the new saved setting. Otherwise
+  // restore the choice made in an earlier session (tap on the service page).
+  const hemsui::ThemeId initialTheme = opt.themeGiven
+      ? hemsui::themeId(opt.theme) : loadSavedTheme();
+  hemsui::setTheme(initialTheme);
+  hemsui::setThemeChangeHandler(saveTheme);
+  if (opt.themeGiven) {
+    saveTheme(initialTheme);
+  }
   hemsui::create(lv_screen_active());
   hemsui::setBackgroundImage(opt.backgroundImage);
   hemsui::setPage(opt.page);

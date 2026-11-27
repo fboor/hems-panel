@@ -79,14 +79,23 @@ def points_near(im, points, target, tol=6):
     return all(close(im.getpixel(p), target, tol) for p in points)
 
 
-def shot(name, page, extra=(), sd=None):
+def shot(name, page, extra=(), sd=None, theme_file=None):
     path = "/tmp/test_theme_%s.png" % name
     cmd = ["./run.sh", "--shot", path, "--page", str(page), "--after", "3",
            "--url", "http://localhost:%d" % MOCK_PORT]
     cmd.extend(("--sd", sd) if sd is not None else ("--no-sd",))
     cmd.extend(extra)
-    r = subprocess.run(cmd, cwd=ROOT, env=dict(os.environ,
-                                               SDL_VIDEODRIVER="dummy"),
+    # Keep every shot independent unless a caller explicitly shares a state
+    # file to verify that the theme survives a restart.
+    if theme_file is None:
+        theme_file = "/tmp/test_theme_state_%s" % name
+        try:
+            os.remove(theme_file)
+        except OSError:
+            pass
+    env = dict(os.environ, SDL_VIDEODRIVER="dummy",
+               HEMS_SIM_THEME_FILE=theme_file)
+    r = subprocess.run(cmd, cwd=ROOT, env=env,
                        capture_output=True, text=True, timeout=240)
     if r.returncode != 0 or not os.path.isfile(path):
         print("FAIL: simulator shot %s failed" % name)
@@ -218,9 +227,38 @@ def main():
                    green, orange))
             failures += 0 if ok else 1
 
+        # The emulator must restore the theme on the next start, just like the
+        # firmware restores it from NVS. Tap THEME once, then start again with
+        # no --theme flag and check both the pixels and the stored value.
+        state = os.path.join(tempfile.gettempdir(), "hems-theme-persist")
+        try:
+            os.remove(state)
+        except OSError:
+            pass
+        savedTap = shot("persist_tap", 6,
+                        ("--tap", str(THEME_BUTTON[0]), str(THEME_BUTTON[1]),
+                         "--tapdelay", "0"), theme_file=state)
+        restored = shot("persist_restart", 6, theme_file=state)
+        if savedTap is None or restored is None:
+            return 1
+        for name, im in [("tap saves light", savedTap),
+                         ("restart restores", restored)]:
+            got = im.getpixel((5, 5))
+            ok = close(got, LIGHT_BG)
+            print("%s %-16s bg %s" % ("PASS" if ok else "FAIL", name, got))
+            failures += 0 if ok else 1
+        saved = ""
+        if os.path.isfile(state):
+            with open(state) as f:
+                saved = f.read().strip()
+        ok = saved == "1"
+        print("%s %-16s saved %r" % ("PASS" if ok else "FAIL",
+                                     "theme state file", saved))
+        failures += 0 if ok else 1
+
         print("---")
-        print("RESULT: %s (%d/15 checks correct)" %
-              ("PASS" if failures == 0 else "FAIL", 15 - failures))
+        print("RESULT: %s (%d/18 checks correct)" %
+              ("PASS" if failures == 0 else "FAIL", 18 - failures))
         return 1 if failures else 0
     finally:
         mock.send_signal(signal.SIGKILL)
