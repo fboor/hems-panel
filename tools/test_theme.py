@@ -44,14 +44,14 @@ ACTIVE_BUTTON_BORDER_POINT = (760, 434)
 INACTIVE_BUTTON_BORDER_POINT = (520, 434)
 # Exposed pixels inside the 800x356 panel on the service pages. The flow page
 # keeps its image there, so these are checked only with the image switched off.
-PANEL_POINTS = [(10, 100), (780, 100), (400, 130), (780, 420)]
+PANEL_POINTS = [(10, 100), (780, 100), (400, 133), (780, 418)]
 # Schematic symbol colours after RGB565 conversion in the light palette.
 LIGHT_BACKDROP_SYMBOLS = [(74, 161, 255), (205, 137, 24), (115, 85, 172),
                           (180, 121, 24)]
 LIGHT_DOT = (255, 214, 0)
-# Centre of the THEME button: page at (16, 0), button at (542, 9), 200x40,
+# Centre of the THEME button: card at (16, 8), button at (542, 9), 200x40,
 # and the page starts at screen y 65.
-THEME_BUTTON = (658, 94)
+THEME_BUTTON = (658, 102)
 # Chart series colours after RGB565 conversion, from Theme.h/kSeriesColors.
 SERIES_GREEN = (41, 161, 41)
 SERIES_ORANGE = (255, 127, 12)

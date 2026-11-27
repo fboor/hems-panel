@@ -67,10 +67,23 @@ constexpr const lv_font_t *F_ICON = &lv_font_hems_48;
 
 // The header lost 3 px so the energy and chart pages gain room above their
 // cards. The small caption line moves up with it; the photo-sized panel keeps
-// its 800x356 geometry. Page-2 cards and the page-3 chart each give back 6 px.
+// its 800x356 geometry. The energy cards also lost 6 px of height.
 constexpr int kHeaderH = 65;
 constexpr int kCaptionY = 37;
 constexpr int kCardSave = 6;
+
+// Tighter card stacks on the energy, heating and service pages. The smaller
+// gaps give back room for almost equal margins above and below the cards.
+constexpr int kEnergyTop = 8;
+constexpr int kEnergyGap = 9;
+constexpr int kHeatTop = 15;
+constexpr int kHeatGap = 8;
+constexpr int kServiceTop = 8;
+constexpr int kServiceGap = 6;
+
+// The chart keeps its shorter height but starts 6 px lower, so the space it
+// gave back is above the plot instead of below it.
+constexpr int kChartDrop = 6;
 
 // Power history. One sample per minute is enough for a 24 h graph and keeps
 // the raw ring buffer small (1440 entries). The chart itself always uses the
@@ -2116,7 +2129,7 @@ void create(lv_obj_t *parent) {
   w.page1 = page1;
 
   // Grid ---------------------------------------------------------------
-  lv_obj_t *grid = card(page1, 12, kHeaderH, 250, 176 - kCardSave);
+  lv_obj_t *grid = card(page1, 12, kHeaderH + kEnergyTop, 250, 176 - kCardSave);
   title(grid, TR("NETZ", "GRID"));
   w.gridTotal = label(grid, 16, 30, 0, F_BIG, palette().text, "--");
   w.gridDir = label(grid, 16, 76 - kCardSave, 0, F_SMALL, palette().muted, TR("Bezug", "Import"));
@@ -2130,7 +2143,7 @@ void create(lv_obj_t *parent) {
   }
 
   // Household ----------------------------------------------------------
-  lv_obj_t *house = card(page1, 274, kHeaderH, 250, 176 - kCardSave);
+  lv_obj_t *house = card(page1, 274, kHeaderH + kEnergyTop, 250, 176 - kCardSave);
   title(house, TR("HAUS", "HOUSE"));
   w.houseTotal = label(house, 16, 30, 0, F_BIG, palette().text, "--");
   label(house, 16, 76 - kCardSave, 0, F_SMALL, palette().muted, TR("Verbrauch", "Consumption"));
@@ -2142,7 +2155,7 @@ void create(lv_obj_t *parent) {
   }
 
   // Battery ------------------------------------------------------------
-  lv_obj_t *bat = card(page1, 536, kHeaderH, 250, 176 - kCardSave);
+  lv_obj_t *bat = card(page1, 536, kHeaderH + kEnergyTop, 250, 176 - kCardSave);
   title(bat, TR("AKKU", "BATTERY"));
   w.batSoc = label(bat, 16, 28, 120, F_BIG, palette().text, "-- %");
   w.batDir = label(bat, 130, 42, 104, F_SMALL, palette().muted, "--",
@@ -2166,7 +2179,9 @@ void create(lv_obj_t *parent) {
   row(bat, 16, 152 - kCardSave, 218, TR("Strom", "Current"), &w.batCurrent);
 
   // PV -----------------------------------------------------------------
-  lv_obj_t *pv = card(page1, 12, 256 - kCardSave, 250, 166 - kCardSave);
+  lv_obj_t *pv = card(page1, 12,
+                      kHeaderH + kEnergyTop + (176 - kCardSave) + kEnergyGap,
+                      250, 166 - kCardSave);
   title(pv, TR("SOLAR", "SOLAR"));
   w.pvTotal = label(pv, 16, 30, 0, F_BIG, palette().green, "--");
   label(pv, 16, 76 - kCardSave, 0, F_SMALL, palette().muted, TR("Erzeugung", "Generation"));
@@ -2174,7 +2189,9 @@ void create(lv_obj_t *parent) {
   row(pv, 16, 134 - kCardSave, 218, "String B", &w.pvB);
 
   // Wallbox -----------------------------------------------------------
-  lv_obj_t *wallbox = card(page1, 274, 256 - kCardSave, 250, 166 - kCardSave);
+  lv_obj_t *wallbox = card(page1, 274,
+                           kHeaderH + kEnergyTop + (176 - kCardSave) + kEnergyGap,
+                           250, 166 - kCardSave);
   title(wallbox, TR("WALLBOX", "WALLBOX"));
   w.wallboxValue = label(wallbox, 16, 30, 0, F_BIG, palette().green, "--");
   w.wallboxNote = label(wallbox, 16, 76 - kCardSave, 0, F_SMALL, palette().muted, "--");
@@ -2182,7 +2199,9 @@ void create(lv_obj_t *parent) {
   w.wallboxPhase = label(wallbox, 16, 116 - kCardSave, 0, F_SMALL, palette().muted, "--");
 
   // Energy totals for today --------------------------------------------
-  lv_obj_t *energy = card(page1, 536, 256 - kCardSave, 250, 166 - kCardSave);
+  lv_obj_t *energy = card(page1, 536,
+                          kHeaderH + kEnergyTop + (176 - kCardSave) + kEnergyGap,
+                          250, 166 - kCardSave);
   title(energy, TR("ENERGIE HEUTE", "ENERGY TODAY"));
   // No large value to pull up here, so spread the 6 px saving across the six
   // rows: one pixel less between the title and each following line.
@@ -2210,7 +2229,7 @@ void create(lv_obj_t *parent) {
     // whenever a new sample arrives.
     w.chartImage = lv_canvas_create(w.page2);
     lv_obj_remove_style_all(w.chartImage);
-    lv_obj_set_pos(w.chartImage, 12, 0);
+    lv_obj_set_pos(w.chartImage, 12, kChartDrop);
     lv_obj_set_size(w.chartImage, kChartW, kChartH);
     lv_canvas_set_buffer(w.chartImage, g_chartPixels, kChartW, kChartH,
                          LV_COLOR_FORMAT_RGB565);
@@ -2230,7 +2249,7 @@ void create(lv_obj_t *parent) {
     renderChartImage();
   } else {
     w.powerChart = lv_chart_create(w.page2);
-    lv_obj_set_pos(w.powerChart, 12, 0);
+    lv_obj_set_pos(w.powerChart, 12, kChartDrop);
     lv_obj_set_size(w.powerChart, kChartW, kChartH);
     lv_chart_set_type(w.powerChart, LV_CHART_TYPE_LINE);
     lv_chart_set_point_count(w.powerChart, kChartPoints);
@@ -2277,7 +2296,7 @@ void create(lv_obj_t *parent) {
     // so both ranges line up; 0 % sits at the bottom edge, 100 % at the top,
     // independent of the power range.
     w.socChart = lv_chart_create(w.page2);
-    lv_obj_set_pos(w.socChart, 12, 0);
+    lv_obj_set_pos(w.socChart, 12, kChartDrop);
     lv_obj_set_size(w.socChart, kChartW, kChartH);
     lv_chart_set_type(w.socChart, LV_CHART_TYPE_LINE);
     lv_chart_set_point_count(w.socChart, kChartPoints);
@@ -2307,7 +2326,7 @@ void create(lv_obj_t *parent) {
   // a 1 x 234 px redraw instead of a repaint of the whole chart.
   w.tapLine = lv_obj_create(w.page2);
   lv_obj_remove_style_all(w.tapLine);
-  lv_obj_set_pos(w.tapLine, 12, 0);
+  lv_obj_set_pos(w.tapLine, 12, kChartDrop);
   lv_obj_set_size(w.tapLine, 1, kChartH);
   lv_obj_set_style_bg_color(w.tapLine, lv_color_hex(palette().text), 0);
   lv_obj_set_style_bg_opa(w.tapLine, LV_OPA_70, 0);
@@ -2316,8 +2335,8 @@ void create(lv_obj_t *parent) {
 
   // Y-scale labels last, so they draw over the chart. They sit at the left
   // edge of the card, where the plot is empty.
-  w.scaleMax = label(w.page2, 20, 5, 60, F_SMALL, palette().muted, "--", LV_TEXT_ALIGN_LEFT, false);
-  w.scaleMid = label(w.page2, 20, 119, 60, F_SMALL, palette().muted, "--", LV_TEXT_ALIGN_LEFT, false);
+  w.scaleMax = label(w.page2, 20, 5 + kChartDrop, 60, F_SMALL, palette().muted, "--", LV_TEXT_ALIGN_LEFT, false);
+  w.scaleMid = label(w.page2, 20, 116 + kChartDrop, 60, F_SMALL, palette().muted, "--", LV_TEXT_ALIGN_LEFT, false);
   w.scaleMin = label(w.page2, 20, 216, 60, F_SMALL, palette().muted, "--", LV_TEXT_ALIGN_LEFT, false);
   lv_obj_clear_flag(w.scaleMax, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_clear_flag(w.scaleMid, LV_OBJ_FLAG_CLICKABLE);
@@ -2326,25 +2345,25 @@ void create(lv_obj_t *parent) {
   // Day-ahead exchange price band over the next 24 h in its own card,
   // shown only when the dynamic tariff is enabled. Colours: grey = no
   // data, blue = medium, green = low, red = high, bright green = negative.
-  w.priceCard = card(w.page2, 12, 289 - kCardSave, 776, 64);
+  w.priceCard = card(w.page2, 12, 289 - kCardSave + kChartDrop, 776, 64);
   {
     // Band and stats are children of page2 (not of the card): the card's
     // flex layout treats children as flow items and the band segments were
     // not rendered inside it.
     const char *const priceTicks[5] = {"0h", "6h", "12h", "18h", "24h"};
-    w.priceBand = createHistoryBand(w.page2, 306 - kCardSave, TR("Börsenpreis", "Exchange price"),
+    w.priceBand = createHistoryBand(w.page2, 306 - kCardSave + kChartDrop, TR("Börsenpreis", "Exchange price"),
                                     0x999999, 0x007BFF, 0x2CA02C, 0xD62728, 0x999999,
                                     172, priceTicks, 0x00FF00);
   }
   setBandVisible(w.priceBand, false);
   w.priceStats =
-      label(w.page2, 172, 332 - kCardSave, 560, F_SMALL, palette().muted, "--");
+      label(w.page2, 172, 332 - kCardSave + kChartDrop, 560, F_SMALL, palette().muted, "--");
   lv_obj_add_flag(w.priceStats, LV_OBJ_FLAG_HIDDEN);
 
   // Time labels at bottom (reversed: new values on right)
   const int xpos[5] = {8, 185, 375, 565, 755};
   for (int i = 0; i < 5; ++i) {
-    w.timeLabel[i] = label(w.page2, xpos[i], 242 - kCardSave, 40, F_SMALL, palette().muted,
+    w.timeLabel[i] = label(w.page2, xpos[i], 242 - kCardSave + kChartDrop, 40, F_SMALL, palette().muted,
                            "--", LV_TEXT_ALIGN_CENTER);
   }
   updateTimeLabels(3600);
@@ -2365,17 +2384,17 @@ void create(lv_obj_t *parent) {
   for (int i = 0; i < 7; ++i) {
     lv_obj_t *dot = lv_obj_create(w.page2);
     lv_obj_remove_style_all(dot);
-    lv_obj_set_pos(dot, dotX[i], 268 - kCardSave);
+    lv_obj_set_pos(dot, dotX[i], 268 - kCardSave + kChartDrop);
     lv_obj_set_size(dot, 10, 10);
     lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
     lv_obj_set_style_bg_color(dot, colors[i], 0);
     lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
     if (i < 4 || i == 6) {
-      w.legendLabel[i] = label(w.page2, dotX[i] + 12, 266 - kCardSave, labelW[i], F_LEGEND,
+      w.legendLabel[i] = label(w.page2, dotX[i] + 12, 266 - kCardSave + kChartDrop, labelW[i], F_LEGEND,
                                palette().muted, names[i]);
     } else {
       w.wbLegendDot[i - 4] = dot;
-      w.wbLegendLabel[i - 4] = label(w.page2, dotX[i] + 12, 266 - kCardSave, labelW[i],
+      w.wbLegendLabel[i - 4] = label(w.page2, dotX[i] + 12, 266 - kCardSave + kChartDrop, labelW[i],
                                      F_LEGEND, palette().muted, "--");
       w.legendLabel[i] = w.wbLegendLabel[i - 4];
     }
@@ -2420,7 +2439,7 @@ void create(lv_obj_t *parent) {
   lv_obj_set_size(w.page6, 790, 372);
   lv_obj_add_flag(w.page6, LV_OBJ_FLAG_HIDDEN);
 
-  lv_obj_t *sg = card(w.page6, 16, 0, 758, 164);
+  lv_obj_t *sg = card(w.page6, 16, kHeatTop, 758, 164);
   title(sg, TR("SG-READY", "SG-READY"));
   row(sg, 16, 30, 720, "Status", &w.heatStatus);
   row(sg, 16, 52, 720, TR("Erweitert (SG2)", "Extended (SG2)"), &w.heatExtended);
@@ -2435,7 +2454,7 @@ void create(lv_obj_t *parent) {
                                  kBandX0, sgTicks);
   }
 
-  lv_obj_t *party = card(w.page6, 16, 176, 758, 52);
+  lv_obj_t *party = card(w.page6, 16, kHeatTop + 164 + kHeatGap, 758, 52);
   title(party, TR("PARTYMODUS", "PARTY MODE"));
   label(party, 16, 30, 400, F_BODY, palette().muted, TR("2 Std. Override", "2 h override"));
   w.heatPartyBtn = lv_btn_create(party);
@@ -2463,7 +2482,8 @@ void create(lv_obj_t *parent) {
     }
   }, LV_EVENT_CLICKED, nullptr);
 
-  lv_obj_t *temps = card(w.page6, 16, 240, 758, 94);
+  lv_obj_t *temps = card(w.page6, 16, kHeatTop + 164 + kHeatGap + 52 + kHeatGap,
+                         758, 94);
   title(temps, TR("TEMPERATUR", "TEMPERATURE"));
   row(temps, 16, 28, 720, TR("Jetzt", "Now"), &w.tempNow);
   row(temps, 16, 48, 720, TR("Heute Min/Max", "Today min/max"), &w.tempToday);
@@ -2524,7 +2544,7 @@ void create(lv_obj_t *parent) {
                      LV_TEXT_ALIGN_CENTER);
 
   // Theme and image controls, styled like the network card below them.
-  lv_obj_t *bg = card(w.page3, 16, 0, 758, 58);
+  lv_obj_t *bg = card(w.page3, 16, kServiceTop, 758, 58);
   title(bg, "THEME");
   w.bgBtn = lv_btn_create(bg);
   lv_obj_set_pos(w.bgBtn, 542, 9);
@@ -2577,7 +2597,7 @@ void create(lv_obj_t *parent) {
 
   // Network state. The setup portal stays reachable on the local network, so
   // this card is also the pointer to it when the WARP address has to change.
-  lv_obj_t *net = card(w.page3, 16, 70, 370, 190);
+  lv_obj_t *net = card(w.page3, 16, kServiceTop + 58 + kServiceGap, 370, 190);
   title(net, TR("NETZWERK", "NETWORK"));
   w.netSsid = label(net, 16, 34, 338, F_BODY, palette().text, "WLAN: --");
   w.netIp = label(net, 16, 58, 338, F_BODY, palette().text, "IP: --");
@@ -2589,7 +2609,7 @@ void create(lv_obj_t *parent) {
         TR("Zum Ändern die Web-Adresse im Browser öffnen.", "Open the web address in your browser to change it."));
 
   // Energy counters since commissioning, next to the network card.
-  lv_obj_t *z = card(w.page3, 402, 70, 372, 190);
+  lv_obj_t *z = card(w.page3, 402, kServiceTop + 58 + kServiceGap, 372, 190);
   title(z, TR("ZÄHLER", "METERS"));
   row(z, 16, 30, 340, TR("Erzeugung", "Generation"), &w.zPv, F_SMALL);
   row(z, 16, 52, 340, TR("Verbrauch", "Consumption"), &w.zHouse, F_SMALL);
@@ -2602,7 +2622,9 @@ void create(lv_obj_t *parent) {
 
   // Digital IO states: 4 inputs, 2 relays, 2 SG-Ready outputs, each with a
   // dot below its label.
-  lv_obj_t *io = card(w.page3, 16, 272, 758, 80);
+  lv_obj_t *io = card(w.page3, 16,
+                      kServiceTop + 58 + kServiceGap + 190 + kServiceGap,
+                      758, 80);
   title(io, TR("I/O STATUS", "I/O STATUS"));
   const char *ioNames[8] = {TR("Eingang 1", "Input 1"), TR("Eingang 2", "Input 2"), TR("Eingang 3", "Input 3"),
                             TR("Eingang 4", "Input 4"), TR("Relais 1", "Relay 1"), TR("Relais 2", "Relay 2"), TR("SG 1", "SG 1"),

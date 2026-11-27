@@ -26,9 +26,9 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 MOCK_PORT = 8085
 SHOT = "/tmp/test_price_band.png"
 
-# Page content starts below the 65 px header; the band is at page y 300 and
-# is 5 px high. Sample its middle row across the band width.
-BAND_Y = 65 + 300 + 2
+# Page content starts below the 65 px header; the chart moved down 6 px and
+# the band is at page y 306, 5 px high. Sample its middle row across the width.
+BAND_Y = 65 + 306 + 2
 BAND_X0 = 172
 BAND_X1 = 720
 
