@@ -162,10 +162,9 @@ python3 tools/test_io_status.py
 ```
 
 `tools/test_theme.py` renders the service page with both palettes, taps the
-`THEME` button to check the runtime switch, checks the schematic only on the
-light flow page, including its yellow particles, and checks the blue active
-button plus the plain panel on the service pages and on the dark flow page with
-the image off. It also checks that an active button keeps the same border colour
+`THEME` button to check the runtime switch, checks the sketch on the light flow
+page, and checks the blue active button plus the plain panel on the service
+pages and on the dark flow page with the image off. It also checks that an active button keeps the same border colour
 as an inactive one. In the light theme the header and footer are deep green and
 the panel is light. It also renders the chart from a fresh SD history to verify that
 the card follows the palette while the series keep their colours:

@@ -59,8 +59,9 @@ done <<EOF
 $(find "$lvgl/src" -name '*.c')
 EOF
 wait
-# Compile chart_bg.c as C
+# Compile the two background images as C
 cc $cflags -c "$repo/src/chart_bg.c" -o "$build/chart_bg.o" 2>/dev/null && echo "chart_bg compiled"
+cc $cflags -c "$repo/src/light_bg.c" -o "$build/light_bg.o" 2>/dev/null && echo "light_bg compiled"
 
 # The generated fonts are C (designated initializers), not C++.
 mkdir -p "$build/fonts"
@@ -77,6 +78,7 @@ c++ $cflags -std=c++17 \
   "$repo/src/ui/HemsUi.cpp" \
   "$build"/lvgl/*.o \
   "$build"/chart_bg.o \
+  "$build"/light_bg.o \
   "${font_objs[@]}" \
   -o "$out" -lSDL2 -lz -lm -lpthread
 

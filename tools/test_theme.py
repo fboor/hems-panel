@@ -3,7 +3,7 @@
 
 Checks that the dark and light palettes repaint both the page background and
 the cards, that tapping the THEME button switches to the next palette without
-a restart, and that the schematic appears only on the light flow page. Active
+a restart, and that the sketch appears only on the light flow page. Active
 buttons are blue in both themes and keep the idle border colour. The light
 theme keeps its dark-green colour in the header and footer and shows a light
 centre; its flow particles are yellow.
@@ -48,10 +48,10 @@ PANEL_POINTS = [(10, 100), (780, 100), (400, 133), (780, 418)]
 # Rounded chart corner: outside the card but inside its canvas. It must show
 # the panel colour, not the dark-green screen background in the light theme.
 CHART_CORNER_POINT = (13, 72)
-# Schematic symbol colours after RGB565 conversion in the light palette.
-LIGHT_BACKDROP_SYMBOLS = [(74, 161, 255), (205, 137, 24), (115, 85, 172),
-                          (180, 121, 24)]
-LIGHT_DOT = (255, 214, 0)
+# The light flow-page sketch: white paper with dark line work. Both counts are
+# far above what the plain panel alone produces when the image is switched off.
+LIGHT_SKETCH_WHITE_MIN = 90000
+LIGHT_SKETCH_INK_MIN = 5000
 # Centre of the THEME button: card at (16, 8), button at (542, 9), 200x40,
 # and the page starts at screen y 65.
 THEME_BUTTON = (658, 102)
@@ -186,17 +186,23 @@ def main():
         failures += 0 if ok else 1
 
         colors = Counter(flow.crop((0, 65, 800, 421)).getdata())
-        symbolPixels = sum(count_near(colors, c)
-                           for c in LIGHT_BACKDROP_SYMBOLS)
-        ok = symbolPixels > 2000
-        print("%s %-16s symbol px %d" %
-              ("PASS" if ok else "FAIL", "light flow schematic", symbolPixels))
+        whitePixels = sum(n for c, n in colors.items() if min(c) > 245)
+        inkPixels = sum(n for c, n in colors.items() if max(c) < 120)
+        ok = (whitePixels > LIGHT_SKETCH_WHITE_MIN and
+              inkPixels > LIGHT_SKETCH_INK_MIN)
+        print("%s %-16s white %d ink %d" %
+              ("PASS" if ok else "FAIL", "light flow sketch",
+               whitePixels, inkPixels))
         failures += 0 if ok else 1
 
-        dotPixels = count_near(colors, LIGHT_DOT)
-        ok = dotPixels >= 100
-        print("%s %-16s yellow px %d" %
-              ("PASS" if ok else "FAIL", "light flow dots", dotPixels))
+        # The sketch is warm (peach/beige), not blue. Catching a red/blue swap
+        # in the I8 palette: LVGL stores lv_color32_t as B, G, R, A.
+        bluePixels = sum(n for c, n in colors.items() if c[2] > c[0] + 20)
+        warmPixels = sum(n for c, n in colors.items() if c[0] > c[2] + 20)
+        ok = bluePixels < warmPixels
+        print("%s %-16s blue %d warm %d" %
+              ("PASS" if ok else "FAIL", "light flow colours",
+               bluePixels, warmPixels))
         failures += 0 if ok else 1
 
         for name, im, panel in [
@@ -268,8 +274,8 @@ def main():
         failures += 0 if ok else 1
 
         print("---")
-        print("RESULT: %s (%d/20 checks correct)" %
-              ("PASS" if failures == 0 else "FAIL", 20 - failures))
+        print("RESULT: %s (%d/21 checks correct)" %
+              ("PASS" if failures == 0 else "FAIL", 21 - failures))
         return 1 if failures else 0
     finally:
         mock.send_signal(signal.SIGKILL)

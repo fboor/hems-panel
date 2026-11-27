@@ -22,6 +22,7 @@ constexpr bool kEnglishUi = false;
 #endif
 
 LV_IMG_DECLARE(chart_bg);
+LV_IMG_DECLARE(light_bg);
 
 #include <lvgl.h>
 #include <cmath>
@@ -176,221 +177,47 @@ int g_chartRange = 5000;  // last y range, kept for re-renders
 uint32_t *g_sgBandTimes = nullptr;
 int8_t *g_sgBandState = nullptr;
 
-// The flow page's background photograph is stored as an I8 image with a
-// 256-entry palette. LVGL decodes an I8 image per row and per redraw: it looks
-// up every pixel and expands the row to ARGB8888 before blending it into the
-// RGB565 layer (LV_BIN_DECODER_RAM_LOAD is off). Converting it once at startup
-// into an RGB565 copy in PSRAM turns each redraw into a straight 2-byte blit.
-// 800 x 356 x 2 B = 570 kB; if that allocation fails the original image is
-// used unchanged.
-lv_image_dsc_t g_chartBg565{};
-bool g_chartBg565Ready = false;
+// Geometry of the plain panel behind every page and of both flow images.
+constexpr int kBackdropW = 800;
+constexpr int kBackdropH = 356;
 
-void prepareChartBackground() {
-  const lv_image_header_t &hdr = chart_bg.header;
+// Both flow-page backgrounds are I8 images with a 256-entry palette. LVGL
+// decodes an I8 image per row and per redraw: it looks up every pixel and
+// expands the row to ARGB8888 before blending it into the RGB565 layer
+// (LV_BIN_DECODER_RAM_LOAD is off). Converting once at startup into an RGB565
+// copy in PSRAM turns each redraw into a straight 2-byte blit. Each image is
+// 800 x 356 x 2 B = 570 kB; if an allocation fails, use the original image.
+lv_image_dsc_t g_chartBg565{};
+lv_image_dsc_t g_lightBg565{};
+bool g_chartBg565Ready = false;
+bool g_lightBg565Ready = false;
+
+bool prepareBackground(const lv_image_dsc_t &src, lv_image_dsc_t &dst) {
+  const lv_image_header_t &hdr = src.header;
   if (hdr.cf != LV_COLOR_FORMAT_I8 || hdr.w == 0 || hdr.h == 0) {
-    return;
+    return false;
   }
   const size_t px = (size_t)hdr.w * (size_t)hdr.h;
-  uint16_t *dst = (uint16_t *)allocLarge(px * sizeof(uint16_t));
-  if (dst == nullptr) {
-    return;
+  uint16_t *data = (uint16_t *)allocLarge(px * sizeof(uint16_t));
+  if (data == nullptr) {
+    return false;
   }
-  const lv_color32_t *entries = (const lv_color32_t *)chart_bg.data;
-  const uint8_t *indices = chart_bg.data + sizeof(lv_color32_t) * 256;
+  const lv_color32_t *entries = (const lv_color32_t *)src.data;
+  const uint8_t *indices = src.data + sizeof(lv_color32_t) * 256;
   for (size_t i = 0; i < px; ++i) {
     const lv_color32_t &c = entries[indices[i]];
     // Same rounding as LVGL's lv_color_to_u16, which the ARGB8888-to-RGB565
     // blend uses for fully opaque pixels.
-    dst[i] = (uint16_t)(((c.red & 0xF8) << 8) + ((c.green & 0xFC) << 3) +
-                        ((c.blue & 0xF8) >> 3));
+    data[i] = (uint16_t)(((c.red & 0xF8) << 8) + ((c.green & 0xFC) << 3) +
+                         ((c.blue & 0xF8) >> 3));
   }
-  g_chartBg565.header = hdr;
-  g_chartBg565.header.cf = LV_COLOR_FORMAT_RGB565;
-  g_chartBg565.header.stride = (uint16_t)(hdr.w * sizeof(uint16_t));
-  g_chartBg565.data_size = (uint32_t)(px * sizeof(uint16_t));
-  g_chartBg565.data = (const uint8_t *)dst;
-  g_chartBg565.reserved = nullptr;
-  g_chartBg565Ready = true;
-}
-
-// Backdrop drawn wherever no photograph is shown. It has the photo's exact
-// 800x356 geometry, so the same object can sit behind every page. The drawing
-// is a quiet line schematic - sun, PV, house, car - tinted from the theme.
-constexpr int kBackdropW = 800;
-constexpr int kBackdropH = 356;
-
-void backdropPixel(uint16_t *dst, int x, int y, uint16_t c) {
-  if (x < 0 || y < 0 || x >= kBackdropW || y >= kBackdropH) {
-    return;
-  }
-  dst[y * kBackdropW + x] = c;
-}
-
-void backdropRect(uint16_t *dst, int x0, int y0, int x1, int y1, uint16_t c,
-                  bool fill) {
-  if (x0 > x1) {
-    const int t = x0;
-    x0 = x1;
-    x1 = t;
-  }
-  if (y0 > y1) {
-    const int t = y0;
-    y0 = y1;
-    y1 = t;
-  }
-  if (fill) {
-    for (int y = y0; y <= y1; ++y) {
-      for (int x = x0; x <= x1; ++x) {
-        backdropPixel(dst, x, y, c);
-      }
-    }
-    return;
-  }
-  for (int x = x0; x <= x1; ++x) {
-    backdropPixel(dst, x, y0, c);
-    backdropPixel(dst, x, y1, c);
-  }
-  for (int y = y0; y <= y1; ++y) {
-    backdropPixel(dst, x0, y, c);
-    backdropPixel(dst, x1, y, c);
-  }
-}
-
-// Integer Bresenham with a small square brush. The brush keeps thin diagonal
-// lines connected without antialiasing or per-pixel blending on the panel.
-void backdropLine(uint16_t *dst, int x0, int y0, int x1, int y1, uint16_t c,
-                  int thickness = 2) {
-  int dx = x1 - x0;
-  if (dx < 0) dx = -dx;
-  int dy = y1 - y0;
-  if (dy < 0) dy = -dy;
-  const int sx = x0 < x1 ? 1 : -1;
-  const int sy = y0 < y1 ? 1 : -1;
-  int err = dx - dy;
-  for (;;) {
-    for (int oy = -thickness / 2; oy <= (thickness - 1) / 2; ++oy) {
-      for (int ox = -thickness / 2; ox <= (thickness - 1) / 2; ++ox) {
-        backdropPixel(dst, x0 + ox, y0 + oy, c);
-      }
-    }
-    if (x0 == x1 && y0 == y1) {
-      break;
-    }
-    const int e2 = 2 * err;
-    if (e2 > -dy) {
-      err -= dy;
-      x0 += sx;
-    }
-    if (e2 < dx) {
-      err += dx;
-      y0 += sy;
-    }
-  }
-}
-
-void backdropPath(uint16_t *dst, const int pts[][2], int count, uint16_t c,
-                  int thickness = 2) {
-  for (int i = 1; i < count; ++i) {
-    backdropLine(dst, pts[i - 1][0], pts[i - 1][1], pts[i][0], pts[i][1], c,
-                 thickness);
-  }
-}
-
-void backdropCircle(uint16_t *dst, int cx, int cy, int radius, uint16_t c,
-                    bool fill) {
-  const int outer = radius * radius;
-  const int r = radius > 2 ? radius - 2 : 0;
-  const int inner = r * r;
-  for (int dy = -radius; dy <= radius; ++dy) {
-    for (int dx = -radius; dx <= radius; ++dx) {
-      const int d = dx * dx + dy * dy;
-      if (fill ? d <= outer : (d >= inner && d <= outer)) {
-        backdropPixel(dst, cx + dx, cy + dy, c);
-      }
-    }
-  }
-}
-
-lv_image_dsc_t g_backdrop565{};
-bool g_backdropReady = false;
-
-void prepareBackdrop() {
-  if (!g_backdropReady) {
-    uint16_t *dst =
-        (uint16_t *)allocLarge((size_t)kBackdropW * kBackdropH * sizeof(uint16_t));
-    if (dst == nullptr) {
-      return;
-    }
-    g_backdrop565.header.cf = LV_COLOR_FORMAT_RGB565;
-    g_backdrop565.header.w = kBackdropW;
-    g_backdrop565.header.h = kBackdropH;
-    g_backdrop565.header.stride = (uint16_t)(kBackdropW * sizeof(uint16_t));
-    g_backdrop565.data_size =
-        (uint32_t)(kBackdropW * kBackdropH * sizeof(uint16_t));
-    g_backdrop565.data = (const uint8_t *)dst;
-    g_backdropReady = true;
-  }
-
-  uint16_t *dst = (uint16_t *)g_backdrop565.data;
-  const Theme &t = palette();
-  const uint16_t bg = lv_color_to_u16(lv_color_hex(t.backdrop));
-  const uint16_t fill = lv_color_to_u16(lv_color_hex(t.backdropFill));
-  const uint16_t line = lv_color_to_u16(lv_color_hex(t.backdropLine));
-  const uint16_t accent = lv_color_to_u16(lv_color_hex(t.backdropAccent));
-  const uint16_t solar = lv_color_to_u16(lv_color_hex(t.solar));
-  const uint16_t amber = lv_color_to_u16(lv_color_hex(t.amber));
-  const uint16_t ev = lv_color_to_u16(lv_color_hex(t.ev));
-
-  for (int i = 0; i < kBackdropW * kBackdropH; ++i) {
-    dst[i] = bg;
-  }
-
-  // Two quiet links tie the symbols together without turning the picture into
-  // a grid. They sit behind the glyphs.
-  const int sunLink[2][2] = {{282, 62}, {350, 72}};
-  const int carLink[2][2] = {{448, 88}, {484, 304}};
-  backdropPath(dst, sunLink, 2, line, 2);
-  backdropPath(dst, carLink, 2, line, 2);
-
-  // Sun, top-left of the clear area above the flow cards.
-  backdropCircle(dst, 258, 60, 16, amber, false);
-  const int rays[8][4] = {
-      {258, 34, 258, 26}, {258, 86, 258, 94}, {232, 60, 224, 60},
-      {284, 60, 292, 60}, {240, 42, 234, 36}, {276, 42, 282, 36},
-      {240, 78, 234, 84}, {276, 78, 282, 84},
-  };
-  for (int i = 0; i < 8; ++i) {
-    backdropLine(dst, rays[i][0], rays[i][1], rays[i][2], rays[i][3], amber, 2);
-  }
-
-  // House in the top-centre gap; the hub card starts below it.
-  backdropRect(dst, 360, 56, 444, 106, fill, true);
-  backdropRect(dst, 360, 56, 444, 106, line, false);
-  const int roof[3][2] = {{346, 58}, {402, 22}, {458, 58}};
-  backdropPath(dst, roof, 3, accent, 3);
-  backdropRect(dst, 374, 68, 392, 86, line, false);
-  backdropRect(dst, 412, 68, 430, 86, line, false);
-  backdropRect(dst, 392, 86, 412, 106, accent, true);
-
-  // PV array and car in the clear strip below the hub and side cards.
-  backdropRect(dst, 226, 292, 326, 340, fill, true);
-  backdropRect(dst, 226, 292, 326, 340, solar, false);
-  backdropLine(dst, 259, 292, 259, 340, solar, 2);
-  backdropLine(dst, 293, 292, 293, 340, solar, 2);
-  backdropLine(dst, 226, 316, 326, 316, solar, 2);
-  backdropLine(dst, 242, 340, 234, 350, solar, 2);
-  backdropLine(dst, 310, 340, 318, 350, solar, 2);
-
-  backdropRect(dst, 478, 306, 594, 332, fill, true);
-  backdropRect(dst, 478, 306, 594, 332, ev, false);
-  const int carRoof[4][2] = {{500, 306}, {514, 286}, {558, 286}, {572, 306}};
-  backdropPath(dst, carRoof, 4, ev, 2);
-  backdropLine(dst, 536, 287, 536, 305, ev, 2);
-  backdropCircle(dst, 506, 336, 9, ev, false);
-  backdropCircle(dst, 566, 336, 9, ev, false);
-  backdropCircle(dst, 506, 336, 3, line, true);
-  backdropCircle(dst, 566, 336, 3, line, true);
+  dst.header = hdr;
+  dst.header.cf = LV_COLOR_FORMAT_RGB565;
+  dst.header.stride = (uint16_t)(hdr.w * sizeof(uint16_t));
+  dst.data_size = (uint32_t)(px * sizeof(uint16_t));
+  dst.data = (const uint8_t *)data;
+  dst.reserved = nullptr;
+  return true;
 }
 
 // Tapped chart position: the tapped sample is shown in the legend as
@@ -547,9 +374,9 @@ struct Widgets {
 
 Widgets w;
 
-// The theme picks the photograph or the schematic for the flow page; the
-// image switch can hide it. Other pages only show the plain 800x356 panel
-// below, never the schematic.
+// The theme picks the photograph or the sketch for the flow page; the image
+// switch can hide it. Other pages only show the plain 800x356 panel below,
+// never the picture.
 void applyFlowBackground() {
   if (w.page4 == nullptr) {
     return;
@@ -559,8 +386,9 @@ void applyFlowBackground() {
     if (palette().photoBackground) {
       src = g_chartBg565Ready ? (const void *)&g_chartBg565
                               : (const void *)&chart_bg;
-    } else if (g_backdropReady) {
-      src = (const void *)&g_backdrop565;
+    } else {
+      src = g_lightBg565Ready ? (const void *)&g_lightBg565
+                              : (const void *)&light_bg;
     }
   }
   lv_obj_set_style_bg_image_src(w.page4, src, 0);
@@ -2039,8 +1867,8 @@ void create(lv_obj_t *parent) {
     g_chartPixels = (uint16_t *)allocLarge((size_t)kChartW * kChartH *
                                            sizeof(uint16_t));
   }
-  prepareChartBackground();
-  prepareBackdrop();
+  g_chartBg565Ready = prepareBackground(chart_bg, g_chartBg565);
+  g_lightBg565Ready = prepareBackground(light_bg, g_lightBg565);
 
   lv_obj_t *screen = lv_obj_get_screen(parent);
   lv_obj_set_style_bg_color(screen, lv_color_hex(palette().bg), 0);
@@ -2415,7 +2243,7 @@ void create(lv_obj_t *parent) {
   lv_obj_remove_style_all(w.page4);
   lv_obj_set_pos(w.page4, 0, kHeaderH);
   lv_obj_set_size(w.page4, 800, 356);
-  // The theme picks the photograph or the schematic; the image switch hides
+  // The theme picks the photograph or the sketch; the image switch hides
   // either. With no image, the plain panel below shows through.
   applyFlowBackground();
   lv_obj_add_flag(w.page4, LV_OBJ_FLAG_HIDDEN);
@@ -2565,7 +2393,7 @@ void create(lv_obj_t *parent) {
   lv_obj_center(bgBtnLbl);
 
   // Flow page background image on/off, same button style, left of the theme
-  // cycle button. The theme decides whether the image is a photo or schematic.
+  // cycle button. The theme decides whether the image is a photo or sketch.
   lv_obj_t *bgImgBtn = lv_btn_create(bg);
   lv_obj_set_pos(bgImgBtn, 330, 9);
   lv_obj_set_size(bgImgBtn, 200, 40);
