@@ -28,6 +28,7 @@ frame rendered here is the frame the panel draws.
 ./run.sh --shot out.png      # render one frame and exit
 ./run.sh --page 1 --shot flow.png
 ./run.sh --page 6 --shot service.png
+./run.sh --theme light --shot light.png
 ./run.sh --setup --shot setup.png
 ./run.sh --probe             # print the mapped values, no window
 ./run.sh --verbose           # log every HTTP request
@@ -37,6 +38,10 @@ frame rendered here is the frame the panel draws.
 The page numbers are 1–6, in the same order as the on-screen pages
 ([ui.md](ui.md#page-order)). `--after N` waits N seconds before the shot. The
 default is 2 seconds; use a larger value when a real device is slow to answer.
+
+`--theme dark|light` picks the initial palette for the emulator (default dark).
+Tapping the `THEME` button on the service page switches it at runtime; the
+firmware persists that choice in NVS, while the emulator keeps it for that run.
 
 Set `HEMS_UI_DEBUG_BAND=1` to log the price-band segment geometry while tuning
 the history chart. The firmware build uses the same flag as
@@ -149,6 +154,15 @@ Pillow, and it is a useful smoke test after changing the service page:
 
 ```sh
 python3 tools/test_io_status.py
+```
+
+`tools/test_theme.py` renders the service page with both palettes, taps the
+`THEME` button to check the runtime switch, and checks the light flow page's
+schematic background. It also renders the chart from a fresh SD history to
+verify that the card follows the palette while the series keep their colours:
+
+```sh
+python3 tools/test_theme.py
 ```
 
 `tools/test_price_band.py` renders the energy balance page for the normal and
