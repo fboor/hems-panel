@@ -4,8 +4,9 @@
 Checks that the dark and light palettes repaint both the page background and
 the cards, that tapping the THEME button switches to the next palette without
 a restart, and that the schematic appears only on the light flow page. Active
-buttons are blue in both themes. The light theme keeps its dark-green colour in
-the header and footer and shows a light centre; its flow particles are yellow.
+buttons are blue in both themes and keep the idle border colour. The light
+theme keeps its dark-green colour in the header and footer and shows a light
+centre; its flow particles are yellow.
 The dark theme keeps its plain panel and particles unchanged. The chart is
 checked too: its card must follow the theme while the series keep their
 theme-independent colours.
@@ -38,6 +39,9 @@ DARK_PANEL = DARK_BG
 # Active navigation button on the service page, away from its white icon.
 ACTIVE_BUTTON = (74, 161, 255)
 ACTIVE_BUTTON_POINT = (744, 438)
+# Active and inactive navigation buttons must share the same border colour.
+ACTIVE_BUTTON_BORDER_POINT = (760, 434)
+INACTIVE_BUTTON_BORDER_POINT = (520, 434)
 # Exposed pixels inside the 800x356 panel on the service pages. The flow page
 # keeps its image there, so these are checked only with the image switched off.
 PANEL_POINTS = [(10, 100), (780, 100), (400, 130), (780, 420)]
@@ -46,8 +50,8 @@ LIGHT_BACKDROP_SYMBOLS = [(74, 161, 255), (205, 137, 24), (115, 85, 172),
                           (180, 121, 24)]
 LIGHT_DOT = (255, 214, 0)
 # Centre of the THEME button: page at (16, 0), button at (542, 9), 200x40,
-# and the page starts at screen y 68.
-THEME_BUTTON = (658, 97)
+# and the page starts at screen y 65.
+THEME_BUTTON = (658, 94)
 # Chart series colours after RGB565 conversion, from Theme.h/kSeriesColors.
 SERIES_GREEN = (41, 161, 41)
 SERIES_ORANGE = (255, 127, 12)
@@ -161,7 +165,15 @@ def main():
                   ("PASS" if ok else "FAIL", "%s button" % name, got))
             failures += 0 if ok else 1
 
-        colors = Counter(flow.crop((0, 68, 800, 424)).getdata())
+        activeBorder = light.getpixel(ACTIVE_BUTTON_BORDER_POINT)
+        idleBorder = light.getpixel(INACTIVE_BUTTON_BORDER_POINT)
+        ok = close(activeBorder, idleBorder, 6)
+        print("%s %-16s active %s idle %s" %
+              ("PASS" if ok else "FAIL", "light button border",
+               activeBorder, idleBorder))
+        failures += 0 if ok else 1
+
+        colors = Counter(flow.crop((0, 65, 800, 421)).getdata())
         symbolPixels = sum(count_near(colors, c)
                            for c in LIGHT_BACKDROP_SYMBOLS)
         ok = symbolPixels > 2000
@@ -197,7 +209,7 @@ def main():
                   ("PASS" if ok else "FAIL", name, gotCard))
             failures += 0 if ok else 1
         for name, im in [("dark", chart_dark), ("light", chart_light)]:
-            pixels = list(im.crop((12, 68, 778, 308)).getdata())
+            pixels = list(im.crop((12, 65, 778, 299)).getdata())
             green = count_near(pixels, SERIES_GREEN)
             orange = count_near(pixels, SERIES_ORANGE)
             ok = green >= 100 and orange >= 100
@@ -207,8 +219,8 @@ def main():
             failures += 0 if ok else 1
 
         print("---")
-        print("RESULT: %s (%d/14 checks correct)" %
-              ("PASS" if failures == 0 else "FAIL", 14 - failures))
+        print("RESULT: %s (%d/15 checks correct)" %
+              ("PASS" if failures == 0 else "FAIL", 15 - failures))
         return 1 if failures else 0
     finally:
         mock.send_signal(signal.SIGKILL)

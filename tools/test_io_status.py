@@ -38,10 +38,10 @@ NAMES = ["Eingang 1", "Eingang 2", "Eingang 3", "Eingang 4",
 
 
 def dot_centers():
-    # I/O STATUS card at page-relative (16, 272), page at screen y 68;
+    # I/O STATUS card at page-relative (16, 272), page at screen y 65;
     # dots card-relative at (44 + i*95, 50), 12x12 -> centre +5.
     for i in range(8):
-        yield 16 + 44 + i * 95 + 5, 68 + 272 + 50 + 5
+        yield 16 + 44 + i * 95 + 5, 65 + 272 + 50 + 5
 
 
 def close(a, b, tol=40):

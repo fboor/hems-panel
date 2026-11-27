@@ -78,7 +78,8 @@ The image switch hides either one. Every other page, and the flow page with the
 image off, shows only a plain panel of the same size and position. In the light
 theme that panel and the flow image area are light, while the header and footer
 stay dark green; the dark theme matches the panel to the page background. Active
-buttons are blue in both themes, and the light flow particles are yellow.
+buttons are blue in both themes but keep the idle border colour; the light flow
+particles are yellow.
 
 ## Energy page
 
