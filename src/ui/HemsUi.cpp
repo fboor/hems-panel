@@ -15,6 +15,12 @@
 #define TR(de, en) (de)
 #endif
 
+#ifdef WARP_LANG_EN
+constexpr bool kEnglishUi = true;
+#else
+constexpr bool kEnglishUi = false;
+#endif
+
 LV_IMG_DECLARE(chart_bg);
 
 #include <lvgl.h>
@@ -27,32 +33,17 @@ LV_IMG_DECLARE(chart_bg);
 namespace hemsui {
 namespace {
 
-constexpr uint32_t C_BG = 0x0E1319;
-constexpr uint32_t C_CARD = 0x171F29;
-constexpr uint32_t C_CARD2 = 0x222D39;
-constexpr uint32_t C_LINE = 0x2B3947;
-constexpr uint32_t C_TEXT = 0xE9F0F7;
-constexpr uint32_t C_MUTED = 0x8899AA;
-constexpr uint32_t C_GREEN = 0x3AD07F;
-constexpr uint32_t C_RED = 0xFF5D5D;
-constexpr uint32_t C_BLUE = 0x4AA3FF;
-constexpr uint32_t C_AMBER = 0xFFB347;
+// Current palette and the pieces of UI state that survive a theme switch.
+ThemeId g_themeId = ThemeId::Dark;
+ThemeChangeHandler g_themeChangeHandler = nullptr;
+bool g_showBackgroundImage = true;
+bool g_imageInitialized = false;
+lv_obj_t *g_root = nullptr;
+int g_activePage = 1;
+ConnectionState g_connectionState = ConnectionState::NoNet;
+WarpData g_lastData{};
 
-// Energy-flow identity colours. Warm solar, cool grid, green storage,
-// violet wallbox. Each has a dark tint for icon badges and card borders.
-constexpr uint32_t C_SOLAR = 0xFFC247;
-constexpr uint32_t C_BAT = 0x3AD07F;
-constexpr uint32_t C_EV = 0xB388FF;
-constexpr uint32_t C_SOLAR_DIM = 0x3A2E12;
-constexpr uint32_t C_GRID_DIM = 0x142A40;
-constexpr uint32_t C_BAT_DIM = 0x123225;
-constexpr uint32_t C_EV_DIM = 0x2A1E44;
-// Pale highlights for the moving particles, so they read as a separate
-// layer on top of the thick coloured link.
-constexpr uint32_t C_SOLAR_HI = 0xFFF0B8;
-constexpr uint32_t C_GRID_HI = 0xCFE8FF;
-constexpr uint32_t C_BAT_HI = 0xCFFFE4;
-constexpr uint32_t C_EV_HI = 0xE9DBFF;
+const Theme &palette() { return theme(g_themeId); }
 
 // MDI glyphs from the bundled 28 px icon font. Written as UTF-8 bytes, not
 // \uXXXX, so the compiler keeps the whole code point.
@@ -184,10 +175,10 @@ void prepareChartBackground() {
   if (dst == nullptr) {
     return;
   }
-  const lv_color32_t *palette = (const lv_color32_t *)chart_bg.data;
+  const lv_color32_t *entries = (const lv_color32_t *)chart_bg.data;
   const uint8_t *indices = chart_bg.data + sizeof(lv_color32_t) * 256;
   for (size_t i = 0; i < px; ++i) {
-    const lv_color32_t &c = palette[indices[i]];
+    const lv_color32_t &c = entries[indices[i]];
     // Same rounding as LVGL's lv_color_to_u16, which the ARGB8888-to-RGB565
     // blend uses for fully opaque pixels.
     dst[i] = (uint16_t)(((c.red & 0xF8) << 8) + ((c.green & 0xFC) << 3) +
@@ -200,6 +191,56 @@ void prepareChartBackground() {
   g_chartBg565.data = (const uint8_t *)dst;
   g_chartBg565.reserved = nullptr;
   g_chartBg565Ready = true;
+}
+
+// The light palette replaces the photograph with a drawn schematic: a faint
+// grid, five nodes and the links between them. It uses the theme colours, so it
+// stays consistent when more light palettes are added later.
+lv_image_dsc_t g_schematic565{};
+bool g_schematic565Ready = false;
+
+void prepareSchematicBackground() {
+  constexpr int w = 800;
+  constexpr int h = 356;
+  if (!g_schematic565Ready) {
+    uint16_t *dst = (uint16_t *)allocLarge((size_t)w * h * sizeof(uint16_t));
+    if (dst == nullptr) {
+      return;
+    }
+    g_schematic565.header.cf = LV_COLOR_FORMAT_RGB565;
+    g_schematic565.header.w = w;
+    g_schematic565.header.h = h;
+    g_schematic565.header.stride = (uint16_t)(w * sizeof(uint16_t));
+    g_schematic565.data_size = (uint32_t)(w * h * sizeof(uint16_t));
+    g_schematic565.data = (const uint8_t *)dst;
+    g_schematic565Ready = true;
+  }
+
+  uint16_t *dst = (uint16_t *)g_schematic565.data;
+  const uint16_t bg = lv_color_to_u16(lv_color_hex(palette().bg));
+  const uint16_t grid = lv_color_to_u16(lv_color_hex(palette().line));
+  const uint16_t node = lv_color_to_u16(lv_color_hex(palette().accent));
+  const uint16_t link = lv_color_to_u16(lv_color_hex(palette().battery));
+  constexpr int centers[5][2] = {{200, 100}, {600, 100}, {200, 254},
+                                 {600, 254}, {400, 178}};
+  for (int y = 0; y < h; ++y) {
+    for (int x = 0; x < w; ++x) {
+      uint16_t c = (x % 40 == 0 || y % 40 == 0) ? grid : bg;
+      if ((y == 100 || y == 254) && x >= 226 && x <= 574) c = link;
+      if ((x == 200 || x == 600) && y >= 126 && y <= 228) c = link;
+      for (int i = 0; i < 5; ++i) {
+        const int dx = x > centers[i][0] ? x - centers[i][0]
+                                         : centers[i][0] - x;
+        const int dy = y > centers[i][1] ? y - centers[i][1]
+                                         : centers[i][1] - y;
+        if (dx <= 26 && dy <= 26 &&
+            ((dx >= 24 && dy <= 26) || (dy >= 24 && dx <= 26))) {
+          c = node;
+        }
+      }
+      dst[y * w + x] = c;
+    }
+  }
 }
 
 // Tapped chart position: the tapped sample is shown in the legend as
@@ -355,6 +396,30 @@ struct Widgets {
 
 Widgets w;
 
+// The image switch is independent of the theme: a theme decides *which* image
+// is drawn (photo or schematic), the switch decides whether one is drawn at all.
+void applyFlowBackground() {
+  if (w.page4 == nullptr) {
+    return;
+  }
+  const void *src = nullptr;
+  if (g_showBackgroundImage) {
+    if (palette().photoBackground) {
+      src = g_chartBg565Ready ? (const void *)&g_chartBg565
+                              : (const void *)&chart_bg;
+    } else {
+      prepareSchematicBackground();
+      if (g_schematic565Ready) {
+        src = (const void *)&g_schematic565;
+      }
+    }
+  }
+  lv_obj_set_style_bg_image_src(w.page4, src, 0);
+  lv_obj_set_style_bg_image_opa(w.page4,
+                                src != nullptr ? LV_OPA_COVER : LV_OPA_TRANSP,
+                                0);
+}
+
 // One wallbox card on the configuration page. The buttons and their modes are
 // filled when the card is built; the labels are refreshed on every poll.
 struct ModeCard {
@@ -395,17 +460,16 @@ uint32_t g_partyPendingUntil = 0;
 
 // Text that sits directly on the page background follows the background
 // colour. Labels inside cards keep their own palette, so they are deliberately
-// not registered here. The base colour is remembered so switching back to the
-// dark background restores the original shade.
+// not registered here. The base colour is remembered so a status change (for
+// example red data instead of green) can be mapped back to a contrasting shade.
 struct BackgroundLabel {
   lv_obj_t *obj;
   uint32_t baseColor;
 };
 
-constexpr int kMaxBackgroundLabels = 32;
+constexpr int kMaxBackgroundLabels = 64;
 BackgroundLabel g_backgroundLabels[kMaxBackgroundLabels];
 int g_backgroundLabelCount = 0;
-int g_backgroundMode = 0;
 
 bool liesOnBackground(lv_obj_t *obj) {
   lv_obj_t *screen = lv_obj_get_screen(obj);
@@ -435,26 +499,17 @@ void registerBackgroundLabel(lv_obj_t *obj, uint32_t baseColor) {
   g_backgroundLabels[g_backgroundLabelCount++] = {obj, baseColor};
 }
 
-// Muted text must stay visibly grey instead of turning plain black. On the
-// grey background it becomes a distinctly darker grey so it still contrasts.
-uint32_t backgroundTextColor(uint32_t baseColor, int mode) {
-  if (mode == 0) {
-    return baseColor;
+// Muted text must stay visibly grey instead of turning plain black, and dark
+// text on a light surface needs more contrast than the card palette offers.
+uint32_t backgroundTextColor(uint32_t baseColor) {
+  if (baseColor == palette().muted) {
+    return palette().mutedOnBackground;
   }
-  if (baseColor == C_MUTED) {
-    return mode == 1 ? 0x333333 : 0x4A4A4A;
+  if (baseColor == palette().text || baseColor == palette().green ||
+      baseColor == palette().red) {
+    return palette().onBackground;
   }
-  return mode == 1 ? 0x111111 : 0x000000;
-}
-
-void applyBackgroundTextColors() {
-  for (int i = 0; i < g_backgroundLabelCount; ++i) {
-    lv_obj_set_style_text_color(
-        g_backgroundLabels[i].obj,
-        lv_color_hex(backgroundTextColor(g_backgroundLabels[i].baseColor,
-                                         g_backgroundMode)),
-        0);
-  }
+  return baseColor;
 }
 
 lv_obj_t *card(lv_obj_t *parent, int x, int y, int width, int height) {
@@ -462,11 +517,11 @@ lv_obj_t *card(lv_obj_t *parent, int x, int y, int width, int height) {
   lv_obj_remove_style_all(c);
   lv_obj_set_pos(c, x, y);
   lv_obj_set_size(c, width, height);
-  lv_obj_set_style_bg_color(c, lv_color_hex(C_CARD), 0);
+  lv_obj_set_style_bg_color(c, lv_color_hex(palette().card), 0);
   lv_obj_set_style_bg_opa(c, LV_OPA_COVER, 0);
   lv_obj_set_style_radius(c, 10, 0);
   lv_obj_set_style_border_width(c, 1, 0);
-  lv_obj_set_style_border_color(c, lv_color_hex(C_LINE), 0);
+  lv_obj_set_style_border_color(c, lv_color_hex(palette().line), 0);
   lv_obj_clear_flag(c, LV_OBJ_FLAG_SCROLLABLE);
   return c;
 }
@@ -487,7 +542,7 @@ lv_obj_t *label(lv_obj_t *parent, int x, int y, int width,
   if (followBackground && liesOnBackground(l)) {
     registerBackgroundLabel(l, color);
     lv_obj_set_style_text_color(
-        l, lv_color_hex(backgroundTextColor(color, g_backgroundMode)), 0);
+        l, lv_color_hex(backgroundTextColor(color)), 0);
   }
   return l;
 }
@@ -528,12 +583,12 @@ HistoryBand *createHistoryBand(lv_obj_t *parent, int y, const char *caption,
   band->colors[3] = extra;
   band->colors[4] = both;
   band->colors[5] = negative;
-  band->label = label(parent, 16, y - 8, x0 - 26, F_BODY, C_MUTED, caption);
+  band->label = label(parent, 16, y - 8, x0 - 26, F_BODY, palette().muted, caption);
   if (tickLabels != nullptr) {
     for (int k = 0; k < 5; ++k) {
       const int tx = x0 + (kBandX1 - x0) * k / 4;
       // Auto-width label centred on the tick: a fixed box clips the text.
-      lv_obj_t *t = label(parent, 0, y + kBandH + 2, 0, F_SMALL, C_MUTED,
+      lv_obj_t *t = label(parent, 0, y + kBandH + 2, 0, F_SMALL, palette().muted,
                           tickLabels[k]);
       int lx = tx - (int)lv_obj_get_width(t) / 2;
       if (lx < 2) lx = 2;
@@ -667,9 +722,9 @@ void setBandVisible(HistoryBand *band, bool visible) {
 // Name on the left, value on the right.
 lv_obj_t *row(lv_obj_t *parent, int x, int y, int width, const char *name,
               lv_obj_t **valueOut, const lv_font_t *font = F_BODY) {
-  label(parent, x, y, 0, font, C_MUTED, name);
+  label(parent, x, y, 0, font, palette().muted, name);
   lv_obj_t *value =
-      label(parent, x, y, width, font, C_TEXT, "--", LV_TEXT_ALIGN_RIGHT);
+      label(parent, x, y, width, font, palette().text, "--", LV_TEXT_ALIGN_RIGHT);
   if (valueOut != nullptr) {
     *valueOut = value;
   }
@@ -677,7 +732,7 @@ lv_obj_t *row(lv_obj_t *parent, int x, int y, int width, const char *name,
 }
 
 void title(lv_obj_t *parent, const char *text) {
-  label(parent, 16, 10, 0, F_SMALL, C_MUTED, text);
+  label(parent, 16, 10, 0, F_SMALL, palette().muted, text);
 }
 
 void fmtPower(char *out, size_t n, double watts) {
@@ -766,7 +821,7 @@ void setColor(lv_obj_t *l, uint32_t color) {
   if (bg != nullptr) {
     bg->baseColor = color;
     lv_obj_set_style_text_color(
-        l, lv_color_hex(backgroundTextColor(color, g_backgroundMode)), 0);
+        l, lv_color_hex(backgroundTextColor(color)), 0);
     return;
   }
   lv_obj_set_style_text_color(l, lv_color_hex(color), 0);
@@ -881,11 +936,12 @@ void styleModeButton(lv_obj_t *button, bool selected) {
   // The opacity is set once when the button is created; setting it here again
   // would invalidate every mode button on every update, even when the
   // selection did not change.
-  setBgColorIfChanged(button, selected ? C_BLUE : C_CARD2);
-  setBgColorIfChanged(button, selected ? C_BLUE : C_LINE, true);
+  setBgColorIfChanged(button, selected ? palette().accent : palette().buttonBg);
+  setBgColorIfChanged(button, selected ? palette().accent : palette().line, true);
   lv_obj_t *lbl = lv_obj_get_child(button, 0);
   if (lbl != nullptr) {
-    setColorIfChanged(lbl, selected ? 0xFFFFFF : C_MUTED);
+    setColorIfChanged(lbl, selected ? palette().onAccent
+                                   : palette().inactiveButtonText);
   }
 }
 
@@ -931,17 +987,17 @@ ModeCard buildModeCard(lv_obj_t *parent, bool global, int index,
   lv_obj_remove_style_all(mc.card);
   lv_obj_set_width(mc.card, LV_PCT(100));
   lv_obj_set_height(mc.card, 96);
-  lv_obj_set_style_bg_color(mc.card, lv_color_hex(C_CARD), 0);
+  lv_obj_set_style_bg_color(mc.card, lv_color_hex(palette().card), 0);
   lv_obj_set_style_bg_opa(mc.card, LV_OPA_COVER, 0);
   lv_obj_set_style_radius(mc.card, 10, 0);
   lv_obj_set_style_border_width(mc.card, 1, 0);
   lv_obj_set_style_border_color(mc.card,
-                                lv_color_hex(C_LINE), 0);
+                                lv_color_hex(palette().line), 0);
   lv_obj_clear_flag(mc.card, LV_OBJ_FLAG_SCROLLABLE);
 
   if (global) {
-    mc.name = label(mc.card, 16, 8, 520, F_TITLE, C_TEXT, TR("ALLE WALLBOXEN", "ALL WALLBOXES"));
-    mc.state = label(mc.card, 16, 32, 520, F_SMALL, C_MUTED,
+    mc.name = label(mc.card, 16, 8, 520, F_TITLE, palette().text, TR("ALLE WALLBOXEN", "ALL WALLBOXES"));
+    mc.state = label(mc.card, 16, 32, 520, F_SMALL, palette().muted,
                      TR("Modus für alle Ladepunkte", "Mode for all charging points"));
   } else {
     const WarpChargerData &c = d.chargers[index];
@@ -951,9 +1007,9 @@ ModeCard buildModeCard(lv_obj_t *parent, bool global, int index,
     } else {
       snprintf(name, sizeof(name), TR("Wallbox %d", "Wallbox %d"), index + 1);
     }
-    mc.name = label(mc.card, 16, 8, 430, F_TITLE, C_TEXT, name);
-    mc.state = label(mc.card, 16, 32, 430, F_SMALL, C_MUTED, "--");
-    mc.power = label(mc.card, 470, 8, 272, F_TITLE, C_MUTED, "--",
+    mc.name = label(mc.card, 16, 8, 430, F_TITLE, palette().text, name);
+    mc.state = label(mc.card, 16, 32, 430, F_SMALL, palette().muted, "--");
+    mc.power = label(mc.card, 470, 8, 272, F_TITLE, palette().muted, "--",
                      LV_TEXT_ALIGN_RIGHT);
   }
 
@@ -973,15 +1029,15 @@ ModeCard buildModeCard(lv_obj_t *parent, bool global, int index,
     lv_obj_set_pos(b, x, 54);
     lv_obj_set_size(b, buttonWidth, 34);
     lv_obj_set_style_radius(b, 8, 0);
-    lv_obj_set_style_bg_color(b, lv_color_hex(C_CARD2), 0);
+    lv_obj_set_style_bg_color(b, lv_color_hex(palette().card2), 0);
     lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(b, 1, 0);
-    lv_obj_set_style_border_color(b, lv_color_hex(C_LINE), 0);
+    lv_obj_set_style_border_color(b, lv_color_hex(palette().line), 0);
     lv_obj_set_style_shadow_width(b, 0, 0);
     lv_obj_t *lbl = lv_label_create(b);
     lv_label_set_text(lbl, chargeModeName(mc.modes[i]));
     lv_obj_set_style_text_font(lbl, F_SMALL, 0);
-    lv_obj_set_style_text_color(lbl, lv_color_hex(C_MUTED), 0);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(palette().muted), 0);
     lv_obj_center(lbl);
     const intptr_t code =
         global ? static_cast<intptr_t>(mc.modes[i])
@@ -1041,13 +1097,13 @@ void rebuildModeCards(const WarpData &d) {
     lv_obj_remove_style_all(empty);
     lv_obj_set_width(empty, LV_PCT(100));
     lv_obj_set_height(empty, 96);
-    lv_obj_set_style_bg_color(empty, lv_color_hex(C_CARD), 0);
+    lv_obj_set_style_bg_color(empty, lv_color_hex(palette().card), 0);
     lv_obj_set_style_bg_opa(empty, LV_OPA_COVER, 0);
     lv_obj_set_style_radius(empty, 10, 0);
     lv_obj_set_style_border_width(empty, 1, 0);
-    lv_obj_set_style_border_color(empty, lv_color_hex(C_LINE), 0);
+    lv_obj_set_style_border_color(empty, lv_color_hex(palette().line), 0);
     lv_obj_clear_flag(empty, LV_OBJ_FLAG_SCROLLABLE);
-    label(empty, 16, 36, 0, F_BODY, C_MUTED,
+    label(empty, 16, 36, 0, F_BODY, palette().muted,
           TR("Keine Wallbox konfiguriert.", "No wallbox configured."));
     return;
   }
@@ -1099,15 +1155,15 @@ void updateModeCard(ModeCard &mc, const WarpData &d, int index, bool global) {
   }
   setTextIfChanged(mc.state, buf);
   setColorIfChanged(mc.state,
-           c.state == 5 ? C_RED : (c.state == 4 ? C_EV : C_MUTED));
+           c.state == 5 ? palette().red : (c.state == 4 ? palette().ev : palette().muted));
 
   if (c.power > 0.5f) {
     fmtPower(buf, sizeof(buf), c.power);
     setTextIfChanged(mc.power, buf);
-    setColorIfChanged(mc.power, C_EV);
+    setColorIfChanged(mc.power, palette().ev);
   } else {
     setTextIfChanged(mc.power, "--");
-    setColorIfChanged(mc.power, C_MUTED);
+    setColorIfChanged(mc.power, palette().muted);
   }
 }
 
@@ -1402,10 +1458,10 @@ void renderChartImage() {
   lv_draw_rect_dsc_t cardDsc;
   lv_draw_rect_dsc_init(&cardDsc);
   cardDsc.base.layer = &layer;
-  cardDsc.bg_color = lv_color_hex(C_CARD);
+  cardDsc.bg_color = lv_color_hex(palette().card);
   cardDsc.bg_opa = LV_OPA_COVER;
   cardDsc.radius = 10;
-  cardDsc.border_color = lv_color_hex(C_LINE);
+  cardDsc.border_color = lv_color_hex(palette().line);
   cardDsc.border_opa = LV_OPA_COVER;
   cardDsc.border_width = kChartBorder;
   lv_area_t area = {0, 0, kChartW - 1, kChartH - 1};
@@ -1416,7 +1472,7 @@ void renderChartImage() {
   // lines at quarter widths and one horizontal line in the middle, in the
   // muted line colour. They run across the whole widget, over the border
   // pixels, so they are written straight into the buffer after the card.
-  const uint16_t divider = lv_color_to_u16(lv_color_hex(C_MUTED));
+  const uint16_t divider = lv_color_to_u16(lv_color_hex(palette().muted));
   const int plotW = kChartW - 2 * kChartBorder;
   const int plotH = kChartH - 2 * kChartBorder;
   for (int i = 1; i < 4; ++i) {
@@ -1430,14 +1486,15 @@ void renderChartImage() {
     g_chartPixels[midY * kChartW + x] = divider;
   }
 
-  static const uint32_t colors[7] = {0x2CA02C, 0xFF7F0E, 0x007BFF, 0xD62728,
-                                     0x9467BD, 0x8C564B, 0xC9CED4};
+  // Series colours are shared with the LVGL chart and the legend so a series
+  // keeps its identity in every theme; only the card and divider are themed.
   const int32_t *const series[7] = {g_chartGrid, g_chartPv, g_chartHouse,
                                     g_chartBattery, g_chartWb1, g_chartWb2,
                                     g_chartSoc};
   for (int i = 0; i < 7; ++i) {
     if (series[i] != nullptr) {
-      drawChartSeries(series[i], lv_color_to_u16(lv_color_hex(colors[i])));
+      drawChartSeries(series[i],
+                     lv_color_to_u16(lv_color_hex(kSeriesColors[i])));
     }
   }
   lv_obj_invalidate(w.chartImage);
@@ -1633,7 +1690,7 @@ FlowNode flowNode(lv_obj_t *parent, int x, int y, const char *name,
   lv_obj_remove_style_all(n.card);
   lv_obj_set_pos(n.card, x, y);
   lv_obj_set_size(n.card, 176, 94);
-  lv_obj_set_style_bg_color(n.card, lv_color_hex(C_CARD), 0);
+  lv_obj_set_style_bg_color(n.card, lv_color_hex(palette().card), 0);
   lv_obj_set_style_bg_opa(n.card, LV_OPA_COVER, 0);
   lv_obj_set_style_radius(n.card, 16, 0);
   lv_obj_set_style_border_width(n.card, 1, 0);
@@ -1651,9 +1708,9 @@ FlowNode flowNode(lv_obj_t *parent, int x, int y, const char *name,
       label(badge, 0, 0, 44, iconFont, accent, symbol, LV_TEXT_ALIGN_CENTER);
   lv_obj_center(icon);
 
-  label(n.card, 68, 12, 96, F_SMALL, C_MUTED, name);
+  label(n.card, 68, 12, 96, F_SMALL, palette().muted, name);
   n.value = label(n.card, 68, 30, 96, F_TITLE, accent, "--");
-  n.state = label(n.card, 12, 68, 152, F_SMALL, C_MUTED, "--");
+  n.state = label(n.card, 12, 68, 152, F_SMALL, palette().muted, "--");
   return n;
 }
 
@@ -1669,7 +1726,7 @@ void flowLink(lv_obj_t *parent, int idx, int x1, int y1, int x2, int y2,
   w.flowTrack[idx] = lv_line_create(parent);
   lv_line_set_points(w.flowTrack[idx], w.flowPts[idx], 2);
   lv_obj_set_style_line_width(w.flowTrack[idx], 7, 0);
-  lv_obj_set_style_line_color(w.flowTrack[idx], lv_color_hex(C_LINE), 0);
+  lv_obj_set_style_line_color(w.flowTrack[idx], lv_color_hex(palette().line), 0);
   lv_obj_set_style_line_rounded(w.flowTrack[idx], true, 0);
 
   w.flowLine[idx] = lv_line_create(parent);
@@ -1694,6 +1751,7 @@ void flowDots(lv_obj_t *parent, int idx, uint32_t color) {
 }
 
 void showPage(int page) {
+  g_activePage = page;
   // Display order. The flow view was built as page4, but it is the first page
   // users should see; the energy, history, wallbox and service pages follow it.
   lv_obj_t *pages[6] = {w.page4, w.page1, w.page2, w.page5, w.page6, w.page3};
@@ -1720,12 +1778,13 @@ void showPage(int page) {
     }
     if (buttons[i] != nullptr) {
       lv_obj_set_style_bg_color(buttons[i],
-                                lv_color_hex(active ? C_BLUE : C_CARD2), 0);
+                                lv_color_hex(active ? palette().activeButtonBg : palette().buttonBg), 0);
       lv_obj_set_style_bg_opa(buttons[i], LV_OPA_COVER, 0);
       lv_obj_t *lbl = lv_obj_get_child(buttons[i], 0);
       if (lbl != nullptr) {
         lv_obj_set_style_text_color(
-            lbl, lv_color_hex(active ? 0xFFFFFF : C_MUTED), 0);
+            lbl, lv_color_hex(active ? palette().activeButtonText
+                                   : palette().inactiveButtonText), 0);
       }
     }
   }
@@ -1832,19 +1891,51 @@ void create(lv_obj_t *parent) {
   }
   prepareChartBackground();
 
-  lv_obj_set_style_bg_color(parent, lv_color_hex(C_BG), 0);
-  lv_obj_set_style_bg_opa(parent, LV_OPA_COVER, 0);
-  lv_obj_clear_flag(parent, LV_OBJ_FLAG_SCROLLABLE);
+  lv_obj_t *screen = lv_obj_get_screen(parent);
+  lv_obj_set_style_bg_color(screen, lv_color_hex(palette().bg), 0);
+  lv_obj_set_style_bg_opa(screen, LV_OPA_COVER, 0);
+  lv_obj_clear_flag(screen, LV_OBJ_FLAG_SCROLLABLE);
+
+  // All UI widgets live in one child of the screen. A theme switch cleans
+  // this child and calls create() again, so every style is rebuilt from the
+  // new palette while the Wi-Fi setup overlay outside it stays intact.
+  if (g_root == nullptr) {
+    g_root = lv_obj_create(parent);
+    lv_obj_remove_style_all(g_root);
+    lv_obj_set_pos(g_root, 0, 0);
+    lv_obj_set_size(g_root, 800, 480);
+    lv_obj_set_style_bg_opa(g_root, LV_OPA_TRANSP, 0);
+    lv_obj_clear_flag(g_root, LV_OBJ_FLAG_SCROLLABLE);
+  }
+  lv_obj_t *setup[5] = {w.setupOverlay, w.setupQr, w.setupSsid,
+                        w.setupPassword, w.setupUrl};
+  delete w.sgBand;
+  delete w.priceBand;
+  w = Widgets{};
+  w.setupOverlay = setup[0];
+  w.setupQr = setup[1];
+  w.setupSsid = setup[2];
+  w.setupPassword = setup[3];
+  w.setupUrl = setup[4];
+  g_backgroundLabelCount = 0;
+  g_renderedChargers = -1;
+  g_renderedModeCount = -1;
+  g_tapActive = false;
+  if (!g_imageInitialized) {
+    g_showBackgroundImage = true;
+    g_imageInitialized = true;
+  }
+  parent = g_root;
 
   // Header ---------------------------------------------------------------
-  label(parent, 16, 8, 0, F_TITLE, C_TEXT, TR("Home Energy Manager", "Home Energy Manager"));
+  label(parent, 16, 8, 0, F_TITLE, palette().text, TR("Home Energy Manager", "Home Energy Manager"));
   // Page captions
-  w.caption1 = label(parent, 16, 40, 0, F_BODY, C_MUTED, TR("Energie", "Energy"));
-  w.caption2 = label(parent, 16, 40, 0, F_BODY, C_MUTED, TR("Energiebilanz", "Energy balance"));
-  w.caption3 = label(parent, 16, 40, 0, F_BODY, C_MUTED, TR("Service", "Service"));
-  w.caption4 = label(parent, 16, 40, 0, F_BODY, C_MUTED, TR("Energiefluss", "Energy flow"));
-  w.caption5 = label(parent, 16, 40, 0, F_BODY, C_MUTED, TR("Wallboxen", "Wallboxes"));
-  w.caption6 = label(parent, 16, 40, 0, F_BODY, C_MUTED, TR("Heizung", "Heating"));
+  w.caption1 = label(parent, 16, 40, 0, F_BODY, palette().muted, TR("Energie", "Energy"));
+  w.caption2 = label(parent, 16, 40, 0, F_BODY, palette().muted, TR("Energiebilanz", "Energy balance"));
+  w.caption3 = label(parent, 16, 40, 0, F_BODY, palette().muted, TR("Service", "Service"));
+  w.caption4 = label(parent, 16, 40, 0, F_BODY, palette().muted, TR("Energiefluss", "Energy flow"));
+  w.caption5 = label(parent, 16, 40, 0, F_BODY, palette().muted, TR("Wallboxen", "Wallboxes"));
+  w.caption6 = label(parent, 16, 40, 0, F_BODY, palette().muted, TR("Heizung", "Heating"));
   lv_obj_add_flag(w.caption2, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(w.caption3, LV_OBJ_FLAG_HIDDEN);
   lv_obj_add_flag(w.caption4, LV_OBJ_FLAG_HIDDEN);
@@ -1859,14 +1950,14 @@ void create(lv_obj_t *parent) {
   lv_obj_set_pos(w.statusChip, 670, 14);
   lv_obj_set_size(w.statusChip, 115, 37);
   lv_obj_set_style_radius(w.statusChip, 18, 0);
-  lv_obj_set_style_bg_color(w.statusChip, lv_color_hex(C_CARD2), 0);
+  lv_obj_set_style_bg_color(w.statusChip, lv_color_hex(palette().card2), 0);
   lv_obj_set_style_bg_opa(w.statusChip, LV_OPA_COVER, 0);
   lv_obj_set_style_border_width(w.statusChip, 1, 0);
-  lv_obj_set_style_border_color(w.statusChip, lv_color_hex(C_LINE), 0);
+  lv_obj_set_style_border_color(w.statusChip, lv_color_hex(palette().line), 0);
   lv_obj_clear_flag(w.statusChip, LV_OBJ_FLAG_SCROLLABLE);
 
-  w.statusWifi = label(w.statusChip, 10, 7, 24, F_BODY, C_MUTED, LV_SYMBOL_WIFI);
-  w.statusText = label(w.statusChip, 40, 10, 92, F_SMALL, C_MUTED, TR("WLAN?", "WLAN?"));
+  w.statusWifi = label(w.statusChip, 10, 7, 24, F_BODY, palette().muted, LV_SYMBOL_WIFI);
+  w.statusText = label(w.statusChip, 40, 10, 92, F_SMALL, palette().muted, TR("WLAN?", "WLAN?"));
 
   lv_obj_t *page1 = lv_obj_create(parent);
   lv_obj_remove_style_all(page1);
@@ -1877,8 +1968,8 @@ void create(lv_obj_t *parent) {
   // Grid ---------------------------------------------------------------
   lv_obj_t *grid = card(page1, 12, 68, 250, 176);
   title(grid, TR("NETZ", "GRID"));
-  w.gridTotal = label(grid, 16, 30, 0, F_BIG, C_TEXT, "--");
-  w.gridDir = label(grid, 16, 76, 0, F_SMALL, C_MUTED, TR("Bezug", "Import"));
+  w.gridTotal = label(grid, 16, 30, 0, F_BIG, palette().text, "--");
+  w.gridDir = label(grid, 16, 76, 0, F_SMALL, palette().muted, TR("Bezug", "Import"));
   {
     static const char *names[3] = {"L1", "L2", "L3"};
     for (int i = 0; i < 3; ++i) {
@@ -1891,8 +1982,8 @@ void create(lv_obj_t *parent) {
   // Household ----------------------------------------------------------
   lv_obj_t *house = card(page1, 274, 68, 250, 176);
   title(house, TR("HAUS", "HOUSE"));
-  w.houseTotal = label(house, 16, 30, 0, F_BIG, C_TEXT, "--");
-  label(house, 16, 76, 0, F_SMALL, C_MUTED, TR("Verbrauch", "Consumption"));
+  w.houseTotal = label(house, 16, 30, 0, F_BIG, palette().text, "--");
+  label(house, 16, 76, 0, F_SMALL, palette().muted, TR("Verbrauch", "Consumption"));
   {
     static const char *names[3] = {"L1", "L2", "L3"};
     for (int i = 0; i < 3; ++i) {
@@ -1903,18 +1994,18 @@ void create(lv_obj_t *parent) {
   // Battery ------------------------------------------------------------
   lv_obj_t *bat = card(page1, 536, 68, 250, 176);
   title(bat, TR("AKKU", "BATTERY"));
-  w.batSoc = label(bat, 16, 28, 120, F_BIG, C_TEXT, "-- %");
-  w.batDir = label(bat, 130, 42, 104, F_SMALL, C_MUTED, "--",
+  w.batSoc = label(bat, 16, 28, 120, F_BIG, palette().text, "-- %");
+  w.batDir = label(bat, 130, 42, 104, F_SMALL, palette().muted, "--",
                    LV_TEXT_ALIGN_RIGHT);
   w.batBar = lv_bar_create(bat);
   lv_obj_remove_style_all(w.batBar);
   lv_obj_set_pos(w.batBar, 16, 82);
   lv_obj_set_size(w.batBar, 218, 12);
   lv_obj_set_style_radius(w.batBar, LV_RADIUS_CIRCLE, 0);
-  lv_obj_set_style_bg_color(w.batBar, lv_color_hex(C_CARD2), 0);
+  lv_obj_set_style_bg_color(w.batBar, lv_color_hex(palette().card2), 0);
   lv_obj_set_style_bg_opa(w.batBar, LV_OPA_COVER, 0);
   lv_obj_set_style_radius(w.batBar, LV_RADIUS_CIRCLE, LV_PART_INDICATOR);
-  lv_obj_set_style_bg_color(w.batBar, lv_color_hex(C_GREEN),
+  lv_obj_set_style_bg_color(w.batBar, lv_color_hex(palette().green),
                             LV_PART_INDICATOR);
   lv_obj_set_style_bg_opa(w.batBar, LV_OPA_COVER, LV_PART_INDICATOR);
   lv_bar_set_range(w.batBar, 0, 100);
@@ -1927,18 +2018,18 @@ void create(lv_obj_t *parent) {
   // PV -----------------------------------------------------------------
   lv_obj_t *pv = card(page1, 12, 256, 250, 166);
   title(pv, TR("SOLAR", "SOLAR"));
-  w.pvTotal = label(pv, 16, 30, 0, F_BIG, C_GREEN, "--");
-  label(pv, 16, 76, 0, F_SMALL, C_MUTED, TR("Erzeugung", "Generation"));
+  w.pvTotal = label(pv, 16, 30, 0, F_BIG, palette().green, "--");
+  label(pv, 16, 76, 0, F_SMALL, palette().muted, TR("Erzeugung", "Generation"));
   row(pv, 16, 108, 218, "String A", &w.pvA);
   row(pv, 16, 134, 218, "String B", &w.pvB);
 
   // Wallbox -----------------------------------------------------------
   lv_obj_t *wallbox = card(page1, 274, 256, 250, 166);
   title(wallbox, TR("WALLBOX", "WALLBOX"));
-  w.wallboxValue = label(wallbox, 16, 30, 0, F_BIG, C_GREEN, "--");
-  w.wallboxNote = label(wallbox, 16, 76, 0, F_SMALL, C_MUTED, "--");
-  w.wallboxMode = label(wallbox, 16, 96, 0, F_SMALL, C_MUTED, "--");
-  w.wallboxPhase = label(wallbox, 16, 116, 0, F_SMALL, C_MUTED, "--");
+  w.wallboxValue = label(wallbox, 16, 30, 0, F_BIG, palette().green, "--");
+  w.wallboxNote = label(wallbox, 16, 76, 0, F_SMALL, palette().muted, "--");
+  w.wallboxMode = label(wallbox, 16, 96, 0, F_SMALL, palette().muted, "--");
+  w.wallboxPhase = label(wallbox, 16, 116, 0, F_SMALL, palette().muted, "--");
 
   // Energy totals for today --------------------------------------------
   lv_obj_t *energy = card(page1, 536, 256, 250, 166);
@@ -1992,7 +2083,7 @@ void create(lv_obj_t *parent) {
     lv_chart_set_type(w.powerChart, LV_CHART_TYPE_LINE);
     lv_chart_set_point_count(w.powerChart, kChartPoints);
     lv_chart_set_range(w.powerChart, LV_CHART_AXIS_PRIMARY_Y, -5000, 5000);
-    lv_obj_set_style_bg_color(w.powerChart, lv_color_hex(C_CARD), 0);
+    lv_obj_set_style_bg_color(w.powerChart, lv_color_hex(palette().card), 0);
     lv_obj_set_style_line_width(w.powerChart, kChartLineWidth, LV_PART_ITEMS);
     // No point markers. The theme draws one rounded 2x2 rect per sample -
     // 240 of them per series, seven series - and each is its own draw task
@@ -2002,15 +2093,15 @@ void create(lv_obj_t *parent) {
     lv_obj_set_style_width(w.powerChart, 0, LV_PART_INDICATOR);
     lv_obj_set_style_height(w.powerChart, 0, LV_PART_INDICATOR);
     lv_obj_set_style_border_width(w.powerChart, 1, 0);
-    lv_obj_set_style_border_color(w.powerChart, lv_color_hex(C_LINE), 0);
-    lv_obj_set_style_line_color(w.powerChart, lv_color_hex(C_MUTED), 0);
+    lv_obj_set_style_border_color(w.powerChart, lv_color_hex(palette().line), 0);
+    lv_obj_set_style_line_color(w.powerChart, lv_color_hex(palette().muted), 0);
     lv_obj_set_style_pad_all(w.powerChart, 0, 0);
-    w.seriesGrid = lv_chart_add_series(w.powerChart, lv_color_hex(0x2CA02C), LV_CHART_AXIS_PRIMARY_Y);
-    w.seriesPv = lv_chart_add_series(w.powerChart, lv_color_hex(0xFF7F0E), LV_CHART_AXIS_PRIMARY_Y);
-    w.seriesHouse = lv_chart_add_series(w.powerChart, lv_color_hex(0x007BFF), LV_CHART_AXIS_PRIMARY_Y);
-    w.seriesBat = lv_chart_add_series(w.powerChart, lv_color_hex(0xD62728), LV_CHART_AXIS_PRIMARY_Y);
-    w.seriesWb1 = lv_chart_add_series(w.powerChart, lv_color_hex(0x9467BD), LV_CHART_AXIS_PRIMARY_Y);
-    w.seriesWb2 = lv_chart_add_series(w.powerChart, lv_color_hex(0x8C564B), LV_CHART_AXIS_PRIMARY_Y);
+    w.seriesGrid = lv_chart_add_series(w.powerChart, lv_color_hex(kSeriesColors[0]), LV_CHART_AXIS_PRIMARY_Y);
+    w.seriesPv = lv_chart_add_series(w.powerChart, lv_color_hex(kSeriesColors[1]), LV_CHART_AXIS_PRIMARY_Y);
+    w.seriesHouse = lv_chart_add_series(w.powerChart, lv_color_hex(kSeriesColors[2]), LV_CHART_AXIS_PRIMARY_Y);
+    w.seriesBat = lv_chart_add_series(w.powerChart, lv_color_hex(kSeriesColors[3]), LV_CHART_AXIS_PRIMARY_Y);
+    w.seriesWb1 = lv_chart_add_series(w.powerChart, lv_color_hex(kSeriesColors[4]), LV_CHART_AXIS_PRIMARY_Y);
+    w.seriesWb2 = lv_chart_add_series(w.powerChart, lv_color_hex(kSeriesColors[5]), LV_CHART_AXIS_PRIMARY_Y);
     if (g_chartData != nullptr) {
       for (int i = 0; i < kChartPoints; ++i) {
         g_chartGrid[i] = LV_CHART_POINT_NONE;
@@ -2046,7 +2137,7 @@ void create(lv_obj_t *parent) {
     lv_obj_set_style_height(w.socChart, 0, LV_PART_INDICATOR);
     lv_obj_set_style_line_opa(w.socChart, LV_OPA_TRANSP, LV_PART_MAIN);
     lv_obj_set_style_pad_all(w.socChart, 0, 0);
-    w.seriesSoc = lv_chart_add_series(w.socChart, lv_color_hex(0xC9CED4), LV_CHART_AXIS_PRIMARY_Y);
+    w.seriesSoc = lv_chart_add_series(w.socChart, lv_color_hex(kSeriesColors[6]), LV_CHART_AXIS_PRIMARY_Y);
     if (g_chartData != nullptr) {
       for (int i = 0; i < kChartPoints; ++i) {
         g_chartSoc[i] = LV_CHART_POINT_NONE;
@@ -2066,16 +2157,16 @@ void create(lv_obj_t *parent) {
   lv_obj_remove_style_all(w.tapLine);
   lv_obj_set_pos(w.tapLine, 12, 0);
   lv_obj_set_size(w.tapLine, 1, kChartH);
-  lv_obj_set_style_bg_color(w.tapLine, lv_color_hex(C_TEXT), 0);
+  lv_obj_set_style_bg_color(w.tapLine, lv_color_hex(palette().text), 0);
   lv_obj_set_style_bg_opa(w.tapLine, LV_OPA_70, 0);
   lv_obj_clear_flag(w.tapLine, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_add_flag(w.tapLine, LV_OBJ_FLAG_HIDDEN);
 
   // Y-scale labels last, so they draw over the chart. They sit at the left
   // edge of the card, where the plot is empty.
-  w.scaleMax = label(w.page2, 20, 5, 60, F_SMALL, C_MUTED, "--", LV_TEXT_ALIGN_LEFT, false);
-  w.scaleMid = label(w.page2, 20, 122, 60, F_SMALL, C_MUTED, "--", LV_TEXT_ALIGN_LEFT, false);
-  w.scaleMin = label(w.page2, 20, 222, 60, F_SMALL, C_MUTED, "--", LV_TEXT_ALIGN_LEFT, false);
+  w.scaleMax = label(w.page2, 20, 5, 60, F_SMALL, palette().muted, "--", LV_TEXT_ALIGN_LEFT, false);
+  w.scaleMid = label(w.page2, 20, 122, 60, F_SMALL, palette().muted, "--", LV_TEXT_ALIGN_LEFT, false);
+  w.scaleMin = label(w.page2, 20, 222, 60, F_SMALL, palette().muted, "--", LV_TEXT_ALIGN_LEFT, false);
   lv_obj_clear_flag(w.scaleMax, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_clear_flag(w.scaleMid, LV_OBJ_FLAG_CLICKABLE);
   lv_obj_clear_flag(w.scaleMin, LV_OBJ_FLAG_CLICKABLE);
@@ -2095,13 +2186,13 @@ void create(lv_obj_t *parent) {
   }
   setBandVisible(w.priceBand, false);
   w.priceStats =
-      label(w.page2, 172, 332, 560, F_SMALL, C_MUTED, "--");
+      label(w.page2, 172, 332, 560, F_SMALL, palette().muted, "--");
   lv_obj_add_flag(w.priceStats, LV_OBJ_FLAG_HIDDEN);
 
   // Time labels at bottom (reversed: new values on right)
   const int xpos[5] = {8, 185, 375, 565, 755};
   for (int i = 0; i < 5; ++i) {
-    w.timeLabel[i] = label(w.page2, xpos[i], 242, 40, F_SMALL, C_MUTED,
+    w.timeLabel[i] = label(w.page2, xpos[i], 242, 40, F_SMALL, palette().muted,
                            "--", LV_TEXT_ALIGN_CENTER);
   }
   updateTimeLabels(3600);
@@ -2110,10 +2201,10 @@ void create(lv_obj_t *parent) {
   // same colours as the chart lines.
   const char *names[7] = {TR("Netz", "Grid"), TR("PV", "PV"), TR("Verbrauch", "Consumption"), TR("Akku", "Battery"),
                           nullptr, nullptr, TR("Akku %", "Battery %")};
-  lv_color_t colors[7] = {lv_color_hex(0x2CA02C), lv_color_hex(0xFF7F0E),
-                          lv_color_hex(0x007BFF), lv_color_hex(0xD62728),
-                          lv_color_hex(0x9467BD), lv_color_hex(0x8C564B),
-                          lv_color_hex(0xC9CED4)};
+  lv_color_t colors[7];
+  for (int i = 0; i < 7; ++i) {
+    colors[i] = lv_color_hex(kSeriesColors[i]);
+  }
   // Variable slot widths: "Verbrauch" and the wallbox names are long, so
   // they get wide slots (in the 11 px legend font their tapped values
   // "[1234 W]" fit on one line without wrapping).
@@ -2129,11 +2220,11 @@ void create(lv_obj_t *parent) {
     lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
     if (i < 4 || i == 6) {
       w.legendLabel[i] = label(w.page2, dotX[i] + 12, 266, labelW[i], F_LEGEND,
-                               C_MUTED, names[i]);
+                               palette().muted, names[i]);
     } else {
       w.wbLegendDot[i - 4] = dot;
       w.wbLegendLabel[i - 4] = label(w.page2, dotX[i] + 12, 266, labelW[i],
-                                     F_LEGEND, C_MUTED, "--");
+                                     F_LEGEND, palette().muted, "--");
       w.legendLabel[i] = w.wbLegendLabel[i - 4];
     }
   }
@@ -2150,12 +2241,9 @@ void create(lv_obj_t *parent) {
   lv_obj_remove_style_all(w.page4);
   lv_obj_set_pos(w.page4, 0, 68);
   lv_obj_set_size(w.page4, 800, 356);
-  // Background image from the history chart (page 3), darkened at build
-  // time so it can be drawn opaque without per-pixel blending. The RGB565
-  // copy is used when prepareChartBackground() could allocate it.
-  lv_obj_set_style_bg_image_src(
-      w.page4, g_chartBg565Ready ? &g_chartBg565 : &chart_bg, 0);
-  lv_obj_set_style_bg_image_opa(w.page4, LV_OPA_COVER, 0);
+  // The theme picks the photograph or the schematic; the service-page switch
+  // can hide either. Both are opaque images, so no per-pixel blending is needed.
+  applyFlowBackground();
   lv_obj_add_flag(w.page4, LV_OBJ_FLAG_HIDDEN);
 
   // Fifth page (wallbox configuration) --------------------------------
@@ -2197,20 +2285,20 @@ void create(lv_obj_t *parent) {
 
   lv_obj_t *party = card(w.page6, 16, 176, 758, 52);
   title(party, TR("PARTYMODUS", "PARTY MODE"));
-  label(party, 16, 30, 400, F_BODY, C_MUTED, TR("2 Std. Override", "2 h override"));
+  label(party, 16, 30, 400, F_BODY, palette().muted, TR("2 Std. Override", "2 h override"));
   w.heatPartyBtn = lv_btn_create(party);
   lv_obj_set_pos(w.heatPartyBtn, 542, 6);
   lv_obj_set_size(w.heatPartyBtn, 200, 40);
   lv_obj_set_style_radius(w.heatPartyBtn, 9, 0);
-  lv_obj_set_style_bg_color(w.heatPartyBtn, lv_color_hex(C_CARD2), 0);
+  lv_obj_set_style_bg_color(w.heatPartyBtn, lv_color_hex(palette().card2), 0);
   lv_obj_set_style_bg_opa(w.heatPartyBtn, LV_OPA_COVER, 0);
   lv_obj_set_style_border_width(w.heatPartyBtn, 1, 0);
-  lv_obj_set_style_border_color(w.heatPartyBtn, lv_color_hex(C_LINE), 0);
+  lv_obj_set_style_border_color(w.heatPartyBtn, lv_color_hex(palette().line), 0);
   lv_obj_set_style_shadow_width(w.heatPartyBtn, 0, 0);
   lv_obj_t *partyLbl = lv_label_create(w.heatPartyBtn);
   lv_label_set_text(partyLbl, TR("Einschalten", "Turn on"));
   lv_obj_set_style_text_font(partyLbl, F_SMALL, 0);
-  lv_obj_set_style_text_color(partyLbl, lv_color_hex(C_TEXT), 0);
+  lv_obj_set_style_text_color(partyLbl, lv_color_hex(palette().text), 0);
   lv_obj_center(partyLbl);
   lv_obj_add_event_cb(w.heatPartyBtn, [](lv_event_t *) {
     if (g_heatingOverrideHandler != nullptr) {
@@ -2234,35 +2322,35 @@ void create(lv_obj_t *parent) {
   // Energy flow: four links around a central house hub. Links are drawn
   // first, particles next and cards last, so particles slide underneath the
   // nodes instead of crossing their text.
-  flowLink(w.page4, 0, 200, 98, 340, 153, C_SOLAR);  // PV <-> house
-  flowLink(w.page4, 1, 200, 254, 340, 199, C_BLUE);   // grid <-> house
-  flowLink(w.page4, 2, 600, 98, 460, 153, C_BAT);    // battery <-> house
-  flowLink(w.page4, 3, 460, 199, 600, 254, C_EV);     // house -> wallbox
-  flowDots(w.page4, 0, C_SOLAR_HI);
-  flowDots(w.page4, 1, C_GRID_HI);
-  flowDots(w.page4, 2, C_BAT_HI);
-  flowDots(w.page4, 3, C_EV_HI);
+  flowLink(w.page4, 0, 200, 98, 340, 153, palette().solar);  // PV <-> house
+  flowLink(w.page4, 1, 200, 254, 340, 199, palette().grid);   // grid <-> house
+  flowLink(w.page4, 2, 600, 98, 460, 153, palette().battery);    // battery <-> house
+  flowLink(w.page4, 3, 460, 199, 600, 254, palette().ev);     // house -> wallbox
+  flowDots(w.page4, 0, palette().solarHi);
+  flowDots(w.page4, 1, palette().gridHi);
+  flowDots(w.page4, 2, palette().batteryHi);
+  flowDots(w.page4, 3, palette().evHi);
 
   FlowNode pvFlow = flowNode(w.page4, 24, 16, TR("SOLAR", "SOLAR"), LV_SYMBOL_CHARGE,
-                             C_SOLAR, C_SOLAR_DIM);
+                             palette().solar, palette().solarDim);
   w.pvNode = pvFlow.card;
   w.pvValue = pvFlow.value;
   w.pvState = pvFlow.state;
 
   FlowNode gridFlow = flowNode(w.page4, 24, 242, TR("NETZ", "GRID"), kFlowGridIcon,
-                               C_BLUE, C_GRID_DIM, &lv_font_mdi_icons_28);
+                               palette().grid, palette().gridDim, &lv_font_mdi_icons_28);
   w.gridNode = gridFlow.card;
   w.gridValue = gridFlow.value;
   w.gridState = gridFlow.state;
 
   FlowNode batFlow = flowNode(w.page4, 600, 16, TR("AKKU", "BATTERY"),
-                              LV_SYMBOL_BATTERY_FULL, C_BAT, C_BAT_DIM);
+                              LV_SYMBOL_BATTERY_FULL, palette().battery, palette().batteryDim);
   w.batNode = batFlow.card;
   w.batValue = batFlow.value;
   w.batState = batFlow.state;
 
   FlowNode wbFlow = flowNode(w.page4, 600, 242, TR("WALLBOX", "WALLBOX"), kFlowCarIcon,
-                             C_EV, C_EV_DIM, &lv_font_mdi_icons_28);
+                             palette().ev, palette().evDim, &lv_font_mdi_icons_28);
   w.wbNode = wbFlow.card;
   w.wbValue = wbFlow.value;
   w.wbState = wbFlow.state;
@@ -2273,82 +2361,79 @@ void create(lv_obj_t *parent) {
   lv_obj_set_pos(w.hubNode, 334, 110);
   lv_obj_set_size(w.hubNode, 132, 132);
   lv_obj_set_style_radius(w.hubNode, LV_RADIUS_CIRCLE, 0);
-  lv_obj_set_style_bg_color(w.hubNode, lv_color_hex(C_CARD2), 0);
+  lv_obj_set_style_bg_color(w.hubNode, lv_color_hex(palette().card2), 0);
   lv_obj_set_style_bg_opa(w.hubNode, LV_OPA_COVER, 0);
   lv_obj_set_style_border_width(w.hubNode, 2, 0);
-  lv_obj_set_style_border_color(w.hubNode, lv_color_hex(C_LINE), 0);
+  lv_obj_set_style_border_color(w.hubNode, lv_color_hex(palette().line), 0);
   lv_obj_clear_flag(w.hubNode, LV_OBJ_FLAG_SCROLLABLE);
-  label(w.hubNode, 0, 16, 132, F_ICON, C_TEXT, LV_SYMBOL_HOME,
+  label(w.hubNode, 0, 16, 132, F_ICON, palette().text, LV_SYMBOL_HOME,
         LV_TEXT_ALIGN_CENTER);
-  w.hubValue = label(w.hubNode, 0, 78, 132, F_MED, C_TEXT, "--",
+  w.hubValue = label(w.hubNode, 0, 78, 132, F_MED, palette().text, "--",
                      LV_TEXT_ALIGN_CENTER);
 
-  // Background cycle button, styled like the network card below it: same
-  // card surface, muted small title, value on the right.
+  // Theme and image controls, styled like the network card below them.
   lv_obj_t *bg = card(w.page3, 16, 0, 758, 58);
-  title(bg, TR("HINTERGRUND", "BACKGROUND"));
+  title(bg, "THEME");
   w.bgBtn = lv_btn_create(bg);
   lv_obj_set_pos(w.bgBtn, 542, 9);
   lv_obj_set_size(w.bgBtn, 200, 40);
   lv_obj_set_style_radius(w.bgBtn, 9, 0);
-  lv_obj_set_style_bg_color(w.bgBtn, lv_color_hex(C_CARD2), 0);
+  lv_obj_set_style_bg_color(w.bgBtn, lv_color_hex(palette().buttonBg), 0);
   lv_obj_set_style_bg_opa(w.bgBtn, LV_OPA_COVER, 0);
   lv_obj_set_style_border_width(w.bgBtn, 1, 0);
-  lv_obj_set_style_border_color(w.bgBtn, lv_color_hex(C_LINE), 0);
+  lv_obj_set_style_border_color(w.bgBtn, lv_color_hex(palette().line), 0);
   lv_obj_set_style_shadow_width(w.bgBtn, 0, 0);
   lv_obj_t *bgBtnLbl = lv_label_create(w.bgBtn);
-  lv_label_set_text(bgBtnLbl, TR("Schwarz", "Black"));
+  lv_label_set_text(bgBtnLbl, themeName(g_themeId, kEnglishUi));
   lv_obj_set_style_text_font(bgBtnLbl, F_BODY, 0);
-  lv_obj_set_style_text_color(bgBtnLbl, lv_color_hex(C_TEXT), 0);
+  lv_obj_set_style_text_color(bgBtnLbl, lv_color_hex(palette().buttonText), 0);
   lv_obj_center(bgBtnLbl);
-  // Flow page background image on/off, same button style, left of the
-  // colour cycle button.
+
+  // Flow page background image on/off, same button style, left of the theme
+  // cycle button. The theme decides whether the image is a photo or schematic.
   lv_obj_t *bgImgBtn = lv_btn_create(bg);
   lv_obj_set_pos(bgImgBtn, 330, 9);
   lv_obj_set_size(bgImgBtn, 200, 40);
   lv_obj_set_style_radius(bgImgBtn, 9, 0);
-  lv_obj_set_style_bg_color(bgImgBtn, lv_color_hex(C_CARD2), 0);
+  lv_obj_set_style_bg_color(bgImgBtn, lv_color_hex(palette().buttonBg), 0);
   lv_obj_set_style_bg_opa(bgImgBtn, LV_OPA_COVER, 0);
   lv_obj_set_style_border_width(bgImgBtn, 1, 0);
-  lv_obj_set_style_border_color(bgImgBtn, lv_color_hex(C_LINE), 0);
+  lv_obj_set_style_border_color(bgImgBtn, lv_color_hex(palette().line), 0);
   lv_obj_set_style_shadow_width(bgImgBtn, 0, 0);
   lv_obj_t *bgImgBtnLbl = lv_label_create(bgImgBtn);
-  lv_label_set_text(bgImgBtnLbl, TR("Bild: an", "Image: on"));
+  lv_label_set_text(bgImgBtnLbl,
+                    g_showBackgroundImage ? TR("Bild: an", "Image: on")
+                                          : TR("Bild: aus", "Image: off"));
   lv_obj_set_style_text_font(bgImgBtnLbl, F_BODY, 0);
-  lv_obj_set_style_text_color(bgImgBtnLbl, lv_color_hex(C_TEXT), 0);
+  lv_obj_set_style_text_color(bgImgBtnLbl,
+                              lv_color_hex(palette().buttonText), 0);
   lv_obj_center(bgImgBtnLbl);
   lv_obj_add_event_cb(bgImgBtn, [](lv_event_t *e) {
-    static bool on = true;
-    on = !on;
-    lv_obj_set_style_bg_image_opa(w.page4, on ? LV_OPA_COVER : LV_OPA_TRANSP, 0);
+    g_showBackgroundImage = !g_showBackgroundImage;
+    applyFlowBackground();
     lv_label_set_text(
         lv_obj_get_child(static_cast<lv_obj_t *>(lv_event_get_target(e)), 0),
-        on ? TR("Bild: an", "Image: on") : TR("Bild: aus", "Image: off"));
+        g_showBackgroundImage ? TR("Bild: an", "Image: on")
+                              : TR("Bild: aus", "Image: off"));
   }, LV_EVENT_CLICKED, nullptr);
-  lv_obj_add_event_cb(w.bgBtn, [](lv_event_t *e) {
-    g_backgroundMode = (g_backgroundMode + 1) % 3;
-    lv_color_t colors[3] = {lv_color_hex(0x000000), lv_color_hex(0x808080), lv_color_hex(0xE6E6E6)};
-    const char *names[3] = {TR("Schwarz", "Black"), TR("Grau", "Grey"), TR("Weiss", "White")};
-    lv_obj_set_style_bg_color(lv_scr_act(), colors[g_backgroundMode], 0);
-    lv_label_set_text(lv_obj_get_child(w.bgBtn, 0), names[g_backgroundMode]);
-    // Only the labels that sit directly on the page background follow the
-    // background colour. Text inside cards keeps its palette.
-    applyBackgroundTextColors();
-    // The chart image bakes its rounded corners into the page background,
-    // so it has to be repainted when that background changes.
-    renderChartImage();
+
+  // The callback must not touch the button: setTheme() rebuilds the whole
+  // widget tree, including this button and its label.
+  lv_obj_add_event_cb(w.bgBtn, [](lv_event_t *) {
+    setTheme(themeId(((int)currentTheme() + 1) % kThemeCount));
   }, LV_EVENT_CLICKED, nullptr);
 
   // Network state. The setup portal stays reachable on the local network, so
   // this card is also the pointer to it when the WARP address has to change.
   lv_obj_t *net = card(w.page3, 16, 70, 370, 190);
   title(net, TR("NETZWERK", "NETWORK"));
-  w.netSsid = label(net, 16, 34, 338, F_BODY, C_TEXT, "WLAN: --");
-  w.netIp = label(net, 16, 58, 338, F_BODY, C_TEXT, "IP: --");
-  w.netWarp = label(net, 16, 82, 338, F_BODY, C_TEXT, "WARP EM: --");
-  w.netWeb = label(net, 16, 106, 338, F_BODY, C_BLUE, "Webinterface: --");
-  w.netSd = label(net, 16, 130, 338, F_SMALL, C_MUTED, "SD: --");
-  label(net, 16, 152, 338, F_SMALL, C_MUTED,
+  w.netSsid = label(net, 16, 34, 338, F_BODY, palette().text, "WLAN: --");
+  w.netIp = label(net, 16, 58, 338, F_BODY, palette().text, "IP: --");
+  w.netWarp = label(net, 16, 82, 338, F_BODY, palette().text, "WARP EM: --");
+  w.netWeb = label(net, 16, 106, 338, F_BODY, palette().accent,
+                   "Webinterface: --");
+  w.netSd = label(net, 16, 130, 338, F_SMALL, palette().muted, "SD: --");
+  label(net, 16, 152, 338, F_SMALL, palette().muted,
         TR("Zum Ändern die Web-Adresse im Browser öffnen.", "Open the web address in your browser to change it."));
 
   // Energy counters since commissioning, next to the network card.
@@ -2360,7 +2445,7 @@ void create(lv_obj_t *parent) {
   row(z, 16, 96, 340, TR("Einspeisung", "Feed-in"), &w.zExport, F_SMALL);
   row(z, 16, 118, 340, TR("Wallbox", "Wallbox"), &w.zCharger, F_SMALL);
   row(z, 16, 140, 340, TR("Akku", "Battery"), &w.zBattery, F_SMALL);
-  label(z, 16, 164, 340, F_SMALL, C_MUTED, TR("seit Inbetriebnahme", "since commissioning"),
+  label(z, 16, 164, 340, F_SMALL, palette().muted, TR("seit Inbetriebnahme", "since commissioning"),
         LV_TEXT_ALIGN_RIGHT);
 
   // Digital IO states: 4 inputs, 2 relays, 2 SG-Ready outputs, each with a
@@ -2371,29 +2456,29 @@ void create(lv_obj_t *parent) {
                             TR("Eingang 4", "Input 4"), TR("Relais 1", "Relay 1"), TR("Relais 2", "Relay 2"), TR("SG 1", "SG 1"),
                             TR("SG 2", "SG 2")};
   for (int i = 0; i < 8; ++i) {
-    label(io, 5 + i * 95, 30, 90, F_SMALL, C_MUTED, ioNames[i],
+    label(io, 5 + i * 95, 30, 90, F_SMALL, palette().muted, ioNames[i],
           LV_TEXT_ALIGN_CENTER);
     lv_obj_t *dot = lv_obj_create(io);
     lv_obj_remove_style_all(dot);
     lv_obj_set_pos(dot, 44 + i * 95, 50);
     lv_obj_set_size(dot, 12, 12);
     lv_obj_set_style_radius(dot, LV_RADIUS_CIRCLE, 0);
-    lv_obj_set_style_bg_color(dot, lv_color_hex(C_MUTED), 0);
+    lv_obj_set_style_bg_color(dot, lv_color_hex(palette().muted), 0);
     lv_obj_set_style_bg_opa(dot, LV_OPA_COVER, 0);
     w.ioDot[i] = dot;
   }
 
   // Bottom bar, left of the page buttons: today's and overall autarky, plus
   // today's solar forecast as remaining / total kWh.
-  label(parent, 16, 443, 0, F_SMALL, C_MUTED, TR("Autarkie", "Independence"));
+  label(parent, 16, 443, 0, F_SMALL, palette().muted, TR("Autarkie", "Independence"));
 #ifdef WARP_LANG_EN
-  w.autarkyValue = label(parent, 130, 439, 160, F_TITLE, C_TEXT, "--");
-  label(parent, 270, 443, 0, F_SMALL, C_MUTED, TR("Prognose", "Forecast"));
-  w.forecastValue = label(parent, 340, 439, 150, F_TITLE, C_TEXT, "--");
+  w.autarkyValue = label(parent, 130, 439, 160, F_TITLE, palette().text, "--");
+  label(parent, 270, 443, 0, F_SMALL, palette().muted, TR("Prognose", "Forecast"));
+  w.forecastValue = label(parent, 340, 439, 150, F_TITLE, palette().text, "--");
 #else
-  w.autarkyValue = label(parent, 84, 439, 160, F_TITLE, C_TEXT, "--");
-  label(parent, 234, 443, 0, F_SMALL, C_MUTED, TR("Prognose", "Forecast"));
-  w.forecastValue = label(parent, 318, 439, 160, F_TITLE, C_TEXT, "--");
+  w.autarkyValue = label(parent, 84, 439, 160, F_TITLE, palette().text, "--");
+  label(parent, 234, 443, 0, F_SMALL, palette().muted, TR("Prognose", "Forecast"));
+  w.forecastValue = label(parent, 318, 439, 160, F_TITLE, palette().text, "--");
 #endif
 
   auto makeNav = [](lv_obj_t *p, int x, int y, const char *text) {
@@ -2401,15 +2486,15 @@ void create(lv_obj_t *parent) {
     lv_obj_set_pos(b, x, y);
     lv_obj_set_size(b, 42, 38);
     lv_obj_set_style_radius(b, 9, 0);
-    lv_obj_set_style_bg_color(b, lv_color_hex(C_CARD2), 0);
+    lv_obj_set_style_bg_color(b, lv_color_hex(palette().card2), 0);
     lv_obj_set_style_bg_opa(b, LV_OPA_COVER, 0);
     lv_obj_set_style_border_width(b, 1, 0);
-    lv_obj_set_style_border_color(b, lv_color_hex(C_LINE), 0);
+    lv_obj_set_style_border_color(b, lv_color_hex(palette().line), 0);
     lv_obj_set_style_shadow_width(b, 0, 0);
     lv_obj_t *lbl = lv_label_create(b);
     lv_label_set_text(lbl, text);
     lv_obj_set_style_text_font(lbl, &lv_font_mdi_icons_28, 0);
-    lv_obj_set_style_text_color(lbl, lv_color_hex(C_MUTED), 0);
+    lv_obj_set_style_text_color(lbl, lv_color_hex(palette().muted), 0);
     lv_obj_center(lbl);
     return b;
   };
@@ -2521,13 +2606,13 @@ void showSetup(const char *ssid, const char *password, const char *url) {
     lv_obj_remove_style_all(overlay);
     lv_obj_set_pos(overlay, 0, 0);
     lv_obj_set_size(overlay, 800, 480);
-    lv_obj_set_style_bg_color(overlay, lv_color_hex(C_BG), 0);
+    lv_obj_set_style_bg_color(overlay, lv_color_hex(palette().bg), 0);
     lv_obj_set_style_bg_opa(overlay, LV_OPA_COVER, 0);
     lv_obj_clear_flag(overlay, LV_OBJ_FLAG_SCROLLABLE);
     w.setupOverlay = overlay;
 
-    label(overlay, 40, 22, 0, F_BIG, C_TEXT, TR("WLAN einrichten", "Set up WLAN"));
-    label(overlay, 40, 66, 0, F_BODY, C_MUTED,
+    label(overlay, 40, 22, 0, F_BIG, palette().text, TR("WLAN einrichten", "Set up WLAN"));
+    label(overlay, 40, 66, 0, F_BODY, palette().muted,
           TR("Mit dem HEMS-Panel verbinden", "Connect to the HEMS panel"));
 
     // White quiet zone around the QR code; the code itself is 260 px so the
@@ -2547,15 +2632,15 @@ void showSetup(const char *ssid, const char *password, const char *url) {
     lv_qrcode_set_light_color(w.setupQr, lv_color_hex(0xFFFFFF));
     lv_obj_set_pos(w.setupQr, 20, 20);
 
-    label(overlay, 380, 112, 0, F_SMALL, C_MUTED, TR("NETZWERK", "NETWORK"));
-    w.setupSsid = label(overlay, 380, 134, 380, F_TITLE, C_TEXT, "--");
-    label(overlay, 380, 174, 0, F_SMALL, C_MUTED, TR("PASSWORT", "PASSWORD"));
-    w.setupPassword = label(overlay, 380, 196, 380, F_TITLE, C_TEXT, "--");
-    label(overlay, 380, 240, 0, F_SMALL, C_MUTED, TR("DANACH ÖFFNEN", "OPEN AFTERWARDS"));
-    w.setupUrl = label(overlay, 380, 262, 380, F_TITLE, C_BLUE, "--");
-    label(overlay, 380, 308, 380, F_SMALL, C_MUTED,
+    label(overlay, 380, 112, 0, F_SMALL, palette().muted, TR("NETZWERK", "NETWORK"));
+    w.setupSsid = label(overlay, 380, 134, 380, F_TITLE, palette().text, "--");
+    label(overlay, 380, 174, 0, F_SMALL, palette().muted, TR("PASSWORT", "PASSWORD"));
+    w.setupPassword = label(overlay, 380, 196, 380, F_TITLE, palette().text, "--");
+    label(overlay, 380, 240, 0, F_SMALL, palette().muted, TR("DANACH ÖFFNEN", "OPEN AFTERWARDS"));
+    w.setupUrl = label(overlay, 380, 262, 380, F_TITLE, palette().accent, "--");
+    label(overlay, 380, 308, 380, F_SMALL, palette().muted,
           TR("QR-Code scannen oder dem Netzwerk beitreten. Im Browser WLAN-Zugang und die Adresse des WARP Energy Managers eintragen.", "Scan the QR code or join the network. In the browser enter the WLAN credentials and the WARP Energy Manager address."));
-    label(overlay, 40, 432, 720, F_SMALL, C_MUTED,
+    label(overlay, 40, 432, 720, F_SMALL, palette().muted,
           TR("Das Einrichtungsnetz ist offen und bleibt aktiv, bis die Einrichtung abgeschlossen ist.", "The setup network is open and stays active until the setup is complete."));
   }
 
@@ -2622,37 +2707,38 @@ void setSdStatus(const char *text) {
 }
 
 void setConnectionState(ConnectionState state) {
+  g_connectionState = state;
   const char *text = TR("WLAN?", "WLAN?");
-  uint32_t textColor = C_MUTED;
-  uint32_t wifiColor = C_MUTED;
-  uint32_t background = C_CARD2;
+  uint32_t textColor = palette().muted;
+  uint32_t wifiColor = palette().muted;
+  uint32_t background = palette().card2;
 
   switch (state) {
     case ConnectionState::NoNet:
       text = TR("WLAN?", "WLAN?");
-      textColor = C_MUTED;
-      wifiColor = C_MUTED;
-      background = C_CARD2;
+      textColor = palette().muted;
+      wifiColor = palette().muted;
+      background = palette().card2;
       break;
     case ConnectionState::Disconnected:
       // WLAN is up (green glyph) but the WARP does not answer (red text).
       text = TR("Getrennt", "Disconnected");
-      textColor = C_RED;
-      wifiColor = C_GREEN;
-      background = 0x2A1D22;
+      textColor = palette().red;
+      wifiColor = palette().green;
+      background = palette().chipDisconnected;
       break;
     case ConnectionState::Data:
       text = TR("Daten", "Data");
-      textColor = C_GREEN;
-      wifiColor = C_GREEN;
-      background = 0x173026;
+      textColor = palette().green;
+      wifiColor = palette().green;
+      background = palette().chipData;
       break;
     case ConnectionState::NoData:
       // WLAN is up and the WARP answers, but it returns no measurements.
       text = TR("Daten", "Data");
-      textColor = C_RED;
-      wifiColor = C_GREEN;
-      background = 0x33280F;
+      textColor = palette().red;
+      wifiColor = palette().green;
+      background = palette().chipNoData;
       break;
   }
 
@@ -2667,6 +2753,7 @@ void setConnectionState(ConnectionState state) {
 }
 
 void update(const WarpData &d) {
+  g_lastData = d;
   char buf[48];
   char buf2[64];
   char chargeBuf[32];
@@ -2677,14 +2764,14 @@ void update(const WarpData &d) {
       snprintf(buf, sizeof(buf), "%.0f %% / %.0f %%", d.autarkyToday,
                d.autarky);
       setTextIfChanged(w.autarkyValue, buf);
-      setColorIfChanged(w.autarkyValue, C_TEXT);
+      setColorIfChanged(w.autarkyValue, palette().text);
     } else if (d.hasAutarky) {
       snprintf(buf, sizeof(buf), "%.0f %%", d.autarky);
       setTextIfChanged(w.autarkyValue, buf);
-      setColorIfChanged(w.autarkyValue, C_TEXT);
+      setColorIfChanged(w.autarkyValue, palette().text);
     } else {
       setTextIfChanged(w.autarkyValue, "--");
-      setColorIfChanged(w.autarkyValue, C_MUTED);
+      setColorIfChanged(w.autarkyValue, palette().muted);
     }
   }
   if (w.forecastValue != nullptr) {
@@ -2701,10 +2788,10 @@ void update(const WarpData &d) {
         snprintf(buf, sizeof(buf), "-- / %s kWh", total);
       }
       setTextIfChanged(w.forecastValue, buf);
-      setColorIfChanged(w.forecastValue, C_TEXT);
+      setColorIfChanged(w.forecastValue, palette().text);
     } else {
       setTextIfChanged(w.forecastValue, "--");
-      setColorIfChanged(w.forecastValue, C_MUTED);
+      setColorIfChanged(w.forecastValue, palette().muted);
     }
   }
 
@@ -2714,10 +2801,10 @@ void update(const WarpData &d) {
       fmtPower(buf, sizeof(buf), std::fabs(d.gridPower));
       snprintf(buf2, sizeof(buf2), "%s%s", d.gridPower < 0.0 ? "-" : "", buf);
       setTextIfChanged(w.gridTotal, buf2);
-      setColorIfChanged(w.gridTotal, d.gridPower < 0.0 ? C_GREEN : C_AMBER);
+      setColorIfChanged(w.gridTotal, d.gridPower < 0.0 ? palette().green : palette().amber);
     } else {
       setTextIfChanged(w.gridTotal, "--");
-      setColorIfChanged(w.gridTotal, C_MUTED);
+      setColorIfChanged(w.gridTotal, palette().muted);
     }
   }
   setTextIfChanged(w.gridDir, !d.hasGrid ? TR("kein Messwert", "no measurement")
@@ -2727,13 +2814,13 @@ void update(const WarpData &d) {
     for (int i = 0; i < 3; ++i) {
       if (!d.hasGrid) {
         setTextIfChanged(w.gridPhase[i], "--");
-        setColorIfChanged(w.gridPhase[i], C_MUTED);
+        setColorIfChanged(w.gridPhase[i], palette().muted);
         continue;
       }
       fmtSignedPower(buf, sizeof(buf), phases[i]);
       setTextIfChanged(w.gridPhase[i], buf);
       setColorIfChanged(w.gridPhase[i],
-               phases[i] < 0.0 ? C_GREEN : (phases[i] > 0.0 ? C_AMBER : C_TEXT));
+               phases[i] < 0.0 ? palette().green : (phases[i] > 0.0 ? palette().amber : palette().text));
     }
   }
 
@@ -2742,10 +2829,10 @@ void update(const WarpData &d) {
     if (d.hasHouse) {
       fmtPower(buf, sizeof(buf), d.housePower);
       setTextIfChanged(w.houseTotal, buf);
-      setColorIfChanged(w.houseTotal, C_TEXT);
+      setColorIfChanged(w.houseTotal, palette().text);
     } else {
       setTextIfChanged(w.houseTotal, "--");
-      setColorIfChanged(w.houseTotal, C_MUTED);
+      setColorIfChanged(w.houseTotal, palette().muted);
     }
   }
   {
@@ -2765,10 +2852,10 @@ void update(const WarpData &d) {
     if (d.hasPv) {
       fmtPower(buf, sizeof(buf), d.pvPower);
       setTextIfChanged(w.pvTotal, buf);
-      setColorIfChanged(w.pvTotal, C_GREEN);
+      setColorIfChanged(w.pvTotal, palette().green);
     } else {
       setTextIfChanged(w.pvTotal, "--");
-      setColorIfChanged(w.pvTotal, C_MUTED);
+      setColorIfChanged(w.pvTotal, palette().muted);
     }
   }
   if (d.hasPvStrings) {
@@ -2823,34 +2910,34 @@ void update(const WarpData &d) {
     if (d.hasBattery) {
       snprintf(buf, sizeof(buf), "%.0f %%", d.soc);
       setTextIfChanged(w.batSoc, buf);
-      setColorIfChanged(w.batSoc, C_TEXT);
+      setColorIfChanged(w.batSoc, palette().text);
       if (w.batBar != nullptr) lv_bar_set_value(w.batBar, (int32_t)(d.soc + 0.5f), LV_ANIM_OFF);
     } else {
       setTextIfChanged(w.batSoc, "-- %");
-      setColorIfChanged(w.batSoc, C_MUTED);
+      setColorIfChanged(w.batSoc, palette().muted);
       if (w.batBar != nullptr) lv_bar_set_value(w.batBar, 0, LV_ANIM_OFF);
     }
   }
   if (w.batDir != nullptr) {
     if (!d.hasBattery) {
       setTextIfChanged(w.batDir, "--");
-      setColorIfChanged(w.batDir, C_MUTED);
+      setColorIfChanged(w.batDir, palette().muted);
     } else if (d.batteryPower > 1.0f) {
       setTextIfChanged(w.batDir, TR("laden", "charging"));
-      setColorIfChanged(w.batDir, C_GREEN);
+      setColorIfChanged(w.batDir, palette().green);
     } else if (d.batteryPower < -1.0f) {
       setTextIfChanged(w.batDir, TR("entladen", "discharging"));
-      setColorIfChanged(w.batDir, C_AMBER);
+      setColorIfChanged(w.batDir, palette().amber);
     } else {
       setTextIfChanged(w.batDir, "inaktiv");
-      setColorIfChanged(w.batDir, C_MUTED);
+      setColorIfChanged(w.batDir, palette().muted);
     }
   }
   if (d.hasBattery) {
     const bool charging = d.batteryPower >= 0.0f;
     fmtSignedPower(buf, sizeof(buf), d.batteryPower);
     setTextIfChanged(w.batPower, buf);
-    setColorIfChanged(w.batPower, charging ? C_GREEN : C_AMBER);
+    setColorIfChanged(w.batPower, charging ? palette().green : palette().amber);
 
     snprintf(buf, sizeof(buf), "%.1f V", d.batteryVoltage);
     setTextIfChanged(w.batVoltage, buf);
@@ -3034,7 +3121,7 @@ void update(const WarpData &d) {
     for (int i = 0; i < 8; ++i) {
       if (w.ioDot[i] != nullptr) {
         setBgColorIfChanged(w.ioDot[i],
-                            d.hasIoStates && ioState[i] ? C_GREEN : C_MUTED);
+                            d.hasIoStates && ioState[i] ? palette().green : palette().muted);
       }
     }
     for (int i = 0; i < 2; ++i) {
@@ -3084,68 +3171,68 @@ void update(const WarpData &d) {
       const bool generating = d.pvPower > kPvGeneratingW;
       fmtPower(buf, sizeof(buf), d.pvPower);
       setTextIfChanged(w.pvValue, buf);
-      setColorIfChanged(w.pvValue, generating ? C_SOLAR : C_MUTED);
+      setColorIfChanged(w.pvValue, generating ? palette().solar : palette().muted);
       setTextIfChanged(w.pvState, generating ? TR("Erzeugung", "Generation")
                                              : TR("Keine Erzeugung", "No generation"));
-      setColorIfChanged(w.pvState, generating ? C_SOLAR : C_MUTED);
+      setColorIfChanged(w.pvState, generating ? palette().solar : palette().muted);
     } else {
       setTextIfChanged(w.pvValue, "--");
-      setColorIfChanged(w.pvValue, C_MUTED);
+      setColorIfChanged(w.pvValue, palette().muted);
       setTextIfChanged(w.pvState, TR("kein Messwert", "no measurement"));
-      setColorIfChanged(w.pvState, C_MUTED);
+      setColorIfChanged(w.pvState, palette().muted);
     }
 
     // Grid -------------------------------------------------------------
     if (d.hasGrid && !d.island) {
       fmtPower(buf, sizeof(buf), std::fabs(d.gridPower));
       setTextIfChanged(w.gridValue, buf);
-      setColorIfChanged(w.gridValue, std::fabs(d.gridPower) < 10.0f ? C_MUTED : C_BLUE);
+      setColorIfChanged(w.gridValue, std::fabs(d.gridPower) < 10.0f ? palette().muted : palette().grid);
       if (std::fabs(d.gridPower) < 10.0f) {
         setTextIfChanged(w.gridState, "ausgeglichen");
-        setColorIfChanged(w.gridState, C_MUTED);
+        setColorIfChanged(w.gridState, palette().muted);
       } else if (d.gridPower < 0.0f) {
         setTextIfChanged(w.gridState, TR("Einspeisung", "Feed-in"));
-        setColorIfChanged(w.gridState, C_GREEN);
+        setColorIfChanged(w.gridState, palette().green);
       } else {
         setTextIfChanged(w.gridState, TR("Bezug", "Import"));
-        setColorIfChanged(w.gridState, C_BLUE);
+        setColorIfChanged(w.gridState, palette().grid);
       }
     } else if (d.island) {
       setTextIfChanged(w.gridValue, "--");
-      setColorIfChanged(w.gridValue, C_MUTED);
+      setColorIfChanged(w.gridValue, palette().muted);
       setTextIfChanged(w.gridState, TR("Inselbetrieb", "Island mode"));
-      setColorIfChanged(w.gridState, C_RED);
+      setColorIfChanged(w.gridState, palette().red);
     } else {
       setTextIfChanged(w.gridValue, "--");
-      setColorIfChanged(w.gridValue, C_MUTED);
+      setColorIfChanged(w.gridValue, palette().muted);
       setTextIfChanged(w.gridState, TR("kein Messwert", "no measurement"));
-      setColorIfChanged(w.gridState, C_MUTED);
+      setColorIfChanged(w.gridState, palette().muted);
     }
 
     // Battery ----------------------------------------------------------
     if (d.hasBattery) {
       snprintf(buf, sizeof(buf), "%.0f %%", d.soc);
       setTextIfChanged(w.batValue, buf);
-      setColorIfChanged(w.batValue, C_BAT);
+      setColorIfChanged(w.batValue, palette().battery);
       if (d.batteryPower > 25.0f) {
         fmtPower(pbuf, sizeof(pbuf), d.batteryPower);
         snprintf(buf, sizeof(buf), TR("Laden %s", "Charging %s"), pbuf);
         setTextIfChanged(w.batState, buf);
-        setColorIfChanged(w.batState, C_BAT);
+        setColorIfChanged(w.batState, palette().battery);
       } else if (d.batteryPower < -25.0f) {
         fmtPower(pbuf, sizeof(pbuf), -d.batteryPower);
         snprintf(buf, sizeof(buf), TR("Entladen %s", "Discharging %s"), pbuf);
         setTextIfChanged(w.batState, buf);
-        setColorIfChanged(w.batState, C_BAT);
+        setColorIfChanged(w.batState, palette().battery);
       } else {
         setTextIfChanged(w.batState, "inaktiv");
-        setColorIfChanged(w.batState, C_MUTED);
+        setColorIfChanged(w.batState, palette().muted);
       }
     } else {
       setTextIfChanged(w.batValue, "--");
-      setColorIfChanged(w.batValue, C_MUTED);
+      setColorIfChanged(w.batValue, palette().muted);
       setTextIfChanged(w.batState, TR("kein Messwert", "no measurement"));
-      setColorIfChanged(w.batState, C_MUTED);
+      setColorIfChanged(w.batState, palette().muted);
     }
 
     // Wallbox ----------------------------------------------------------
@@ -3157,29 +3244,29 @@ void update(const WarpData &d) {
     if (wallboxOn) {
       fmtPower(pbuf, sizeof(pbuf), d.charge_power);
       setTextIfChanged(w.wbValue, pbuf);
-      setColorIfChanged(w.wbValue, C_EV);
+      setColorIfChanged(w.wbValue, palette().ev);
       setTextIfChanged(w.wbState, TR("Laden", "Charging"));
-      setColorIfChanged(w.wbState, C_EV);
+      setColorIfChanged(w.wbState, palette().ev);
     } else if (d.hasCharger) {
       setTextIfChanged(w.wbValue, "--");
-      setColorIfChanged(w.wbValue, C_MUTED);
+      setColorIfChanged(w.wbValue, palette().muted);
       setTextIfChanged(w.wbState, casStateName(d.charge_state));
-      setColorIfChanged(w.wbState, d.charge_state == 5 ? C_RED : C_MUTED);
+      setColorIfChanged(w.wbState, d.charge_state == 5 ? palette().red : palette().muted);
     } else {
       setTextIfChanged(w.wbValue, "--");
-      setColorIfChanged(w.wbValue, C_MUTED);
+      setColorIfChanged(w.wbValue, palette().muted);
       setTextIfChanged(w.wbState, TR("Getrennt", "Disconnected"));
-      setColorIfChanged(w.wbState, C_MUTED);
+      setColorIfChanged(w.wbState, palette().muted);
     }
 
     // House hub --------------------------------------------------------
     if (d.hasHouse) {
       fmtPower(buf, sizeof(buf), d.housePower);
       setTextIfChanged(w.hubValue, buf);
-      setColorIfChanged(w.hubValue, C_TEXT);
+      setColorIfChanged(w.hubValue, palette().text);
     } else {
       setTextIfChanged(w.hubValue, "--");
-      setColorIfChanged(w.hubValue, C_MUTED);
+      setColorIfChanged(w.hubValue, palette().muted);
     }
 
     // Links: hysteresis (25 W on, 10 W off) avoids flickering around zero.
@@ -3232,13 +3319,13 @@ void update(const WarpData &d) {
     g_lastHeatingOverride = d.hasSgrOverride;
     if (d.hasHeating) {
       setTextIfChanged(w.heatBlocking, onOff(d.sgrBlocking));
-      setColorIfChanged(w.heatBlocking, d.sgrBlocking ? C_EV : C_MUTED);
+      setColorIfChanged(w.heatBlocking, d.sgrBlocking ? palette().ev : palette().muted);
       setTextIfChanged(w.heatExtended, onOff(d.sgrExtended));
-      setColorIfChanged(w.heatExtended, d.sgrExtended ? C_EV : C_MUTED);
+      setColorIfChanged(w.heatExtended, d.sgrExtended ? palette().ev : palette().muted);
       setTextIfChanged(w.heatStatus, onOff(d.heatingEnabled));
-      setColorIfChanged(w.heatStatus, d.heatingEnabled ? C_TEXT : C_MUTED);
+      setColorIfChanged(w.heatStatus, d.heatingEnabled ? palette().text : palette().muted);
       setTextIfChanged(w.heatP14, onOff(d.p14Enwg));
-      setColorIfChanged(w.heatP14, d.p14Enwg ? C_RED : C_MUTED);
+      setColorIfChanged(w.heatP14, d.p14Enwg ? palette().red : palette().muted);
     } else {
       setTextIfChanged(w.heatBlocking, "--");
       setTextIfChanged(w.heatExtended, "--");
@@ -3284,12 +3371,12 @@ void update(const WarpData &d) {
         snprintf(buf, sizeof(buf), TR("Aus (%lu min)", "Off (%lu min)"), (unsigned long)remaining);
         setTextIfChanged(lbl, buf);
         if (!partyWasShown) {
-          lv_obj_set_style_bg_color(w.heatPartyBtn, lv_color_hex(C_EV), 0);
+          lv_obj_set_style_bg_color(w.heatPartyBtn, lv_color_hex(palette().ev), 0);
         }
       } else {
         setTextIfChanged(lbl, TR("Einschalten", "Turn on"));
         if (partyWasShown) {
-          lv_obj_set_style_bg_color(w.heatPartyBtn, lv_color_hex(C_CARD2), 0);
+          lv_obj_set_style_bg_color(w.heatPartyBtn, lv_color_hex(palette().card2), 0);
         }
       }
       // Always clickable: the party mode must also work when the SG-Ready
@@ -3330,6 +3417,43 @@ void update(const WarpData &d) {
     for (int i = 0; i < g_renderedChargers; ++i) {
       updateModeCard(g_chargerCards[i], d, i, false);
     }
+  }
+}
+
+ThemeId currentTheme() { return g_themeId; }
+
+void setThemeChangeHandler(ThemeChangeHandler handler) {
+  g_themeChangeHandler = handler;
+}
+
+void setTheme(ThemeId id) {
+  const ThemeId next = themeId((int)id);
+  if (next == g_themeId) {
+    return;
+  }
+  g_themeId = next;
+  if (g_themeChangeHandler != nullptr) {
+    g_themeChangeHandler(g_themeId);
+  }
+  if (g_root == nullptr) {
+    return;
+  }
+  // Every colour is baked into a widget style or the chart image buffer, so a
+  // full rebuild is the only way to restyle all six pages consistently. The
+  // history and the chart data live outside the widget tree and survive it.
+  const int page = g_activePage;
+  lv_obj_clean(g_root);
+  create(lv_obj_get_parent(g_root));
+  setPage(page);
+  setConnectionState(g_connectionState);
+  update(g_lastData);
+  // The chart image keeps its pixels across the rebuild. Repaint it now so the
+  // card and divider follow the new palette even when no new sample arrived;
+  // the series values themselves are unchanged and survive the rebuild.
+  if (g_sampleCount > 0) {
+    rebuildPowerChart();
+  } else {
+    renderChartImage();
   }
 }
 

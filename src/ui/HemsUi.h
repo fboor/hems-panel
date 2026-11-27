@@ -5,12 +5,23 @@
 
 #include <lvgl.h>
 
+#include "ui/Theme.h"
 #include "warp/WarpData.h"
 
 namespace hemsui {
 
-// Builds the screen below `parent` (usually lv_screen_active()).
+// Builds the screen below `parent` (usually lv_screen_active()). The widgets
+// live in a dedicated child, so changing the theme can rebuild them without
+// touching the Wi-Fi setup overlay or the LVGL input devices.
 void create(lv_obj_t *parent);
+
+// Complete, runtime-switchable palette. Changing it repaints the whole screen
+// and keeps the current page and values. The handler is called on every change
+// (not during startup) so the firmware can persist the choice in NVS.
+ThemeId currentTheme();
+void setTheme(ThemeId id);
+using ThemeChangeHandler = void (*)(ThemeId id);
+void setThemeChangeHandler(ThemeChangeHandler handler);
 
 // Copies the values into the labels. Safe to call before create().
 void update(const WarpData &data);
