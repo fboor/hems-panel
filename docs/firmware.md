@@ -42,7 +42,7 @@ uncommitted changes. The panel prints it at boot and shows it in the footer of
 its web portal, so a running panel can be matched to the source it came from.
 
 `tools/pack_web_install.sh` sets `HEMS_BUILD_STAMP` to the release number
-(`v0.7`), because the release commit and its tag are made after the binaries are
+(`v0.8`), because the release commit and its tag are made after the binaries are
 packed. The generated header is ignored by git.
 
 ## Flash layout

@@ -7,5 +7,5 @@
 // SPDX-License-Identifier: MIT
 #pragma once
 
-#define HEMS_FW_VERSION "0.7"
+#define HEMS_FW_VERSION "0.8"
 #define HEMS_FW_VERSION_MON "2026-11"

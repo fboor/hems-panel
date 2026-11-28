@@ -48,11 +48,11 @@ One firmware image serves the board: the backlight is dimmed on GPIO 6. The
 
 ## Install
 
-A blank panel can be flashed from the browser: start at
-[docs/install/index.html](docs/install/index.html) or read the German quick
-guide in [docs/install/anleitung.md](docs/install/anleitung.md). On first boot
-the panel opens a setup network with a QR code; enter the WLAN and the WARP
-address and it starts showing data.
+A blank panel can be flashed from the browser: start at the
+[installer website](https://fboor.github.io/hems-panel/install/) or read the
+German quick guide in [docs/install/anleitung.md](docs/install/anleitung.md).
+On first boot the panel opens a setup network with a QR code; enter the WLAN
+and the WARP address and it starts showing data.
 
 To build and flash from source, see [Firmware](docs/firmware.md). In short:
 
