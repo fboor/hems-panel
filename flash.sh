@@ -2,18 +2,12 @@
 set -euo pipefail
 # Build and flash the panel firmware onto a Waveshare ESP32-S3-Touch-LCD-7.
 #
-#   ./flash.sh                    modified board (EXIO2/DISP trace cut)
-#   ./flash.sh --factory          factory board (trace intact)
+#   ./flash.sh                    build + upload
 #   ./flash.sh --build-only       build only; no board needed
 #   ./flash.sh --merged [file]    build one 0x0 image; no board needed
 #   ./flash.sh --erase            erase the whole 16 MB flash first
 #   ./flash.sh --monitor          open the serial monitor after flashing
 #   ./flash.sh --port /dev/...    serial port instead of auto-detection
-#
-# The two board variants are different images, not a runtime setting:
-# with the cut GPIO 6 owns the backlight and can dim it; without the cut the
-# light hangs on EXIO2 and GPIO 6 must stay away from that net. Flashing the
-# wrong one puts two push-pull outputs on the same enable line.
 #
 # Serial log: the application's Serial is the native USB CDC port. The UART
 # Type-C port is for flashing and for the ROM output. See docs/firmware.md.
@@ -23,7 +17,7 @@ invoke_dir=$PWD
 cd "$here"
 
 env=esp32-s3-touch-lcd-7
-variant="modifiziert (EXIO2/DISP getrennt)"
+variant="Waveshare ESP32-S3-Touch-LCD-7"
 port=""
 do_erase=0
 do_monitor=0
@@ -37,16 +31,6 @@ usage() {
 
 while [ $# -gt 0 ]; do
   case "$1" in
-    --factory)
-      env=esp32-s3-touch-lcd-7-factory
-      variant="factory (EXIO2/DISP verbunden)"
-      shift
-      ;;
-    --modified)
-      env=esp32-s3-touch-lcd-7
-      variant="modifiziert (EXIO2/DISP getrennt)"
-      shift
-      ;;
     --port)
       if [ $# -lt 2 ] || [ -z "${2:-}" ]; then
         echo "--port braucht einen Geraetenamen, z.B. /dev/ttyACM0" >&2
@@ -163,11 +147,7 @@ fi
 
 if [ "$build_only" -eq 1 ]; then
   echo
-  if [ "$env" = "esp32-s3-touch-lcd-7-factory" ]; then
-    echo "Nur gebaut. Flashen mit: ./flash.sh --factory --port /dev/..."
-  else
-    echo "Nur gebaut. Flashen mit: ./flash.sh --port /dev/..."
-  fi
+  echo "Nur gebaut. Flashen mit: ./flash.sh --port /dev/..."
   exit 0
 fi
 

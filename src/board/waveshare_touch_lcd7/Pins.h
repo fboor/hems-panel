@@ -159,82 +159,25 @@
 // 0x20..0x27 and the GT911 at 0x5D. The bus runs at 400 kHz in the vendor config.
 #define BOARD_CH422G_I2C_ADDR 0x20 // unbenutzt: siehe Ch422G.cpp
 #define BOARD_CH422G_I2C_HZ 400000
-// EXIOn is CH422G pin n. The backlight (pin 2) is in the board's own backlight
-// block below, which says which of the two worlds this board is in; the four
-// here are what the firmware drives.
+// EXIOn is CH422G pin n. Four of them carry functions this firmware drives.
 #define BOARD_CH422G_PIN_TOUCH_RST 1 // TP_RST; their demo sets it high before the LCD
 #define BOARD_CH422G_PIN_LCD_RST 3   // the ST7262's reset: 10 ms low, 100 ms high
 #define BOARD_CH422G_PIN_SD_CS 4     // SD_CS, active low
 #define BOARD_CH422G_PIN_USB_SEL 5   // low = USB on GPIO 19/20, high = CAN
-// ---- the one line that says how this board is built --------------------------
-// The boost chip's enable net is an input while the board comes up - the board
-// holds it there - and what happens to that net afterwards is the driver's
-// business. With the wire from GPIO 6 to it, the light takes the same PWM and the
-// same three timers as every other board.
-//
-// Which of the two worlds this board is in cannot be decided at runtime and
-// cannot be decided by the firmware, because the two cannot be used at once:
-//
-//   1 = the mod is done and the trace between EXIO2 and the enable input is cut.
-//       EXIO2 then drives nothing that is connected, the expander keeps EXIO1, 3,
-//       4 and 5 for the touch reset, the panel's reset, the TF card's chip select
-//       and the USB selector, and GPIO 6 dims the light. Everything works.
-//   0 = no cut. EXIO2 is still on that net, the light belongs to it, and a PWM
-//       from GPIO 6 would put two push-pull outputs on one net for as long as they
-//       disagree. The light is switched there instead: on and off, without the
-//       three-minute step.
-//
-// The direction of the expander's IO0..7 is one direction for all eight - "the
-// input/output mode of CH422G's IO0-7 must remain consistent" in the vendor's own
-// driver header, "Input is supported only on pins 0-7" in ESPHome's component -
-// and open-drain exists only for pins 8..11. So EXIO2 is an output whenever any of
-// the other four is, and there is no software way to leave it alone.
-//
-// 1 is right for the board in the flat layer's hand. It is wrong for anyone who
-// flashes a factory board, and the difference is a short, not a colour.
-//
-// The default stays 1 so that a plain `pio run` still builds the modified board.
-// A factory board is built with the matching PlatformIO environment, which passes
-// -DBOARD_CH422G_LCD_DISP_CUT=0, or with that define added to build_flags:
-//
-//   pio run -e esp32-s3-touch-lcd-7-factory
-//
-// Never hand a factory board the default image: GPIO 6 and EXIO2 would then drive
-// the same enable net against each other.
-#ifndef BOARD_CH422G_LCD_DISP_CUT
-#define BOARD_CH422G_LCD_DISP_CUT 1
-#endif
-#if (BOARD_CH422G_LCD_DISP_CUT != 0) && (BOARD_CH422G_LCD_DISP_CUT != 1)
-#error "BOARD_CH422G_LCD_DISP_CUT must be 0 (factory) or 1 (trace cut)."
-#endif
 
-// The level every EXIO0..7 pin drives after the expander is brought up, and with
-// it the board's own start-up line for each of the five pins this firmware uses:
-// touch reset high (out of reset), panel reset high (out of reset), chip select
-// low (the card is held selected) and USB low (USB, not CAN). The last two are
-// the ones that would be wrong by default - the chip comes up with all twelve
-// high - so they are written here rather than left to the default.
-//
-// EXIO2 is the fifth and follows the board: with the cut it goes nowhere, so it
-// takes the off level and a reader of the log can tell from the two values that
-// the light is GPIO 6's; without the cut it is the light, and it is high.
-#if BOARD_CH422G_LCD_DISP_CUT
-#define BOARD_CH422G_START_IO 0x17    // EXIO0,1,3,4 high, EXIO2 und EXIO5 low
-#else
-#define BOARD_CH422G_START_IO 0x1B    // dazu EXIO2 high: das Licht haengt daran
-#endif
+// The level EXIO0..7 drive after the expander is brought up. This is the
+// vendor's own value for a lit panel (`0x1E` in their backlight-on example):
+// touch reset, panel reset, card select and EXIO2 high, USB selector low. EXIO2
+// is included because the board may still wire it to the backlight enable net;
+// keeping it high agrees with GPIO 6 at full brightness instead of pulling
+// against it. The chip comes up with every output high, so the USB selector is
+// the one line that has to be written low explicitly.
+#define BOARD_CH422G_START_IO 0x1E
 
 // ---- backlight --------------------------------------------------------------
-// Lit when the enable is high, in both of the worlds above.
-#define BOARD_BACKLIGHT_ON_LEVEL 1
-#if BOARD_CH422G_LCD_DISP_CUT
+// Lit when the enable is high. GPIO 6 drives that net through LEDC, so the
+// three-minute dim and five-minute off work on every board with this image.
 #define PIN_LCD_BL 6
-#define BOARD_BACKLIGHT_DIMMABLE 1
-#else
-#define PIN_LCD_BL -1
-#define BOARD_BACKLIGHT_DIMMABLE 0
-#define BOARD_CH422G_PIN_BACKLIGHT 2 // DISP, the panel's backlight enable, active high
-#endif
 
 // ---- TF slot: SPI on real pins, chip select on the expander --------------------
 // The card's chip select is EXIO4 and there is no GPIO behind it. What the vendor's
@@ -259,34 +202,26 @@
 #define PIN_SD_CS 15             // dummy; the real select is BOARD_CH422G_PIN_SD_CS
 
 // ---- switched output --------------------------------------------------------
-// It goes to EXIO2, the pin the backlight used, once the enable net is cut
-// (BOARD_CH422G_LCD_DISP_CUT 1) - that is what the cut frees up. Not GPIO 8 or 9:
-// those are SDA and SCL, and the GT911 and the CH422G both sit on that bus, so a
-// relay there would take the touch, the panel's reset, the TF card's chip select
-// and the USB selector with it. The board still labels GPIO 8 as I2C on its
-// silkscreen, which is true of the pin and not of what a firmware may do with it.
+// Reserved, not enabled (BOARD_RELAY_PRESENT 0). There is no spare expander pin:
+// EXIO2 belongs to the board's backlight net, and GPIO 8 and 9 are SDA and SCL
+// shared by the GT911 and the CH422G - a relay there would take the touch, the
+// panel's reset, the TF card's chip select and the USB selector with it. The
+// board still labels GPIO 8 as I2C on its silkscreen, which is true of the pin
+// and not of what a firmware may do with it.
 //
-// What is connected to it is never a coil, always a module whose input side is an
-// optocoupler LED and whose contact side is separated from that. So the question
-// the CH422G's I/O figures would have had to answer - how many milliamperes an IO
-// pin can deliver - does not arise: what it drives is a logic input with a
-// resistor in front of it, in the same league as the panel's reset line one pin
-// over. The coil current never passes through the board; it is drawn from the
-// module's own supply on the isolated side.
-//
-// The output is off for now (BOARD_RELAY_PRESENT 0) because the module is not
-// decided yet, not because of a technical doubt - turning it on means the flag,
-// RELAY_PIN below, and a relayWrite() that goes through the expander instead of
-// pinMode()/digitalWrite(), the same way Backlight.cpp has two paths.
+// What would be connected is never a coil, always a module whose input side is
+// an optocoupler LED and whose contact side is separated from that. So the
+// question the CH422G's I/O figures would have had to answer - how many
+// milliamperes an IO pin can deliver - does not arise: it is a logic input with
+// a resistor in front of it, in the same league as the panel's reset line one
+// pin over. The coil current never passes through the board; it is drawn from
+// the module's own supply on the isolated side.
 //
 // RELAY_PIN is -1 rather than a number, the same "not a GPIO here" the TF card's
 // chip select uses: writing 8 into it would say that the firmware drives SDA.
 #define RELAY_PIN -1
 #define RELAY_ACTIVE_LOW 0
 #define BOARD_RELAY_PRESENT 0
-// No BOARD_RELAY_SHARES_I2C any more: that flag described a relay on GPIO 8,
-// which this board does not have. The output hangs on an optocoupler module's
-// input, which is a logic input and belongs on EXIO2 once the cut above is done.
 
 #if RELAY_ACTIVE_LOW
 #define RELAY_LEVEL_ON LOW

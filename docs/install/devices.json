@@ -10,15 +10,6 @@
         "de": "esp32-s3-touch-lcd-7",
         "en": "esp32-s3-touch-lcd-7-en"
       }
-    },
-    {
-      "id": "esp32s3-touch-lcd-7-factory",
-      "name": "Waveshare ESP32-S3-Touch-LCD-7 (factory board)",
-      "chipFamily": "ESP32-S3",
-      "envs": {
-        "de": "esp32-s3-touch-lcd-7-factory",
-        "en": "esp32-s3-touch-lcd-7-factory-en"
-      }
     }
   ],
   "languages": [

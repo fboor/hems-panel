@@ -42,10 +42,9 @@ Heating and Service. Details are in [Pages and UI](docs/ui.md).
 | [Waveshare ESP32-S3-Touch-LCD-7](https://www.waveshare.com/esp32-s3-touch-lcd-7.htm) — 7", 800 × 480, capacitive touch | the panel |
 | [WARP Energy Manager V2](https://warp-charger.com/en/products/warp-energy-manager) | provides the energy data over the local network |
 
-Both the factory board and the modified board with the backlight trace cut for
-PWM dimming are supported. The **ESP32-S3-Touch-LCD-7B** (1024 × 600) is not.
-See [Hardware](docs/hardware.md) for the pin map, backlight variants and the
-bring-up checklist.
+One firmware image serves the board: the backlight is dimmed on GPIO 6. The
+**ESP32-S3-Touch-LCD-7B** (1024 × 600) is not supported. See
+[Hardware](docs/hardware.md) for the pin map and the bring-up checklist.
 
 ## Install
 
@@ -59,8 +58,7 @@ To build and flash from source, see [Firmware](docs/firmware.md). In short:
 
 ```sh
 ./flash.sh --build-only      # build only, no board needed
-./flash.sh                   # modified board: build + upload
-./flash.sh --factory         # factory board: build + upload
+./flash.sh                   # build + upload
 ```
 
 ## Documentation
@@ -71,7 +69,7 @@ installation to development:
 | Document | Contents |
 |---|---|
 | [Installation guide (German)](docs/install/anleitung.md) | flash a blank panel and run the first-time setup |
-| [Hardware](docs/hardware.md) | board, pin map, backlight variants, bring-up checklist |
+| [Hardware](docs/hardware.md) | board, pin map, backlight, bring-up checklist |
 | [Firmware](docs/firmware.md) | build, flash, partitions, merged images, serial log, recovery |
 | [First-time setup](docs/setup.md) | setup access point, QR code, portal, mDNS, OTA |
 | [Pages and UI](docs/ui.md) | the six pages, navigation, flow view, header and service page |

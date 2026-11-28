@@ -9,17 +9,12 @@ WiFiManager as its library dependencies.
 
 | Environment | Board | UI | Command |
 |---|---|---|---|
-| `esp32-s3-touch-lcd-7` | modified board, backlight on GPIO 6 | German | `./flash.sh` |
-| `esp32-s3-touch-lcd-7-factory` | factory board, backlight on EXIO2 | German | `./flash.sh --factory` |
-| `esp32-s3-touch-lcd-7-en` | modified board | English | `pio run -e esp32-s3-touch-lcd-7-en -t upload` |
-| `esp32-s3-touch-lcd-7-factory-en` | factory board | English | `pio run -e esp32-s3-touch-lcd-7-factory-en -t upload` |
+| `esp32-s3-touch-lcd-7` | Waveshare ESP32-S3-Touch-LCD-7 | German | `./flash.sh` |
+| `esp32-s3-touch-lcd-7-en` | same board | English | `pio run -e esp32-s3-touch-lcd-7-en -t upload` |
 
 German is the default UI language. English is a compile-time build
-(`-DWARP_LANG_EN=1`), not a runtime setting.
-
-The two electrical variants are described in [hardware.md](hardware.md#the-backlight-trace).
-Flashing the default image onto an unmodified board puts two outputs on the
-backlight enable net.
+(`-DWARP_LANG_EN=1`), not a runtime setting. One image serves the board; the
+backlight wiring is described in [hardware.md](hardware.md#backlight).
 
 ## Build and flash
 
@@ -28,8 +23,7 @@ serial device is connected; use `--build-only` to build without a board.
 
 ```sh
 ./flash.sh --build-only         # build only, no board needed
-./flash.sh                      # modified board: build + upload
-./flash.sh --factory            # factory board: build + upload
+./flash.sh                      # build + upload
 ./flash.sh --erase              # erase the whole 16 MB first
 ./flash.sh --monitor            # open the serial log afterwards
 ./flash.sh --port /dev/ttyACM0  # skip auto-detection
@@ -66,10 +60,10 @@ The second OTA slot starts at `0x710000`; SPIFFS starts at `0xE10000`.
 
 ## Merged image
 
-For flashing without PlatformIO, or for keeping one file per board variant:
+For flashing without PlatformIO, or for keeping one file to archive:
 
 ```sh
-./flash.sh --factory --merged                 # -> .pio/build/.../firmware-merged.bin
+./flash.sh --merged                           # -> .pio/build/.../firmware-merged.bin
 ./flash.sh --merged /tmp/hems-panel.bin       # choose the output path
 ```
 

@@ -28,16 +28,15 @@ firmware compiles against.
 | CH422G expander | I²C `0x20`, 400 kHz |
 | SD card SCK / MISO / MOSI | 12 / 13 / 11 |
 | SD card chip select | EXIO4 on the expander (dummy GPIO 15 for the SD library) |
-| Backlight, modified board | GPIO 6, PWM |
-| Backlight, factory board | EXIO2, on/off |
-| Switched output | EXIO2 after the trace cut; not enabled in the current build |
+| Backlight | GPIO 6, PWM |
+| Switched output | reserved; not enabled in the current build |
 
 The expander carries these functions:
 
 | Expander pin | Function |
 |---|---|
 | EXIO1 | touch reset |
-| EXIO2 | backlight enable (factory) or switched output (modified) |
+| EXIO2 | backlight enable on the board, kept high |
 | EXIO3 | LCD reset, 10 ms low then 100 ms high |
 | EXIO4 | SD card chip select, active low |
 | EXIO5 | USB/CAN selector: low = native USB on GPIO 19/20, high = CAN |
@@ -45,49 +44,32 @@ The expander carries these functions:
 The panel reset is not a GPIO. It is EXIO3 and has to be pulsed before the
 display object is created; without it the panel lights but draws nothing.
 
-## The backlight trace
+## Backlight
 
-Two firmware images exist, one per electrical build. This is not a runtime
-setting and the difference is a short, not a colour.
-
-| Environment | Command | Board | Backlight |
-|---|---|---|---|
-| `esp32-s3-touch-lcd-7` | `./flash.sh` | modified: EXIO2/DISP trace cut, GPIO 6 wired to the enable net | PWM dimming on GPIO 6 |
-| `esp32-s3-touch-lcd-7-factory` | `./flash.sh --factory` | factory: EXIO2 still drives DISP | on/off through EXIO2 |
-
-With the cut, EXIO2 drives nothing and GPIO 6 owns the light. Without the cut,
-EXIO2 is still on the enable net; a PWM from GPIO 6 would put two push-pull
-outputs on the same line while they disagree. The factory image therefore never
-touches GPIO 6, and the default image must never be flashed onto an unmodified
-board.
-
-If you do not know which board you have, flash the factory image first: it is
-electrically safe on both because it never touches GPIO 6. If the backlight then
-stays dark, the trace is cut and the default image is the right one.
-
-The choice is `BOARD_CH422G_LCD_DISP_CUT` in
-`src/board/waveshare_touch_lcd7/Pins.h`. It defaults to `1`; the factory
-environment passes `-DBOARD_CH422G_LCD_DISP_CUT=0`.
+There is one image for the board. GPIO 6 drives the enable net through LEDC, so
+the light dims to 30 % after three minutes without a touch and goes out after
+five. The CH422G's EXIO2 is kept high at start-up (`BOARD_CH422G_START_IO 0x1E`,
+the vendor's own "backlight on" value): on a board that still wires EXIO2 to the
+enable net it agrees with GPIO 6 at full brightness instead of pulling against
+it. A 100 Ω series resistor (R114) limits the current if the two ever disagree.
 
 ## Switched output
 
 The output is reserved but not enabled in the current build
-(`BOARD_RELAY_PRESENT 0`). Once the trace is cut, EXIO2 is free and can drive the
-input side of an optocoupler relay module; the relay coil is supplied on the
-isolated side, so its current never passes through the board. The output is
-active high and would be switched through the expander, like the factory
-backlight. Do not use GPIO 8 or 9 for it: those are the I²C bus shared by the
-touch controller and the CH422G.
+(`BOARD_RELAY_PRESENT 0`). There is no spare expander pin: EXIO2 carries the
+board's backlight enable, and GPIO 8 and 9 are the I²C bus shared by the touch
+controller and the CH422G. If a relay is added later, the coil goes to the
+isolated side of an optocoupler module, so its current never passes through the
+board.
 
 ## Bring-up checklist
 
 The emulator and the host checks cover the logic. These items need the panel on
 the bench, in this order:
 
-1. **Backlight** — the panel lights up. On the modified board GPIO 6 dims it to
-   30 % after three minutes without a touch and switches it off after five; a
-   touch brings it back and restarts both timers. On the factory board the light
-   is only switched on and off through EXIO2.
+1. **Backlight** — the panel lights up. GPIO 6 dims it to 30 % after three
+   minutes without a touch and switches it off after five; a touch brings it
+   back and restarts both timers.
 2. **Display** — a non-garbage image means the RGB timings are right. A shifted
    or colour-swapped picture points at the porches or the R/B order in
    `src/display/Display.cpp`.

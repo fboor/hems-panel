@@ -13,8 +13,8 @@ API.
 
 1. [Installation guide (German)](install/anleitung.md) — flash a blank panel and
    run the first-time setup.
-2. [Hardware](hardware.md) — the board, its pin map, the backlight variants and
-   the bring-up checklist.
+2. [Hardware](hardware.md) — the board, its pin map, the backlight and the
+   bring-up checklist.
 3. [Firmware](firmware.md) — build, flash, partitions, merged images, USB ports,
    serial log and recovery.
 4. [First-time setup](setup.md) — setup access point, QR code, portal, mDNS and
@@ -38,7 +38,7 @@ API.
 |---|---|
 | flash a blank panel from the browser | [install/anleitung.md](install/anleitung.md) |
 | build or flash from source | [firmware.md](firmware.md) |
-| check a pin, the backlight or the board variant | [hardware.md](hardware.md) |
+| check a pin or the backlight | [hardware.md](hardware.md) |
 | join the panel to a WLAN and set the WARP address | [setup.md](setup.md) |
 | know what a page or a header chip means | [ui.md](ui.md) |
 | understand autarky, forecast or exchange prices | [energy.md](energy.md) |
@@ -61,7 +61,7 @@ boards/           PlatformIO board definitions
 partitions/       16 MB OTA partition table
 docs/             this documentation and the browser installer
 screenshots/      rendered pages used by the README and the docs
-flash.sh          build and upload wrapper for both backlight variants
+flash.sh          build and upload wrapper
 include/          lv_conf.h and the firmware version used by both builds
 ```
 
